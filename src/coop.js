@@ -13,6 +13,7 @@ import { nameTags } from './effects.js';
 import { sfx } from './audio.js';
 import { net, send as post, flush, onMessage } from './net.js';
 import { logEvent } from './playlog.js';
+import { checkMsg, onCheck } from './watch.js';
 import { deepMsg, tickGhostDeep, dropGhostDeep } from './water.js';
 import { day, setDay } from './daynight.js';
 import { builtMsg, addBuilt, onBuildReq, onBuilt, onNoBuild } from './craft.js';
@@ -103,6 +104,7 @@ function onMsg(m, from) {
     case 'crate': if (net.role === 'host' && caches[m.i]) crateOpen(caches[m.i], from); break;
     case 'smash': if (net.role === 'host' && caches[m.i]) smashCrate(caches[m.i], null, null, from); break;
     case 'w': if (joining() && running()) applyWorld(m, from); break;
+    case 'chk': if (joining() && running()) onCheck(m, from); break; // slice 13d: the host's world against this one (watch.js)
     // a game whose window was hidden (a tab switch, a minimised window, a closed lid) stops: its browser stops drawing it.
     // The host's stopping holds the whole world (2026-11-04: the host's window went to the background and a joined
     // Gunslinger shot a frozen bog lurker 21 times for nothing), so every game says when it goes and comes back.
@@ -161,7 +163,7 @@ document.addEventListener('visibilitychange', () => { logEvent(document.hidden ?
 export const deliver = (m, from) => onMsg(m, from); // (for the checks: a message as if it came over the network)
 
 // ── Every frame: other players move smoothly to where they were a moment ago; this game sends its own ──
-let sendT = 0, worldT = 0;
+let sendT = 0, worldT = 0, chkT = 0;
 export function tickCoop(dt) {
   const now = performance.now(), tags = []; tickClocks();
   for (const o of others.values()) {
@@ -180,6 +182,7 @@ export function tickCoop(dt) {
     send('all', { t: 'p', ts: Math.round(performance.now()), c: CHARS.indexOf(player.ch), x: +player.x.toFixed(2), y: +player.y.toFixed(2), z: +player.z.toFixed(2), f: +player.faceYaw.toFixed(2), hp: Math.round(player.hp), mx: player.maxHp,
       dn: +(player.down || 0).toFixed(1), out: player.out ? 1 : 0, rv: player.rv ? 1 : 0, rt: Math.round((player.revT || 0) / 2.5 * 100), sw: player.swim ? 1 : 0, g: player.onGround ? 1 : 0, u: upBits(), ea: player.eat ? 1 : 0, dq: deepMsg(), sl: player.sleep ? 1 : 0 }); }
   if (net.role === 'host' && coop() && (worldT += dt) >= 1 / 12) { worldT = 0; send('all', worldMsg()); }
+  if (net.role === 'host' && coop() && (chkT += dt) >= 10) { chkT = 0; send('all', checkMsg()); } // slice 13d: drift (watch.js)
   flush();
 }
 // a joined game's enemies glide to the host's positions (game.js calls this in place of their own thinking)

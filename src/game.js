@@ -17,7 +17,8 @@ import { unlockAudio, toggleMute, isMuted, sfx, setListener, windLevel, ambient 
 import { W } from './weather.js';
 const BIOME_WIND = { tundra: 0.03, waste: 0.025, desert: 0.02 };
 import { buildCharacter, buildViewModel } from './characters.js';
-import { logEvent, tickLog, savePlayLog, startVideo } from './playlog.js';
+import { logEvent, tickLog, savePlayLog, startVideo, recording } from './playlog.js';
+import { tickWatch, watchStart } from './watch.js';
 import { others, coop, joining, gone, nearestP, everyone, hurt, salvagedProp, requestJoin, tickCoop, followHost, net, send, clearOthers } from './coop.js';
 import { craftOpen, toggleCraft, craftKey, craftPad, renderMenu, bedNear, sleep, wake, tickSleep, bedRespawn, fireSpots, benchNear } from './craft.js';
 import { tickHarvest, harvestTarget, harvestName, prepHarvest } from './harvest.js';
@@ -162,7 +163,7 @@ export function startGame(i) {
   if (!joining()) { spawnAround(0, 0, 26, SAFE_R + 15, SAFE_R + 230); // out beyond the ring: the valley is safe
   // each raider camp's crew, round its fire; they keep to the camp until they see you
   raiderCamps.forEach((c, i) => c.raiders.forEach((type, k) => { const a = c.a0 + 0.4 + k * 1.9; spawnEnemy(c.x + Math.cos(a) * 3, c.z + Math.sin(a) * 3, type, 9000 + i, k, c.raiders.length); enemies.at(-1).home = c; })); }
-  document.getElementById('menu').classList.add('hidden'); for (const id of ['hud-tl', 'hud-tr', 'hud-b']) document.getElementById(id).classList.remove('hidden'); running = true; log(`${ch.player} walks out as ${ch.title}. (F9 saves a play log.)`); setCam(camMode); logEvent('start', { ch: ch.id, cam: camMode }); startVideo(renderer.domElement);
+  document.getElementById('menu').classList.add('hidden'); for (const id of ['hud-tl', 'hud-tr', 'hud-b']) document.getElementById(id).classList.remove('hidden'); running = true; log(`${ch.player} walks out as ${ch.title}. (F9 saves a play log.)`); setCam(camMode); logEvent('start', { ch: ch.id, cam: camMode }); watchStart(); startVideo(renderer.domElement);
 }
 export function setCam(m) { camMode = m; snapCam = true; if (running) logEvent('cam', { cam: m }); document.getElementById('cam').textContent = 'Camera: ' + CAM_LABEL[m] + '  (V)';
   document.getElementById('cross').classList.toggle('hidden', m === 'top'); viewModel.visible = m === 'first';
@@ -174,7 +175,9 @@ addEventListener('pointerdown', unlockAudio);
 addEventListener('keydown', e => { if (e.code === 'Tab') { e.preventDefault(); if (e.repeat) return; } if (running && !paused && (craftKey(e) || buildKey(e))) return; // the craft menu's keys (slice 11), build mode's (slice 12)
   if (!paused || e.code === 'KeyP' || e.code === 'Escape') keys.add(e.code); unlockAudio(); if (!running) { const n = Number(e.key); if (n >= 1 && n <= 5) selectCard(n - 1); if (e.code === 'Enter') startGame(sel); return; }
   if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
-  if (e.code === 'F9') { logEvent('mark', { x: +player.x.toFixed(1), z: +player.z.toFixed(1), y: +player.y.toFixed(1), biome: biomeAt(player.x, player.z) }); savePlayLog(); log('Spot marked and play log saved (a JSON file in your downloads).'); }
+  if (e.code === 'F9') { logEvent('mark', { x: +player.x.toFixed(1), z: +player.z.toFixed(1), y: +player.y.toFixed(1), biome: biomeAt(player.x, player.z) });
+    // (slice 13d: a game that records sends the mark with a picture, and the findings report lists it; a download only where nothing records)
+    if (recording()) log('Spot marked: it goes in the play log with a picture, for Claude to look at.'); else { savePlayLog(); log('Spot marked and play log saved (a JSON file in your downloads).'); } }
   if (e.code === 'KeyM') { log(toggleMute() ? 'Sound off (M).' : 'Sound on (M).'); document.getElementById('snd').checked = !isMuted(); }
   if (paused) return; // (in co-op the world runs on behind the pause screen: no war cry or turret from it)
   if (e.code === 'KeyV') setCam(CAMS[(CAMS.indexOf(camMode) + 1) % 3]);
@@ -694,7 +697,7 @@ export function update(dt, t) {
     if (!warmLogged) { log('The campfire\'s warmth mends your wounds.'); warmLogged = true; }
     if (campT > 2) { campT = 0; if (player.hp < player.maxHp) { const h = Math.min(8, player.maxHp - player.hp); player.hp += h; floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `+${h}`, '#8aff9a'); } } }
   else { campT = 0; warmLogged = false; }
-  tickLog(dt, { player, cam: camMode, biome: biomeAt(player.x, player.z), fps: lastFps, enemies }, il > 0.1 && !player.dead);
+  tickLog(dt, { player, cam: camMode, biome: biomeAt(player.x, player.z), fps: lastFps, enemies }, il > 0.1 && !player.dead); tickWatch(dt); // slice 13d
   tickCoop(dt); tickEffects(dt); setListener(player.x, player.z, camMode === 'top' ? topYaw : player.yaw);
   windLevel(0.03 + Math.min(0.06, Math.max(0, player.y - 20) / 600) + W.wind + (BIOME_WIND[biomeAt(player.x, player.z)] || 0)); ambient(dt, biomeAt(player.x, player.z), nightK(), Math.hypot(player.x, player.z) < SAFE_R); // (slice 13: storms, the open biomes' wind, the night's sounds)
 }
@@ -751,7 +754,7 @@ export function hud(fps, dt = 0) { perfHint(fps, dt); lastFps = fps;
   if (tEl.innerHTML !== team) tEl.innerHTML = team; tEl.classList.toggle('hidden', !team);
   const sec = document.getElementById('sec'); sec.textContent = `F · ${player.ch.sec}${upgraded(player.ch.id) ? ' ★' : ''}` + (player.secT > 0 ? ` ${Math.ceil(player.secT)} s` : ''); sec.style.opacity = player.secT > 0 ? 0.55 : 1;
   document.getElementById('cross').style.opacity = player.atkT > 0 ? 0.35 : 1; // dim while the attack recovers
-  document.getElementById('fps').textContent = fps + ' fps';
+  document.getElementById('fps').textContent = fps ? fps + ' fps' : ''; // (not "0 fps" before the first count: round 1 of 13d)
   const list = []; for (const e of enemies) { if (e.dead || e.state === 'lurk') continue; const d = Math.hypot(e.x - player.x, e.z - player.z);
     if (d < 28 && (e.barT > 0 || e.state === 'chase' || e.state === 'windup' || e.state === 'recover')) list.push({ d, p: new THREE.Vector3(e.x, e.mesh.position.y + e.mesh.userData.height * ENEMY[e.type].scale + 0.15, e.z), frac: Math.max(0, e.hp / e.maxHp) }); }
   list.push(...pieceBars(player.x, player.z)); // walls and gates hit lately (slice 12)

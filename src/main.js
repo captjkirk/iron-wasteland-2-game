@@ -1,6 +1,6 @@
 // Boot: renderer, world, environment, game loop, and the test hooks the headless check uses.
 import * as THREE from 'three';
-import { CAMP, Q, QUALITY, QUALITY_KEY, setQuality, WATER_Y } from './config.js';
+import { CAMP, Q, QUALITY, QUALITY_KEY, setQuality, WATER_Y, HALF } from './config.js';
 import { groundY, findBiome, seeds, river, lakes, biomeAt, forestAt, slopeAt, canyonAt, PASSES } from './world.js';
 import { buildTerrain } from './terrain.js';
 import { buildEnvironment, FOG_COLOR } from './environment.js';
@@ -9,7 +9,8 @@ import { buildDeepWater, S as deepShadow } from './water.js';
 import { buildProps, placed, nearColliders, colR, standAt } from './props.js';
 import { buildCamp, tickCamp } from './camp.js';
 import { buildBuildings, tickBuildings, buildings, caches, raiderCamps, ladders } from './buildings.js';
-import { snapFrame, logEvent } from './playlog.js';
+import { snapFrame, logEvent, frameTime, playlogState } from './playlog.js';
+import { tickWatch, checkCrates, checkMsg, solidAt } from './watch.js';
 import { updateScatter, scatterStats } from './scatter.js';
 import { buildGrass, updateGrass, grassStats } from './grass.js';
 import { wind } from './trees.js';
@@ -26,7 +27,7 @@ import { startBuild, placeNow, endBuild, building, rotateBuild, damageBuilt, tog
 import { ammo, clipSize } from './supplies.js';
 import { felled, fell, harvestTarget } from './harvest.js';
 import { quiver, stuckArrows } from './arrows.js';
-import { initGame, hurtPlayer, gotPickup, selected, liveShots, spreadAt, upgraded, aimGround, togglePause, startGame, setCam, update, placeCamera, hud, menuPad, isRunning, getCamMode, player, enemies, spawnEnemy, attack, teleport, look, hitEnemy, press, secondary, turrets, dropLoot } from './game.js';
+import { pickups, initGame, hurtPlayer, gotPickup, selected, liveShots, spreadAt, upgraded, aimGround, togglePause, startGame, setCam, update, placeCamera, hud, menuPad, isRunning, getCamMode, player, enemies, spawnEnemy, attack, teleport, look, hitEnemy, press, secondary, turrets, dropLoot } from './game.js';
 
 const status = document.getElementById('loading');
 const renderer = new THREE.WebGLRenderer({ antialias: Q.antialias, powerPreference: 'high-performance' });
@@ -79,12 +80,12 @@ let CF = null; const campFires = () => CF ||= raiderCamps.map(c => ({ x: c.x, y:
 let last = performance.now(), frames = 0, fpsT = 0, fps = 0, clock = 0, rendered = 0, freeCam = null;
 const menuCam = { a: 2.2 };
 function frame(now) {
-  requestAnimationFrame(frame); const dt = Math.min(0.05, (now - last) / 1000); last = now; clock += dt;
+  requestAnimationFrame(frame); frameTime(now - last, isRunning()); const dt = Math.min(0.05, (now - last) / 1000); last = now; clock += dt;
   frames++; fpsT += dt; if (fpsT > 0.5) { fps = Math.round(frames / fpsT); frames = 0; fpsT = 0; }
   if (isRunning()) { update(dt, clock); placeCamera(dt); hud(fps, dt); autoScale(dt); }
   else { menuPad(); drawPortraits(renderer, dt, selected()); menuCam.a += dt * 0.03; const x = 20 + Math.cos(menuCam.a) * 150, z = Math.sin(menuCam.a) * 150;
     camera.position.set(x, Math.max(groundY(x, z), WATER_Y) + 55, z); camera.lookAt(40, 8, 0); env.follow(new THREE.Vector3(40, groundY(40, 0), 0)); }
-  if (freeCam) { camera.position.copy(freeCam.pos); camera.lookAt(freeCam.target); camera.fov = 60; camera.updateProjectionMatrix(); env.follow(freeCam.target); }
+  if (freeCam) { camera.position.copy(freeCam.pos); camera.lookAt(freeCam.target); camera.fov = freeCam.fov; camera.updateProjectionMatrix(); env.follow(freeCam.target); }
   // slice 13: the hour lights the world: sky, sun or moon, fog, the far trees; fires and torches light the night
   env.setTime(day.t); eyeShine(nightK()); env.fireLights(isRunning() ? [...lightSpots(), ...campFires()] : [], camera.position, nightK(), clock);
   localFog(scene.fog, FOG_COLOR, env.fogNear, env.fogFar, camera.position.x, camera.position.z); scene.fog.color.multiply(env.fogTint);
@@ -99,7 +100,7 @@ requestAnimationFrame(frame);
 addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
 
 // Test hooks for the headless check (scripts/shots.js): not used by play.
-window.__iw = { others, net, built, deliver, /* the gate of slice 12 */
+window.__iw = { others, net, built, deliver, /* the gate of slice 12 */ logEvent, playlogState, tickWatch, checkCrates, checkMsg, solidAt, pickups, HALF, /* slice 13d */
   // a build recipe opens build mode; for the checks, craft() of one places it at once where the ghost stands (slice 12)
   craft: (key) => { const r = RECIPES.find(q => q.key === key); if (r.type !== 'build') return craft(r); if (!craft(r)) return false; const ok = placeNow(); endBuild(); return ok; },
   startBuild: (key) => startBuild(RECIPES.find(q => q.key === key)), placeNow, endBuild, building, rotateBuild, damageBuilt, toggleGate, tearTarget, refundOf, clearBuilt, wallAhead, PIECE, putPiece, liveShots, ammo, clipSize, gotPickup, spreadAt, upgraded, aimGround, /* slice 12 */ toggleCraft, craftOpen, placeSpot, sleep, bedNear, bedRespawn, felled, fell, harvestTarget, quiver, stuckArrows, // slice 11
@@ -116,5 +117,5 @@ window.__iw = { others, net, built, deliver, /* the gate of slice 12 */
   // a still creature at (x, z) facing yaw: idle, not wandering (for the lineup shots)
   pose(type, x, z, yaw) { spawnEnemy(x, z, type); const e = enemies[enemies.length - 1]; e.posed = true; e.yaw = yaw; e.wander = 1e9; e.wmove = false; if (e.state === 'lurk') e.state = 'idle'; return e; },
   get veg() { return { scatter: scatterStats(), grass: grassStats() }; },
-  view(px, py, pz, tx, ty, tz) { freeCam = px === null ? null : { pos: new THREE.Vector3(px, py, pz), target: new THREE.Vector3(tx, ty, tz) };
+  view(px, py, pz, tx, ty, tz, fov = 60) { freeCam = px === null ? null : { pos: new THREE.Vector3(px, py, pz), target: new THREE.Vector3(tx, ty, tz), fov };
     document.body.classList.toggle('freecam', !!freeCam); for (const c of camera.children) c.visible = !freeCam && getCamMode() === 'first'; } };

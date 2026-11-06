@@ -79,8 +79,9 @@ listed above; the stone (reinforced) wall and its pillars use Rustic Stone Wall 
 bands and hinges use Rusty Corrugated Iron. The thrown shield, the nail gun, nails, the fire arrows' embers and burst and
 the charm aura are made in code.
 
-**Slice 13a (installable, offline): one new file pair.** The app icon (`assets/icon-192.png`, `assets/icon-512.png`),
-the camp ringed by mountains, is drawn in SVG for this game and rendered to PNG here: own work, CC0.
+**Slice 13a (installable, offline), remade after slice 13b.** The app icon (`assets/icon-512.png`, `assets/icon-192.png`
+and the full-bleed `assets/icon-maskable-512.png`), the Iron Knight by the camp's fire at nightfall, is rendered from the
+game itself by `scripts/icon.js` (its models, textures and lights, all credited above) and framed in code: own work, CC0.
 
 ## The desktop app (slice 13b; shipped inside the Mac app only, never loaded by the web game)
 | What | Source | License |
