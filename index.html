@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Iron Wasteland 2</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="assets/icon-192.png">
+<meta name="theme-color" content="#1a140e">
+<style>
+  :root {
+    --ink: #f3e6cc; --dim: #b9a888; --panel: rgba(28, 22, 16, 0.78); --edge: #6b5638;
+    --hp: #d0503a; --hp-back: #3a1d16; --accent: #e0a040;
+  }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #1a140e; color: var(--ink);
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  canvas { display: block; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ink: #f3e6cc; --panel: rgba(28, 22, 16, 0.78); } }
+  :root[data-theme="dark"] { --ink: #f3e6cc; }
+  .hud { position: fixed; pointer-events: none; font-size: 13px; text-shadow: 0 1px 2px #000; }
+  #hud-tl { top: 14px; left: 14px; }
+  #hud-tr { top: 14px; right: 14px; text-align: right; line-height: 1.5; }
+  #hud-b { bottom: 14px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; }
+  .chip { background: var(--panel); border: 1px solid var(--edge); padding: 5px 10px; border-radius: 4px; white-space: nowrap; }
+  @media (max-width: 1100px) { #hud-b { gap: 6px; } #hud-b .chip { padding: 4px 7px; font-size: 12px; } }
+  #name { font-weight: 700; letter-spacing: .04em; margin-bottom: 6px; }
+  #hpbar { width: 220px; height: 12px; background: var(--hp-back); border: 1px solid var(--edge); border-radius: 3px; overflow: hidden; }
+  #breath { position: fixed; left: 50%; bottom: 64px; width: 180px; height: 8px; margin-left: -90px; border-radius: 4px; background: rgba(0,20,30,.6); border: 1px solid rgba(160,220,255,.5); }
+  #breath > div { height: 100%; background: linear-gradient(90deg, #6fd0ff, #c8f0ff); border-radius: 3px; }
+  #breath::before { content: "Breath"; position: absolute; top: -18px; left: 0; font-size: 12px; color: #c8f0ff; text-shadow: 0 1px 2px #000; }
+  body.under .hud, body.under #breath { z-index: 2; }
+  body.under::after { content: ""; position: fixed; inset: 0; z-index: 1; pointer-events: none; background: radial-gradient(ellipse at 50% 40%, rgba(10,60,70,.35), rgba(2,14,18,.8)); }
+  #hpfill { height: 100%; width: 100%; background: var(--hp); transition: width .15s; }
+  #cross { position: fixed; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; pointer-events: none; }
+  #cross::before, #cross::after { content: ""; position: absolute; background: rgba(255,240,210,.85); }
+  #cross::before { left: 6px; top: 0; width: 2px; height: 14px; }
+  #cross::after { top: 6px; left: 0; height: 2px; width: 14px; }
+  #cross.hit { transform: rotate(45deg) scale(1.35); }
+  #cross.hit::before, #cross.hit::after { background: #ffb060; }
+  /* the log sits above the bottom bar's row and stops short of it (slice 10's critic: a long line ran under the Scrap chip) */
+  #log { position: fixed; left: 14px; bottom: 54px; max-width: min(460px, calc(50vw - 40px)); font-size: 12px; line-height: 1.45; color: var(--dim); pointer-events: none; text-shadow: 0 1px 2px #000;
+    background: linear-gradient(90deg, rgba(14,10,7,.55), rgba(14,10,7,0)); padding: 4px 18px 4px 8px; border-radius: 4px; }
+  #log:empty { display: none; }
+  #team .mate { margin-top: 3px; } #team i { display: block; width: 120px; height: 5px; margin-top: 2px; background: var(--hp-back); border: 1px solid var(--edge); border-radius: 3px; overflow: hidden; }
+  #team b { display: block; height: 100%; background: var(--hp); }
+  #hurt { position: fixed; inset: 0; pointer-events: none; box-shadow: inset 0 0 120px rgba(200,30,20,.0); transition: box-shadow .25s; }
+  .overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column;
+    background: radial-gradient(ellipse at center, rgba(40,28,16,.55), rgba(10,8,6,.8)); padding: 16px; box-sizing: border-box; overflow-y: auto; justify-content: safe center; }
+  .overlay h1 { font-size: clamp(26px, 5vw, 46px); letter-spacing: .12em; margin: 0 0 4px; color: var(--accent); text-align: center; }
+  .overlay .sub { color: var(--dim); margin-bottom: 16px; text-align: center; }
+  #cards { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; max-width: 1120px; }
+  .card { width: 168px; background: var(--panel); border: 2px solid var(--edge); border-radius: 6px; padding: 10px 12px; cursor: pointer; }
+  .card.sel { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(224,160,64,.35); }
+  .card .sw { height: 5px; border-radius: 3px; margin-bottom: 8px; }
+  .card b { display: block; font-size: 15px; }
+  .card small { color: var(--dim); display: block; margin: 2px 0 8px; }
+  .card p { margin: 0; font-size: 12px; line-height: 1.4; }
+  .keys { margin-top: 12px; color: var(--dim); font-size: 12px; line-height: 1.7; text-align: center; max-width: 760px; }
+  .keys kbd { color: var(--ink); border: 1px solid var(--edge); border-radius: 3px; padding: 0 4px; }
+  button.go { margin-top: 14px; font: inherit; font-size: 16px; padding: 10px 28px; background: var(--accent); color: #1a120a;
+    border: 0; border-radius: 4px; cursor: pointer; font-weight: 700; letter-spacing: .08em; }
+  button.go:disabled { opacity: .45; cursor: wait; }
+  #settings { margin-top: 14px; background: var(--panel); border: 1px solid var(--edge); border-radius: 6px; padding: 8px 14px; display: flex; flex-direction: column; gap: 8px; }
+  .srow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; color: var(--dim); font-size: 12px; }
+  .srow > span:first-child { color: var(--ink); min-width: 118px; }
+  #quality { display: flex; gap: 6px; } #sens { width: 150px; accent-color: var(--accent); } #sensv { color: var(--ink); min-width: 34px; }
+  .srow label { display: flex; gap: 5px; align-items: center; cursor: pointer; } .srow input[type=checkbox] { accent-color: var(--accent); }
+  button.go.alt { background: var(--panel); color: var(--ink); border: 1px solid var(--edge); }
+  .card canvas.pv { width: 144px; height: 176px; margin-left: auto; margin-right: auto; display: block; border-radius: 4px; margin-bottom: 8px; background: #2a2118; }
+  .qrow { margin-top: 14px; display: flex; gap: 8px; align-items: center; color: var(--dim); font-size: 12px; }
+  button.q { font: inherit; font-size: 12px; padding: 4px 12px; background: var(--panel); color: var(--ink); border: 1px solid var(--edge); border-radius: 4px; cursor: pointer; }
+  button.q.on { border-color: var(--accent); color: var(--accent); }
+  /* slice 11: resource chips (a dot of each resource's colour; a chip bumps when it goes up), the E prompt, the craft menu */
+  .res { --c: #ccc; } .res.wood { --c: #d8a060; } .res.metal { --c: #ffb040; } .res.fiber { --c: #e8e0a0; } .res.food { --c: #ff7a5a; } .res.cooked { --c: #c8603a; } .res.arrows { --c: #c8d8b0; }
+  .chip > i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--c); margin-right: 6px; vertical-align: 0; box-shadow: 0 0 6px var(--c); }
+  .chip.bump { animation: bump .45s ease-out; } @keyframes bump { 0% { transform: scale(1.18); border-color: var(--c); } 100% { transform: scale(1); } }
+  .chip.empty { color: #ff8a6a; border-color: #a0402a; }
+  #prompt { bottom: 58px; left: 50%; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--edge); border-radius: 4px; padding: 5px 12px; font-size: 13px; color: var(--ink); text-align: center; min-width: 160px; }
+  #prompt > i { display: none; height: 5px; margin-top: 5px; background: var(--hp-back); border-radius: 3px; overflow: hidden; } #prompt.busy > i { display: block; }
+  #prompt b { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #c88a40, #f0c070); }
+  #craft { position: fixed; right: 24px; top: 50%; transform: translateY(-50%); width: min(500px, calc(100vw - 48px)); max-height: calc(100vh - 140px); overflow-y: auto; z-index: 3;
+    background: rgba(24, 18, 12, 0.9); border: 1px solid var(--edge); border-radius: 8px; padding: 12px 14px; font-size: 14px; box-shadow: 0 8px 30px rgba(0,0,0,.5); }
+  #craft .ch { font-weight: 700; letter-spacing: .14em; color: var(--accent); display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  #craft .ch small { font-weight: 400; letter-spacing: 0; color: var(--dim); font-size: 11px; }
+  #craft-res { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 10px; } .rc { --c: #ccc; } .rc.wood { --c: #d8a060; } .rc.metal { --c: #ffb040; } .rc.fiber { --c: #e8e0a0; } .rc.food { --c: #ff7a5a; } .rc.arrows { --c: #c8d8b0; } .rc.cooked { --c: #c8603a; }
+  .rc { background: rgba(255,255,255,.05); border-radius: 4px; padding: 3px 8px; color: var(--dim); } .rc b { color: var(--ink); } .rc i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--c); margin-right: 5px; }
+  .cr { display: grid; grid-template-columns: 22px 1fr auto 74px; gap: 8px; align-items: center; padding: 5px 8px; border-radius: 5px; border: 1px solid transparent; cursor: pointer; }
+  .cr kbd { color: var(--dim); font-size: 11px; } .cr .nm small { color: var(--dim); font-size: 10px; border: 1px solid var(--edge); border-radius: 3px; padding: 0 3px; margin-left: 4px; }
+  .cr .cost { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; } .cr .cost i { font-style: normal; font-size: 11px; padding: 1px 5px; border-radius: 3px; }
+  .cr .cost i.have { background: rgba(110,180,90,.18); color: #b8e0a0; } .cr .cost i.miss { background: rgba(200,80,60,.18); color: #ff9a80; }
+  .cr em { font-style: normal; text-align: center; font-size: 11px; padding: 2px 0; border-radius: 3px; }
+  .cr.ok em { background: var(--accent); color: #1a120a; font-weight: 700; } .cr.no em { color: #ff9a80; } .cr.soon { opacity: .45; } .cr.soon em { color: var(--dim); }
+  .cr.sel { border-color: var(--accent); background: rgba(224,160,64,.1); } .cr:hover { background: rgba(255,255,255,.04); }
+  .cr.have em { color: #9ae0a0; } .cr.have { opacity: .7; }
+  #build { bottom: 56px; left: 50%; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--accent); border-radius: 6px; padding: 7px 14px; font-size: 13px; text-align: center; min-width: 260px; line-height: 1.5; }
+  #build b { color: var(--accent); letter-spacing: .1em; } #build span { color: var(--ink); margin-left: 6px; } #build small { color: var(--dim); font-size: 12px; }
+  #eat { left: 50%; top: 50%; width: 64px; height: 64px; margin: -32px 0 0 -32px; border-radius: 50%; background: conic-gradient(#8aff9a calc(var(--p, 0) * 1%), rgba(20,16,12,.45) 0); -webkit-mask: radial-gradient(circle, transparent 25px, #000 26px); mask: radial-gradient(circle, transparent 25px, #000 26px); }
+  #eat.cook { background: conic-gradient(#ffb07a calc(var(--p, 0) * 1%), rgba(20,16,12,.45) 0); }
+  #build em { display: block; font-style: normal; color: #ff9a80; font-size: 12px; }
+  #craft-tip { margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(107,86,56,.6); color: var(--dim); font-size: 12px; line-height: 1.5; min-height: 36px; } #craft-tip b { color: var(--ink); }
+  #veil { position: fixed; inset: 0; pointer-events: none; background: #05040a; opacity: 0; display: flex; align-items: center; justify-content: center; z-index: 4; }
+  #veil div { color: var(--ink); font-size: 18px; letter-spacing: .04em; text-align: center; padding: 0 20px; }
+  #veil.show { animation: veil 3.2s ease-in-out; } @keyframes veil { 0% { opacity: 0; } 25%, 65% { opacity: .92; } 100% { opacity: 0; } }
+  /* slice 13: asleep in a bed for the night: the world dims behind a line of what is happening */
+  #sleep { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, rgba(5,4,14,.7), rgba(3,2,8,.93)); opacity: 0; transition: opacity 1.2s ease; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 22vh; z-index: 3; }
+  #sleep.on { opacity: 1; } #sleep div { color: var(--ink); font-size: 18px; letter-spacing: .04em; text-align: center; padding: 0 20px; }
+  @media (prefers-reduced-motion: reduce) { #sleep { transition: none; } }
+  @media (prefers-reduced-motion: reduce) { .chip.bump { animation: none; } #veil.show { animation-duration: 2s; } }
+  .hidden { display: none !important; }
+  body.freecam .hud, body.freecam #cross, body.freecam #log, body.freecam #craft, body.freecam #fx { display: none !important; }
+</style>
+</head>
+<body>
+<div id="breath" class="hud hidden"><div></div></div>
+<div id="hud-tl" class="hud hidden"><div id="name">—</div><div id="hpbar"><div id="hpfill"></div></div><div id="team" class="hidden" style="margin-top:6px;color:var(--dim)"></div></div>
+<div id="hud-tr" class="hud hidden"><div id="biome" class="chip">—</div><div id="cam" class="chip" style="margin-top:6px">—</div><div id="fps" style="margin-top:6px;color:var(--dim)">—</div></div>
+<div id="hud-b" class="hud hidden"><span class="chip res wood" id="inv-wood"><i></i><span>Wood 0</span></span><span class="chip res metal" id="inv-metal"><i></i><span>Metal 0</span></span><span class="chip res fiber" id="inv-fiber"><i></i><span>Fiber 0</span></span><span class="chip res food" id="inv-food"><i></i><span>Food 0</span></span><span class="chip res cooked" id="inv-cooked"><i></i><span>Cooked 0</span></span><span class="chip res arrows hidden" id="inv-arrows"><i></i><span>Arrows 0</span></span><span class="chip" id="inv-kills"><span>Kills 0</span></span><span class="chip" id="sec">—</span></div>
+<div id="prompt" class="hud hidden"><span></span><i><b></b></i></div>
+<div id="build" class="hud hidden"></div>
+<div id="eat" class="hud hidden"><i></i></div>
+<div id="craft" class="hidden"><div class="ch">CRAFT<small>↑↓ pick · Enter craft · Tab close · pad: d-pad, A, B</small></div><div id="craft-res"></div><div id="craft-list"></div><div id="craft-tip"></div></div>
+<div id="veil"><div></div></div>
+<div id="sleep"><div></div></div>
+<div id="cross" class="hidden"></div>
+<div id="log"></div>
+<div id="hurt"></div>
+
+<div id="menu" class="overlay">
+  <h1>IRON WASTELAND 2</h1>
+  <div class="sub">A kilometre of wasteland, three cameras. Pick who walks out first.</div>
+  <div id="cards"></div>
+  <button class="go" id="go" disabled>WALK OUT</button>
+  <div id="loading" class="sub" style="margin:10px 0 0">Shaping the world…</div>
+  <div id="netinfo" class="sub hidden" style="margin:6px 0 0"></div>
+  <div id="menu-settings"><div id="settings">
+    <div class="srow"><span>Quality</span><span id="quality"></span><small id="qnote">Low for older laptops; a change reloads.</small></div>
+    <div class="srow"><span>Look sensitivity</span><input type="range" id="sens" min="0.3" max="3" step="0.1"><output id="sensv"></output>
+      <label><input type="checkbox" id="invy"> Invert up/down</label><label><input type="checkbox" id="snd"> Sound</label></div>
+  </div></div>
+  <div class="keys">
+    <kbd>WASD</kbd> move · <kbd>Mouse</kbd> look (click to lock, or right-drag) · <kbd>←→↑↓</kbd> look · <kbd>Click</kbd> attack · <kbd>F</kbd>/right click special · <kbd>Z</kbd> pistol-whip (Gunslinger) · <kbd>Space</kbd> jump ·
+    <kbd>E</kbd> search, salvage, sleep in a bed · hold <kbd>E</kbd> by a tree or bush: chop it, or revive a downed friend · <kbd>Tab</kbd> craft · <kbd>V</kbd> camera: first person / angled / top-down · <kbd>Q</kbd><kbd>E</kbd> turn the top-down view ·
+    <kbd>P</kbd>/<kbd>Esc</kbd> pause and settings · <kbd>M</kbd> sound<br>
+    Controller: left stick move · right stick look · <kbd>RT</kbd>/<kbd>X</kbd> attack · <kbd>LB</kbd>/<kbd>LT</kbd> special · right stick click pistol-whip · <kbd>A</kbd> jump · <kbd>B</kbd> search (hold: chop, revive) · <kbd>View</kbd> craft · <kbd>Y</kbd> camera
+  </div>
+</div>
+<div id="pause" class="overlay hidden"><h1>PAUSED</h1><div class="sub">P or Esc to resume</div><div id="pause-settings"></div>
+  <div style="display:flex;gap:12px"><button class="go" id="resume">RESUME</button><button class="go alt" id="tomenu">CHARACTER SELECT</button></div></div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+  "@dgreenheck/ez-tree": "https://cdn.jsdelivr.net/npm/@dgreenheck/ez-tree@1.1.0/build/ez-tree.es.js"
+} }
+</script>
+<script type="module" src="src/main.js"></script>
+<script>// slice 13a: installs like an app and plays offline (sw.js); browsers allow it only on localhost or https
+if (navigator.serviceWorker) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>
