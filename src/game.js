@@ -165,14 +165,19 @@ export function startGame(i) {
   raiderCamps.forEach((c, i) => c.raiders.forEach((type, k) => { const a = c.a0 + 0.4 + k * 1.9; spawnEnemy(c.x + Math.cos(a) * 3, c.z + Math.sin(a) * 3, type, 9000 + i, k, c.raiders.length); enemies.at(-1).home = c; })); }
   document.getElementById('menu').classList.add('hidden'); for (const id of ['hud-tl', 'hud-tr', 'hud-b']) document.getElementById(id).classList.remove('hidden'); running = true; log(`${ch.player} walks out as ${ch.title}. (F9 saves a play log.)`); setCam(camMode); logEvent('start', { ch: ch.id, cam: camMode }); watchStart(); startVideo(renderer.domElement);
 }
+// The mouse arrow is hidden over the game while playing (a crosshair stands in: at the screen's centre, or following the
+// mouse in the top camera); the craft menu, pause and menus keep it. Opening the craft menu lets go of the mouse lock, so
+// closing it takes the lock back (a held-down Tab/C is a user gesture; Esc is not, and a refusal here is not "blocked").
+function syncCursor() { document.body.classList.toggle('playing', running && !paused); }
+function relock() { if (!running || paused || camMode === 'top' || craftOpen() || document.pointerLockElement || lockFailed) return; try { renderer.domElement.requestPointerLock?.()?.catch?.(() => {}); } catch { /* the next click asks again */ } }
 export function setCam(m) { camMode = m; snapCam = true; if (running) logEvent('cam', { cam: m }); document.getElementById('cam').textContent = 'Camera: ' + CAM_LABEL[m] + '  (V)';
-  document.getElementById('cross').classList.toggle('hidden', m === 'top'); viewModel.visible = m === 'first';
+  document.getElementById('cross').classList.toggle('hidden', !running); if (m !== 'top') { const c = document.getElementById('cross'); c.style.left = c.style.top = ''; } syncCursor(); viewModel.visible = m === 'first';
   if (player.mesh) { player.mesh.visible = m !== 'first'; player.mesh.userData.ring.visible = m === 'top'; } if (m === 'top' && document.pointerLockElement) document.exitPointerLock(); }
 
 // ── Input: keyboard and mouse, plus the Gamepad API (Xbox and PlayStation pads on a Mac) ──
 function bindInput() {
 addEventListener('pointerdown', unlockAudio);
-addEventListener('keydown', e => { if (e.code === 'Tab') { e.preventDefault(); if (e.repeat) return; } if (running && !paused && (craftKey(e) || buildKey(e))) return; // the craft menu's keys (slice 11), build mode's (slice 12)
+addEventListener('keydown', e => { if (e.code === 'Tab') { e.preventDefault(); if (e.repeat) return; } if (running && !paused && (craftKey(e) || buildKey(e))) { relock(); return; } // the craft menu's keys (slice 11), build mode's (slice 12)
   if (!paused || e.code === 'KeyP' || e.code === 'Escape') keys.add(e.code); unlockAudio(); if (!running) { const n = Number(e.key); if (n >= 1 && n <= 5) selectCard(n - 1); if (e.code === 'Enter') startGame(sel); return; }
   if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
   if (e.code === 'F9') { logEvent('mark', { x: +player.x.toFixed(1), z: +player.z.toFixed(1), y: +player.y.toFixed(1), biome: biomeAt(player.x, player.z) });
@@ -195,7 +200,7 @@ renderer.domElement.addEventListener('mousedown', e => { if (!running || craftOp
   if (e.button === 2) { if (document.pointerLockElement || camMode === 'top') secondary(); return; } if (camMode !== 'top' && !document.pointerLockElement && !lockFailed) { try { const r = renderer.domElement.requestPointerLock?.(); r?.catch?.(() => lockFailed = true); } catch { lockFailed = true; } return; } if (e.button === 0) mouseDown = true; });
 addEventListener('mouseup', () => mouseDown = false);
 addEventListener('wheel', e => { if (running && building()) rotateBuild(e.deltaY > 0 ? 1 : -1); }, { passive: true });
-addEventListener('mousemove', e => { mouseNDC.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+addEventListener('mousemove', e => { mouseNDC.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); if (camMode === 'top') { const c = document.getElementById('cross'); c.style.left = e.clientX + 'px'; c.style.top = e.clientY + 'px'; }
   if (camMode !== 'top' && (document.pointerLockElement || (e.buttons & 2))) { const k = 0.0024 * settings.sens; player.yaw -= e.movementX * k; player.pitch = Math.max(-1.35, Math.min(1.2, player.pitch - e.movementY * k * (settings.invertY ? -1 : 1))); } });
 }
 const keys = new Set(); let mouseDown = false, mouseNDC = new THREE.Vector2();
@@ -204,7 +209,7 @@ export function readPad() { const p = [...(navigator.getGamepads?.() || [])].fin
   const dz = v => Math.abs(v) < 0.15 ? 0 : v, b = i => p.buttons[i]?.pressed, edge = i => b(i) && !padPrev[i];
   const out = { mx: dz(p.axes[0]), mz: dz(p.axes[1]), lx: dz(p.axes[2]), ly: dz(p.axes[3]), atk: b(7) || b(2), jump: edge(0), jumpHeld: b(0), dive: b(10), use: edge(1), useHeld: b(1), sec: edge(4) || edge(6), cam: edge(3), pause: edge(9), left: edge(14), right: edge(15), menu: edge(8), up: edge(12), down: edge(13), downHeld: b(13), rb: edge(5), tearHeld: b(5), close: edge(11) };
   padPrev = p.buttons.map(x => x.pressed); return out; }
-export function togglePause(on = !paused) { if (!running) return; paused = on; if (on) { keys.clear(); mouseDown = false; } logEvent(on ? 'pause' : 'resume'); document.getElementById('pause').classList.toggle('hidden', !paused);
+export function togglePause(on = !paused) { if (!running) return; paused = on; if (on) { keys.clear(); mouseDown = false; } logEvent(on ? 'pause' : 'resume'); document.getElementById('pause').classList.toggle('hidden', !paused); syncCursor();
   document.getElementById(paused ? 'pause-settings' : 'menu-settings').appendChild(document.getElementById('settings'));
   if (paused && document.pointerLockElement) document.exitPointerLock?.(); }
 // Settings (menu and pause screen share one panel): mouse/stick look sensitivity, invert up/down, sound. Quality is in main.js.
@@ -434,7 +439,7 @@ function fallHurt(h, gy) { const d = Math.round((h - FALL_SAFE) * FALL_HP); if (
   if (WATER_Y - groundY(player.x, player.z) > 0.4 && gy < WATER_Y) { logEvent('fall', { h: +h.toFixed(1), dmg: 0, water: true }); return; }
   logEvent('fall', { h: +h.toFixed(1), dmg: d }); floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `-${d}`, '#ff8a6a', d >= 20); hurtPlayer(d, 'fall'); }
 // no bed, no respawn (the owner's ruling, 2026-11-03; IW1 respawns you only at a bed you built): death ends the game
-export function gameOver(why = null) { toggleCraft(false); running = false; paused = false; net.host = null; clearOthers(); nameTags([]); const t = Math.round((performance.now() - player.startT) / 1000), by = LABEL[player.killedBy] || 'the wasteland';
+export function gameOver(why = null) { toggleCraft(false); running = false; paused = false; syncCursor(); net.host = null; clearOthers(); nameTags([]); const t = Math.round((performance.now() - player.startT) / 1000), by = LABEL[player.killedBy] || 'the wasteland';
   logEvent('game-over', { by: player.killedBy, secs: t, kills: player.kills, ...player.inv });
   if (document.pointerLockElement) document.exitPointerLock(); for (const id of ['hud-tl', 'hud-tr', 'hud-b', 'cross', 'pause', 'breath', 'prompt']) document.getElementById(id).classList.add('hidden');
   document.querySelector('#menu .sub').textContent = why || `${player.ch.player} fell to ${/^[AEIOU]/.test(by) ? 'an' : 'a'} ${by.toLowerCase()} after ${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}, with ${player.kills} kills. No bed to wake in: next time build a craftbench, then a bed, and sleep in it (Tab crafts, E sleeps). Pick who walks out next.`;

@@ -3,7 +3,7 @@
 // who wins a hit. Each game moves its own player and works out its own attacks, then tells the host what it hit.
 // Each game sends its player 15 times a second; the host sends every enemy 12 times a second.
 import * as THREE from 'three';
-import { CHARS, ENEMY } from './config.js';
+import { CHARS, ENEMY, SEED_TEXT, params } from './config.js';
 import { groundY } from './world.js';
 import { caches } from './buildings.js';
 import { placed } from './props.js';
@@ -61,9 +61,18 @@ function onMsg(m, from) {
       if (!running()) { post(from, { t: 'wait' }); break; }
       post(from, { t: 'welcome', crates: caches.flatMap((c, i) => c.broken ? [[i, 2]] : c.opened ? [[i, 1]] : []), salv: salvaged, pickups: pickups.map(k => [k.id, k.kind, +k.mesh.position.x.toFixed(2), +k.mesh.position.z.toFixed(2)]),
         tur: turrets.map(q => [+q.x.toFixed(2), +q.z.toFixed(2), +q.head.rotation.y.toFixed(2), +q.life.toFixed(1)]), // turrets already out, so a late joiner sees them
-        fell: felled, built: builtMsg(), d: [day.t, day.n, day.speed] }); break; // (slice 13: the time of day) // slice 11: trees felled, bushes picked, and what players built
+        fell: felled, built: builtMsg(), d: [day.t, day.n, day.speed], seed: SEED_TEXT }); break; // (slice 13: the time of day) // slice 11: trees felled, bushes picked, and what players built
     case 'wait': if (!waitLogged) { waitLogged = true; logEvent('join-wait'); } document.getElementById('loading').textContent = 'The host is still on the start menu: walk out there first.'; break;
-    case 'welcome': if (!joinT || running()) break; joinT = 0; net.host = from; logEvent('join-welcome', { ms: Math.round(performance.now() - joinAt), hellos });
+    case 'welcome': if (!joinT || running()) break;
+      // another world than this page built (the host rolled a new one after this page loaded): build the host's, then join
+      // as asked (slice 13c; a joining page normally gets the host's seed before it builds anything, config.js)
+      // (once: a page already rebuilt this way that still differs says so instead of reloading again)
+      if (m.seed && m.seed !== SEED_TEXT) { joinT = 0; logEvent('join-reseed', { mine: SEED_TEXT, host: m.seed, again: params.has('reseed') });
+        if (params.has('reseed')) { document.getElementById('loading').textContent = 'The host computer has two games open on different worlds: close one, then reload this page.'; break; }
+        document.getElementById('loading').textContent = 'Building the host\'s world…';
+        try { sessionStorage.setItem('iw2.rejoin', String(wantCh)); } catch { /* the player presses JOIN again */ }
+        params.set('seed', m.seed); params.set('reseed', '1'); location.search = params.toString(); break; }
+      joinT = 0; net.host = from; logEvent('join-welcome', { ms: Math.round(performance.now() - joinAt), hellos });
       for (const [i, s] of m.crates) { const c = caches[i]; if (!c) continue; s === 2 ? c.smash() : c.open(); }
       for (const [k, i] of m.salv) applySalvage(k, i);
       applyFelled(m.fell || []); for (const b of m.built || []) addBuilt(...b); if (m.d) setDay(...m.d);

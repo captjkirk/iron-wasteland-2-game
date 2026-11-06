@@ -35,6 +35,8 @@
   #cross::before, #cross::after { content: ""; position: absolute; background: rgba(255,240,210,.85); }
   #cross::before { left: 6px; top: 0; width: 2px; height: 14px; }
   #cross::after { top: 6px; left: 0; height: 2px; width: 14px; }
+  body.playing canvas { cursor: none; } /* the crosshair is the pointer while playing; the craft menu gets the arrow back */
+  body.playing:has(#craft:not(.hidden)) canvas { cursor: default; } body:has(#craft:not(.hidden)) #cross { display: none; }
   #cross.hit { transform: rotate(45deg) scale(1.35); }
   #cross.hit::before, #cross.hit::after { background: #ffb060; }
   /* the log sits above the bottom bar's row and stops short of it (slice 10's critic: a long line ran under the Scrap chip) */
@@ -70,6 +72,12 @@
   .qrow { margin-top: 14px; display: flex; gap: 8px; align-items: center; color: var(--dim); font-size: 12px; }
   button.q { font: inherit; font-size: 12px; padding: 4px 12px; background: var(--panel); color: var(--ink); border: 1px solid var(--edge); border-radius: 4px; cursor: pointer; }
   button.q.on { border-color: var(--accent); color: var(--accent); }
+  /* the world's seed (slice 13c): its name, a new roll, or a typed one */
+  #world { margin-top: 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: center; color: var(--dim); font-size: 13px; max-width: 760px; }
+  #world > span:first-child { color: var(--ink); } #world b, #pauseworld b { color: var(--accent); font-size: 18px; letter-spacing: .04em; font-weight: 600; }
+  #seedtools { display: flex; gap: 8px; align-items: center; } #world small { flex-basis: 100%; text-align: center; }
+  #seedin { font: inherit; font-size: 12px; width: 200px; padding: 4px 8px; background: var(--panel); color: var(--ink); border: 1px solid var(--edge); border-radius: 4px; }
+  #seedin:focus { outline: none; border-color: var(--accent); } button.q:disabled { opacity: .4; cursor: default; }
   /* slice 11: resource chips (a dot of each resource's colour; a chip bumps when it goes up), the E prompt, the craft menu */
   .res { --c: #ccc; } .res.wood { --c: #d8a060; } .res.metal { --c: #ffb040; } .res.fiber { --c: #e8e0a0; } .res.food { --c: #ff7a5a; } .res.cooked { --c: #c8603a; } .res.arrows { --c: #c8d8b0; }
   .chip > i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--c); margin-right: 6px; vertical-align: 0; box-shadow: 0 0 6px var(--c); }
@@ -132,6 +140,8 @@
   <button class="go" id="go" disabled>WALK OUT</button>
   <div id="loading" class="sub" style="margin:10px 0 0">Shaping the world…</div>
   <div id="netinfo" class="sub hidden" style="margin:6px 0 0"></div>
+  <div id="world"><span>World</span><b id="seedname">—</b><span id="seedtools"><button class="q" id="newworld" title="Roll a new world (the page reloads)">New world</button>
+    <input id="seedin" maxlength="40" spellcheck="false" autocomplete="off" placeholder="or type a world's name"><button class="q" id="playseed" disabled>Play it</button></span><small id="seednote">Each new game is a new world. Tell someone its name to share it.</small></div>
   <div id="menu-settings"><div id="settings">
     <div class="srow"><span>Quality</span><span id="quality"></span><small id="qnote">Low for older laptops; a change reloads.</small></div>
     <div class="srow"><span>Look sensitivity</span><input type="range" id="sens" min="0.3" max="3" step="0.1"><output id="sensv"></output>
@@ -144,7 +154,7 @@
     Controller: left stick move · right stick look · <kbd>RT</kbd>/<kbd>X</kbd> attack · <kbd>LB</kbd>/<kbd>LT</kbd> special · right stick click pistol-whip · <kbd>A</kbd> jump · <kbd>B</kbd> search (hold: chop, revive) · <kbd>View</kbd> craft · <kbd>Y</kbd> camera
   </div>
 </div>
-<div id="pause" class="overlay hidden"><h1>PAUSED</h1><div class="sub">P or Esc to resume</div><div id="pause-settings"></div>
+<div id="pause" class="overlay hidden"><h1>PAUSED</h1><div class="sub">P or Esc to resume</div><div id="pauseworld" class="sub"></div><div id="pause-settings"></div>
   <div style="display:flex;gap:12px"><button class="go" id="resume">RESUME</button><button class="go alt" id="tomenu">CHARACTER SELECT</button></div></div>
 
 <script type="importmap">

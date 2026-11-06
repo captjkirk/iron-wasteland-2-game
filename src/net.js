@@ -2,17 +2,17 @@
 // only relays: messages come down one Server-Sent Events stream and go up as small JSON batches, one post at a time so
 // they arrive in order. The page the host's own browser loads (localhost) hosts; a page loaded from another machine's
 // address (or with ?join, for the checks) joins. Under a plain file server there is no /net/info, so nothing here runs.
-import { params } from './config.js';
+import { params, netInfo, SEED_TEXT } from './config.js';
 import { logEvent } from './playlog.js';
 
 export const net = { role: null, id: Math.random().toString(36).slice(2, 10), host: null, info: null, stream: 'none', fails: 0 };
 // what the play log says about the link (the gate of slice 12: a joined game that never got in left no trace of why)
 let netLogs = 0; const netLog = (type, data) => { if (netLogs++ < 40) logEvent(type, data); };
 const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname), out = new Map(); let busy = false, handler = () => {};
-// headless checks probe only when asked (?net or ?join): a plain file server's 404 would count as a page error
-const probe = navigator.webdriver && !params.has('net') && !params.has('join') ? Promise.resolve(null) : fetch('/net/info').then(r => r.ok ? r.json() : null, () => null);
-export const netReady = probe.then(info => { if (!info) return; net.info = info; net.role = local && !params.has('join') ? 'host' : 'join';
-  const es = new EventSource(`/net/listen?id=${net.id}&role=${net.role}`);
+// (config.js asks /net/info, before the world is built: a joining game needs the host's seed first, slice 13c)
+// the host's stream carries its world's seed, which the server hands every game that joins (slice 13c)
+export const netReady = netInfo.then(info => { if (!info) return; net.info = info; net.role = local && !params.has('join') ? 'host' : 'join';
+  const es = new EventSource(`/net/listen?id=${net.id}&role=${net.role}${net.role === 'host' ? '&seed=' + encodeURIComponent(SEED_TEXT) : ''}`);
   es.onopen = () => { net.stream = 'open'; netLog('net-open', { ms: Math.round(performance.now()) }); };
   es.onerror = () => { net.stream = ['connecting', 'open', 'closed'][es.readyState] === 'open' ? 'error' : ['connecting', 'open', 'closed'][es.readyState]; netLog('net-error', { state: net.stream }); };
   es.onmessage = (e) => { const b = JSON.parse(e.data); for (const m of b.m) handler(m, b.from); }; });

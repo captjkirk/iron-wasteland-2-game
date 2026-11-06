@@ -1,7 +1,33 @@
 // Game data and settings. Units are metres. IW1 speeds are pixels a second; PX converts them (IW1 knight 128 px/s -> 5 m/s).
 export const PX = 0.039;
 export const params = new URLSearchParams(location.search);
-export const SEED = Number(params.get('seed') || 20261103);
+// The world's seed (slice 13c). Every new game rolls a world of its own, named by two words and a number
+// ("ashen-otter-17", easy to read out across a room); the start menu shows it and takes a typed one, so a world can be
+// played again or shared. A name made of digits is the number itself (20261103 is the classic world of slices 7 to 13,
+// which the headless checks keep so their shots and walks stay comparable); any other text is hashed to a number.
+// A joined co-op game builds the host's world: before anything is built it asks the host's server for the host's seed.
+export const DEFAULT_SEED = 20261103;
+export function cleanSeed(t) { return String(t ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40); }
+export function seedNumber(t) { if (/^\d{1,10}$/.test(t)) return Number(t) >>> 0; // FNV-1a, so a typed word always names the same world
+  let h = 0x811c9dc5; for (let i = 0; i < t.length; i++) h = Math.imul(h ^ t.charCodeAt(i), 0x01000193); return h >>> 0; }
+const W1 = 'ashen amber bitter black bleak broken copper crimson dusky ember fallen feral frozen gilded glass grey hollow iron jade lonely lost mossy pale quiet red rusty salt silent silver smoky stone storm tawny thorn wild windy'.split(' ');
+const W2 = 'anvil badger barrow beacon briar cairn crow ember fang fen ford forge fox gate hare hearth heron hollow kestrel lantern marsh mesa moth otter owl pike raven reach ridge spire stag thistle tor vale wolf wren'.split(' ');
+const pick = (l) => l[Math.floor(Math.random() * l.length)];
+export const randomSeed = () => `${pick(W1)}-${pick(W2)}-${1 + Math.floor(Math.random() * 99)}`;
+const isLocal = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+// net.js reads the same answer: headless checks probe only when asked (?net or ?join), as a plain file server's 404 is a page error
+export const netInfo = globalThis.navigator?.webdriver && !params.has('net') && !params.has('join') || !globalThis.fetch ? Promise.resolve(null)
+  : fetch('/net/info', { signal: AbortSignal.timeout?.(5000) }).then(r => r.ok ? r.json() : null).then(j => j && typeof j === 'object' ? j : null).catch(() => null);
+// a joiner only where a game server answers (another computer's page, or ?join): a copy on a plain web host has none
+const info = !isLocal || params.has('join') ? await netInfo : null;
+export const JOINER = !!info;
+// after a reload to build the host's world (coop.js: the welcome named another seed than the server did) the address wins,
+// so two host pages naming different seeds cannot reload a joiner round and round
+const hostSeed = JOINER && !params.has('reseed') ? cleanSeed(info.seed) : '';
+export const SEED_TEXT = hostSeed || cleanSeed(params.get('seed')) || (globalThis.navigator?.webdriver ? String(DEFAULT_SEED) : randomSeed());
+export const SEED = seedNumber(SEED_TEXT), CLASSIC = SEED === DEFAULT_SEED;
+// the seed rides in the address, so a reload (a quality change, back to character select) keeps this world
+if (params.get('seed') !== SEED_TEXT && globalThis.history?.replaceState) { params.set('seed', SEED_TEXT); history.replaceState(null, '', '?' + params.toString() + location.hash); }
 
 // World: about 1 km square, a height sample every 2 m.
 export const WORLD = 1024, HALF = WORLD / 2, CELL = 2, SEG = WORLD / CELL, N = SEG + 1;

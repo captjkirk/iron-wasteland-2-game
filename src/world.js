@@ -1,13 +1,19 @@
 // The world's shape: biome layout, the heightfield (mountain ranges, valleys, a river and lakes), and the
 // per-vertex texture-layer weights the terrain shader blends. Everything reads the same 2 m grid.
-import { HALF, WORLD, CELL, SEG, N, WATER_Y, BIOME, BIOME_NAMES, NB, SEED } from './config.js';
+import { HALF, WORLD, CELL, SEG, N, WATER_Y, BIOME, BIOME_NAMES, NB, SEED, CLASSIC, CAMP } from './config.js';
 import { rng, fbm, vnoise, ridged, smooth, clamp01, mulberry32 } from './noise.js';
 
 // ── Biome map: warped nearest-seed, like IW1 getBiome, with soft weights for blending ──
 // The first seed is the start: a Greenbelt valley at the centre (IW1: the start is grass). Every other seed sits
 // beyond the valley's ring of mountains, so each pass out of the valley leads into a different land.
 export const seeds = [{ x: 0, z: 0, b: 'grass' }];
-{ const order = []; for (let i = 0; i < 30; i++) order.push(BIOME_NAMES[i % NB]);
+// (slice 13c) a random world leans toward two of its lands: after three regions of each (fewer left some land under
+// 3 ha), those two get four times the share of the rest, so one world is mostly frozen and boggy, the next dry and ruined. The classic world shares them evenly, as it always did.
+const L = mulberry32(SEED ^ 0x1ea7), LEAN = CLASSIC ? [] : BIOME_NAMES.map(b => [L(), b]).sort((a, q) => a[0] - q[0]).map(q => q[1]).slice(0, 2);
+export { LEAN };
+{ const order = []; if (CLASSIC) for (let i = 0; i < 30; i++) order.push(BIOME_NAMES[i % NB]);
+  else { order.push(...BIOME_NAMES, ...BIOME_NAMES, ...BIOME_NAMES); const w = BIOME_NAMES.map(b => LEAN.includes(b) ? 4 : 1), tot = w.reduce((a, q) => a + q, 0);
+    for (let i = 0; i < 9; i++) { let r = L() * tot, k = 0; while ((r -= w[k]) > 0) k++; order.push(BIOME_NAMES[k]); } }
   for (const b of order) { let x, z, ok = false, tries = 0;
     while (!ok && tries++ < 120) { x = (rng() - 0.5) * WORLD * 0.86; z = (rng() - 0.5) * WORLD * 0.86; ok = Math.hypot(x, z) > 235 && seeds.every(s => Math.hypot(s.x - x, s.z - z) > 145); }
     if (ok) seeds.push({ x, z, b }); } }
@@ -24,21 +30,33 @@ export function biomeWeights(x, z) {
   return { best, w };
 }
 
-// ── The river: a meandering channel from the north range down to a lake in the south ──
+// ── The world's shape choices (slice 13c): which way the river runs, which side of the camp it passes, how high the
+// valley's ring stands, and the ponds and tarns beyond it. Its own stream, so the biome layout stays as it was. The
+// classic world (the default seed: the checks' world) keeps slice 7's shape exactly: a river from north to south, east
+// of the camp, and no ponds.
+const V = mulberry32(SEED ^ 0x51ed27);
+export const SHAPE = CLASSIC ? { riverA: 0, side: 1, ring: 1, ponds: 0 }
+  : { riverA: V() * Math.PI * 2, side: V() < 0.5 ? 1 : -1, ring: 0.8 + V() * 0.45, ponds: 1 + Math.floor(V() * 3) };
+// ── The river: a meandering channel from the range at the world's edge, through the valley, down to a lake ──
+// (laid out along its own axis, then turned to its heading: along is local z, across is local x)
 const riverRaw = (z) => 110 * Math.sin(z * 0.0065 + 1.3) + 45 * Math.sin(z * 0.017 + 4.1) + (fbm(z * 0.01, 3.3, 3) - 0.5) * 90;
-const RIVER_SHIFT = 68 - riverRaw(0); // it runs through the valley about 70 m east of the camp, in gorges through the ring
+const RIVER_SHIFT = 68 - riverRaw(0); // it runs through the valley about 70 m beside the camp, in gorges through the ring
+const rc = Math.cos(SHAPE.riverA), rs = Math.sin(SHAPE.riverA), turn = (lx, lz) => CLASSIC ? { x: lx, z: lz } : { x: lx * rc - lz * rs, z: lx * rs + lz * rc };
 export const river = [];
-for (let z = -HALF - 10; z <= 300; z += 12) river.push({ x: riverRaw(z) + RIVER_SHIFT, z });
-const lakes = [{ x: river[river.length - 1].x + 10, z: 340, rx: 95, rz: 62 }];
-{ const g = seeds.filter(s => s.b === 'grass' && Math.hypot(s.x, s.z) > 170 && Math.abs(s.x - riverRaw(s.z) - RIVER_SHIFT) > 120);
-  if (g.length) lakes.push({ x: g[0].x, z: g[0].z, rx: 58, rz: 44 }); }
-export { lakes };
+let mouth = 0; // the river's last point along its axis: the lake lies just past it
+for (let z = CLASSIC ? -HALF - 10 : -760; z <= 300; z += 12) { const p = turn(SHAPE.side * (riverRaw(z) + RIVER_SHIFT), z); mouth = z;
+  if (CLASSIC || (Math.abs(p.x) < HALF + 30 && Math.abs(p.z) < HALF + 30)) river.push(p); }
+const lakes = [{ ...turn(SHAPE.side * (riverRaw(mouth) + RIVER_SHIFT) + 10, 340), rx: 95, rz: 62, a: CLASSIC ? 0 : SHAPE.riverA }];
 function riverDist(x, z) { let best = 1e9;
   for (let i = 0; i < river.length - 1; i++) { const a = river[i], b = river[i + 1];
-    if (z < a.z - 60 || z > b.z + 60) continue;
+    if (z < Math.min(a.z, b.z) - 60 || z > Math.max(a.z, b.z) + 60 || (!CLASSIC && (x < Math.min(a.x, b.x) - 60 || x > Math.max(a.x, b.x) + 60))) continue;
     const ex = b.x - a.x, ez = b.z - a.z, t = clamp01(((x - a.x) * ex + (z - a.z) * ez) / (ex * ex + ez * ez));
     const d = Math.hypot(x - a.x - ex * t, z - a.z - ez * t); if (d < best) best = d; }
   return best; }
+// a second lake in a Greenbelt beyond the ring, well away from the river
+{ const g = seeds.filter(s => s.b === 'grass' && Math.hypot(s.x, s.z) > 170 && (CLASSIC ? Math.abs(s.x - riverRaw(s.z) - RIVER_SHIFT) > 120 : riverDist(s.x, s.z) > 120));
+  if (g.length) lakes.push({ x: g[0].x, z: g[0].z, rx: 58, rz: 44, a: 0 }); }
+export { lakes };
 
 // ── The passes: three saddles through the valley's ring, each toward a different land (not where the river cuts) ──
 export const PASSES = [];
@@ -47,12 +65,51 @@ export const PASSES = [];
   for (const s of seeds.slice(1).sort((a, b) => Math.hypot(a.x, a.z) - Math.hypot(b.x, b.z))) {
     const a = Math.atan2(s.z, s.x); if (used.has(s.b) || PASSES.length >= 3) continue;
     if (PASSES.some(p => angGap(p.a, a) < 1.35) || riverAngles.some(r => angGap(r, a) < 0.55)) continue;
-    PASSES.push({ a, b: s.b }); used.add(s.b); } }
+    PASSES.push({ a, b: s.b }); used.add(s.b); }
+  // (a random world leaning toward two lands can have its nearest regions all alike: then a pass may share a land)
+  if (!CLASSIC) for (const s of seeds.slice(1).sort((a, b) => Math.hypot(a.x, a.z) - Math.hypot(b.x, b.z))) { const a = Math.atan2(s.z, s.x); if (PASSES.length >= 3) break;
+    if (PASSES.some(p => angGap(p.a, a) < 1.35) || riverAngles.some(r => angGap(r, a) < 0.55)) continue; PASSES.push({ a, b: s.b }); } }
 function passK(x, z, r, width) { const ang = Math.atan2(z, x); let k = 0;
   for (const p of PASSES) { const da = Math.abs(Math.atan2(Math.sin(ang - p.a), Math.cos(ang - p.a))) * r; k = Math.max(k, smooth(width, width * 0.35, da)); } return k; }
 
+// Level ground for what the generator builds (random worlds). src/plan.js puts the ruined town, the gas station, a
+// landmark in five biomes and three raider camps on the nearest level, dry ground deep in their biome beyond the ring;
+// a random world often had none (its Ruins had a patch level enough for the town in 0 to 3 places of about 500; 4 worlds
+// in 70 had no forecourt for the gas station). So each gets a pad: the nearest spot deep in its biome beyond the ring,
+// off the river, clear of every lake and of the other pads, whose own ground lies low (2 to 28 m, not a mountain's
+// shoulder), settled to that ground's mean level, keeping a little of its own roll. The classic world stands as it was.
+// [biome, the site's radius in plan.js, the pad's level radius, how far out it blends]
+const PAD_SPECS = [['ruins', 30, 50, 78], ['waste', 13, 22, 40], ['tundra', 7, 14, 28], ['desert', 7, 14, 28], ['swamp', 7, 14, 28], ['grass', 7, 14, 28], ['fungal', 7, 14, 28],
+  ['waste', 12, 20, 36], ['ruins', 12, 20, 36], ['desert', 12, 20, 36]];
+const bareH = (x, z, r) => { let t = 0; for (let k = 0; k < 9; k++) { const a = k * Math.PI / 4, q = k ? r : 0, px = x + Math.cos(a) * q, pz = z + Math.sin(a) * q; t += heightAt(px, pz, biomeWeights(px, pz).w, true).h; } return t / 9; };
+export const PADS = [];
+if (!CLASSIC) { const G = 8, best = new Map(); // (each grid point's biome, looked up once)
+  const bio = (x, z) => { const k = x + ',' + z; let v = best.get(k); if (v === undefined) best.set(k, v = biomeWeights(x, z).best); return v; };
+  const look = (b, r, outer, e, river, shore) => { const c = [];
+    for (let z = -HALF + 80; z <= HALF - 80; z += G) for (let x = -HALF + 80; x <= HALF - 80; x += G) { const d = Math.hypot(x, z);
+      if (d < 262 || bio(x, z) !== b || PADS.some(p => Math.hypot(p.x - x, p.z - z) < p.outer + outer + 20)) continue;
+      // (clear of every pass's way out: a pass leads into a biome, so its nearest low ground was often the pass's own mouth,
+      // and a pad levelled there walled it off with its skirt, slice 13c)
+      if (PASSES.some(q => { const along = x * Math.cos(q.a) + z * Math.sin(q.a); return along > 120 && along < 330 && Math.abs(z * Math.cos(q.a) - x * Math.sin(q.a)) < outer + 18; })) continue;
+      if (![[e, 0], [-e, 0], [0, e], [0, -e]].every(([a, q]) => bio(x + a, z + q) === b)) continue;
+      if (riverDist(x, z) < river || lakes.some(l => Math.hypot(l.x - x, l.z - z) - Math.max(l.rx, l.rz) < shore)) continue; c.push({ x, z, d }); }
+    return c.sort((p, q) => p.d - q.d); };
+  for (const [b, r, inner, outer] of PAD_SPECS) { const e = Math.ceil((r + 10) / G) * G; // (a second, looser look if the first finds no ground)
+    let c = look(b, r, outer, e, outer + 22, outer); if (!c.length) c = look(b, r, outer, Math.ceil(r / 2 / G) * G, outer, outer * 0.6);
+    let t = null; for (const q of c.slice(0, 40)) { q.h = bareH(q.x, q.z, r); if (q.h > 2 && q.h < 28) { t = q; break; } }
+    if (!t && c[0]) t = { ...c[0], h: bareH(c[0].x, c[0].z, r) };
+    if (t) PADS.push({ x: t.x, z: t.z, b, inner, outer, h: Math.min(40, Math.max(WATER_Y + 3, t.h)) }); } }
+export const TOWN = PADS.find(p => p.b === 'ruins' && p.inner === 50) || null;
+const padK = (x, z) => { let k = 0; for (const p of PADS) { const d = Math.abs(x - p.x) + Math.abs(z - p.z); if (d < p.outer * 1.5) k = Math.max(k, smooth(p.outer, p.inner, Math.hypot(x - p.x, z - p.z))); } return k; };
+// ponds and tarns (random worlds): out beyond the ring, off the river, apart from every other lake; never in the Bog
+// (it has its own pools) and rarely in the desert, where one is an oasis
+for (let k = 0, tries = 0; k < SHAPE.ponds && tries < 60; tries++) { const a = V() * Math.PI * 2, r = 280 + V() * 170, x = Math.cos(a) * r, z = Math.sin(a) * r;
+  const rx = 26 + V() * 30, rz = rx * (0.55 + V() * 0.4), turnA = V() * Math.PI, b = biomeWeights(x, z).best, oasis = V() < 0.3;
+  if (Math.abs(x) > HALF - 70 || Math.abs(z) > HALF - 70 || b === 'swamp' || (b === 'desert' && !oasis) || riverDist(x, z) < rx + 50) continue;
+  if (lakes.some(l => Math.hypot(l.x - x, l.z - z) < Math.max(l.rx, l.rz) + rx + 60) || PADS.some(p => Math.hypot(p.x - x, p.z - z) < rx + p.outer + 30)) continue;
+  lakes.push({ x, z, rx, rz, a: turnA, pond: b }); k++; }
 // ── Height ──
-function heightAt(x, z, w) {
+function heightAt(x, z, w, bare = false) { // bare: without the town's shelf (to find its level)
   let off = 0, amp = 0, mtn = 0; for (const k in w) { off += BIOME[k].off * w[k]; amp += BIOME[k].amp * w[k]; mtn += BIOME[k].mtn * w[k]; }
   const r = Math.hypot(x, z), valley = smooth(135, 70, r);
   amp *= 1 - 0.6 * valley; // the valley floor is a gentle meadow
@@ -60,13 +117,14 @@ function heightAt(x, z, w) {
   // the valley's ring: a wall of ridged peaks from about 120 to 230 m out, broken by the three passes
   const rr = r + (fbm(x * 0.012 + 8, z * 0.012 - 4, 3) - 0.5) * 55;
   const ring = smooth(112, 152, rr) * smooth(240, 182, rr) * (1 - 0.94 * passK(x, z, r, 28));
-  if (ring > 0) h += ring * (26 + ridged(x * 0.006 + 4, z * 0.006 - 2, 5) * 100) * (0.8 + fbm(x * 0.004, z * 0.004, 2) * 0.4);
+  if (ring > 0) h += ring * (26 + ridged(x * 0.006 + 4, z * 0.006 - 2, 5) * 100) * (0.8 + fbm(x * 0.004, z * 0.004, 2) * 0.4) * SHAPE.ring;
   // mountain ranges: ridged crests where a low-frequency mask allows them, kept clear of the valley and its passes
   const edge = Math.max(Math.abs(x), Math.abs(z)), rim = smooth(HALF - 170, HALF - 35, edge + (fbm(x * 0.01, z * 0.01) - 0.5) * 60);
   const range = smooth(0.5, 0.68, fbm(x * 0.0028 + 3, z * 0.0028 + 7, 3)) * mtn * smooth(200, 270, r) * (1 - passK(x, z, r, 40) * smooth(360, 300, r));
   const m = Math.max(range, rim);
   if (m > 0) { const rd = ridged(x * 0.0055, z * 0.0055, 5); h += m * (rd * 125 + 6) * (0.75 + fbm(x * 0.002, z * 0.002, 2) * 0.5); }
-  const open = (1 - m) * (1 - ring) * smooth(150, 215, r); // ground where the land shapes below may form
+  const open = (1 - m) * (1 - ring) * smooth(150, 215, r) // ground where the land shapes below may form
+    * (CLASSIC ? 1 : 1 - passK(x, z, r, 24) * smooth(300, 265, r)); // (not across a random world's pass until it opens onto the land: a butte or a canyon wall there blocked the way out of 25 worlds in 48, slice 13c)
   if (w.desert) h += (Math.pow(Math.sin(x * 0.04 + Math.sin(z * 0.02) * 2.4) * 0.5 + 0.5, 1.6) * 6 + (fbm(x * 0.03, z * 0.03, 2) - 0.5) * 3) * w.desert * (1 - m);          // dunes
   if (w.waste) { const f = fbm(x * 0.009 + 5, z * 0.009 + 9, 3); h += (smooth(0.58, 0.66, f) * 14 + smooth(0.68, 0.74, f) * 9) * w.waste * open; } // mesas
   // desert and ruins: buttes and plateaus with sheer, two-tier escarpments
@@ -82,16 +140,26 @@ function heightAt(x, z, w) {
       if (h > floor) h -= canyon * (h - floor); } }
   if (w.fungal) h += (Math.pow(fbm(x * 0.035 + 7, z * 0.035, 2), 2.2) * 6 - 0.8) * w.fungal * (1 - m);   // spongy hummocks
   if (w.swamp) h -= (fbm(x * 0.03 + 2, z * 0.03 + 4, 3) - 0.3) * 3.4 * w.swamp;                                        // pools
+  // the building pads: the ground settles toward each one's level, keeping a little of its own roll
+  let tk = 0; if (!bare && PADS.length) for (const p of PADS) { const d = Math.abs(x - p.x) + Math.abs(z - p.z); if (d > p.outer * 1.5) continue;
+    const k = smooth(p.outer, p.inner, Math.hypot(x - p.x, z - p.z)); if (k > 0) { h += (p.h + (fbm(x * 0.05, z * 0.05, 2) - 0.5) * 0.8 - h) * k; tk = Math.max(tk, k); } }
   // the river channel, then the lakes
   const rd = riverDist(x, z), halfW = 7 + fbm(z * 0.01, 9.1, 2) * 6, bed = WATER_Y - 2.4;
   if (rd < halfW + 40 && h > bed) h = bed + (h - bed) * smooth(halfW * 0.35, halfW + 30 + Math.min(40, Math.max(0, h - 10)) * 0.4, rd);
-  for (const l of lakes) { const e = Math.hypot((x - l.x) / l.rx, (z - l.z) / l.rz) + (vnoise(x * 0.03, z * 0.03) - 0.5) * 0.25;
-    if (e < 1.5 && h > WATER_Y - 5) h = (WATER_Y - 5) + (h - (WATER_Y - 5)) * smooth(0.55, 1.35, e);
+  for (const l of lakes) { const dx = x - l.x, dz = z - l.z, ca = Math.cos(l.a), sa = Math.sin(l.a); // (along the lake's own axes)
+    const e = Math.hypot((dx * ca + dz * sa) / l.rx, (dz * ca - dx * sa) / l.rz) + (vnoise(x * 0.03, z * 0.03) - 0.5) * 0.25;
+    if (CLASSIC && e < 1.5 && h > WATER_Y - 5) h = (WATER_Y - 5) + (h - (WATER_Y - 5)) * smooth(0.55, 1.35, e); // (a random world's bowl is the bank's cap below alone)
     // a walkable way out on every side: the bank rises no steeper than 0.6 (the owner was trapped in a pit lake, 2026-11-03)
-    h = Math.min(h, WATER_Y - 5 + Math.max(0, e - 0.55) * Math.min(l.rx, l.rz) * 0.6); }
+    // (a random world's: on the lake's own ellipse, no wobble, rising 0.45, so that with the shoreline's drop below, which
+    // steepens it about 1.42 times through its last 1.6 m, it stays well under the 1.05 a player climbs: 4242's river lake
+    // held the walk test at its rim on a 1.04 step, slice 13c. The classic world's lakes stay as they were)
+    const e0 = Math.hypot((dx * ca + dz * sa) / l.rx, (dz * ca - dx * sa) / l.rz);
+    h = CLASSIC ? Math.min(h, WATER_Y - 5 + Math.max(0, e - 0.55) * Math.min(l.rx, l.rz) * 0.6) : Math.min(h, WATER_Y - 5 + Math.max(0, e0 - 0.55) * Math.min(l.rx, l.rz) * 0.45); }
   // a clean shoreline: land just above the water stays up, land just below drops away, so nothing hugs the surface
-  if (h < 0.8) h -= 0.6 * smooth(0.8, 0.0, h);
-  return { h, rd, halfW, canyon };
+  // (a random world's is 0.45 m over twice the height, which steepens a bank through it about 1.42 times, not 2.1: lakes' banks
+  // went past the 1.05 a player climbs there, 4242's river lake among them, slice 13c. The classic world's stays as it was)
+  if (CLASSIC) { if (h < 0.8) h -= 0.6 * smooth(0.8, 0.0, h); } else if (h < 1.6) h -= 0.45 * smooth(1.6, 0.0, h);
+  return { h, rd, halfW, canyon: canyon * (1 - tk) };
 }
 
 // ── The grid: heights, best biome, normals, texture-layer weights ──
@@ -104,7 +172,9 @@ for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const x = -HALF + i * 
 
 // Erosion: rain droplets run downhill over the grid, picking up soil where they speed up and dropping it where they
 // slow, which cuts gullies and ribs into slopes and leaves fans at their feet. Kept off the valley floor, the camp,
-// the water and the canyon floors (those are shaped on purpose); the change is blended in by that mask.
+// the water and the canyon floors (those are shaped on purpose); the change is blended in by that mask. In a random world
+// it is kept off each pass's floor too: the water of both walls runs down the slot and cut steps a player could not climb
+// (frozen-fen-62's grass pass stopped the walk test 165 m out, slice 13c; the classic world's passes walk out as they are)
 { const E = new Float32Array(H), R = mulberry32(SEED ^ 0x9e3779b9), at = (i, j) => E[j * N + i];
   const W3 = [[-1, -1, 0.05], [0, -1, 0.12], [1, -1, 0.05], [-1, 0, 0.12], [0, 0, 0.32], [1, 0, 0.12], [-1, 1, 0.05], [0, 1, 0.12], [1, 1, 0.05]];
   for (let d = 0; d < 110000; d++) {
@@ -124,7 +194,8 @@ for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const x = -HALF + i * 
         for (const [a, b, wgt] of W3) E[(cj + b) * N + ci + a] -= ero * wgt; sed += ero; }
       speed = Math.sqrt(Math.max(0, speed * speed - dh * 2)); water *= 0.97; x = nx; z = nz; } }
   for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const k = j * N + i, x = -HALF + i * CELL, z = -HALF + j * CELL;
-    const mask = smooth(95, 125, Math.hypot(x, z)) * smooth(-2, 10, RD[k]) * (1 - CAN[k]) * smooth(1.5, 6, Math.min(H[k], E[k]));
+    const r = Math.hypot(x, z), pass = CLASSIC ? 0 : passK(x, z, r, 14) * smooth(100, 130, r) * smooth(300, 265, r);
+    const mask = smooth(95, 125, r) * smooth(-2, 10, RD[k]) * (1 - CAN[k]) * smooth(1.5, 6, Math.min(H[k], E[k])) * (1 - padK(x, z)) * (1 - pass);
     H[k] += (E[k] - H[k]) * mask; } }
 
 const hAt = (i, j) => H[Math.min(SEG, Math.max(0, j)) * N + Math.min(SEG, Math.max(0, i))];
@@ -212,7 +283,18 @@ export function findBiome(b, minR = 0) { // a dry, walkable spot well inside a r
   for (let z = -HALF + 120; z < HALF - 120; z += 8) for (let x = -HALF + 120; x < HALF - 120; x += 8) {
     if (biomeAt(x, z) !== b || groundY(x, z) < WATER_Y + 0.4 || slopeAt(x, z) > 0.3) continue;
     if (biomeAt(x + 30, z) !== b || biomeAt(x - 30, z) !== b || biomeAt(x, z + 30) !== b || biomeAt(x, z - 30) !== b) continue;
-    const d = Math.hypot(x, z); if (d >= minR && d < bd) { bd = d; best = { x, z }; } }
+    const d = Math.hypot(x, z); if (d >= minR && d < bd && reachable(x, z)) { bd = d; best = { x, z }; } } // (slice 13c: never a plateau nobody can climb)
   return best; }
 // Forest stands: the same mask that lays forest floor in the terrain (grass biome), so trees stand on leaf litter.
 export function forestAt(x, z) { return smooth(0.42, 0.62, fbm(x * 0.012 + 40, z * 0.012, 3)); }
+// Ground a player can get to from the camp on foot (or swimming), slice 13c: a flood over the 2 m grid where each step
+// climbs no more than a player can walk up (game.js stops a climb at a slope of 1.05). Built the first time it is asked.
+// The generator places buildings and camps only on reachable ground, and the checks walk every seed's world with it.
+let REACH = null;
+export function reachGrid() { if (REACH) return REACH; REACH = new Uint8Array(N * N);
+  const k0 = Math.round((CAMP.z + HALF) / CELL) * N + Math.round((CAMP.x + HALF) / CELL), q = new Int32Array(N * N); let n = 0; q[n++] = k0; REACH[k0] = 1;
+  while (n) { const k = q[--n], i = k % N, j = (k - i) / N;
+    for (let d = 0; d < 4; d++) { const ii = i + (d === 0) - (d === 1), jj = j + (d === 2) - (d === 3); if (ii < 1 || jj < 1 || ii >= SEG || jj >= SEG) continue;
+      const m = jj * N + ii; if (REACH[m] || Math.abs(H[m] - H[k]) > CELL) continue; REACH[m] = 1; q[n++] = m; } }
+  return REACH; }
+export function reachable(x, z) { const i = Math.round((x + HALF) / CELL), j = Math.round((z + HALF) / CELL); return reachGrid()[Math.min(SEG, Math.max(0, j)) * N + Math.min(SEG, Math.max(0, i))] === 1; }

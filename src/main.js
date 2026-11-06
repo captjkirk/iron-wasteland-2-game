@@ -1,7 +1,7 @@
 // Boot: renderer, world, environment, game loop, and the test hooks the headless check uses.
 import * as THREE from 'three';
-import { CAMP, Q, QUALITY, QUALITY_KEY, setQuality, WATER_Y, HALF } from './config.js';
-import { groundY, findBiome, seeds, river, lakes, biomeAt, forestAt, slopeAt, canyonAt, PASSES } from './world.js';
+import { CAMP, CHARS, BIOME, Q, QUALITY, QUALITY_KEY, setQuality, WATER_Y, HALF, SEED_TEXT, params, cleanSeed, JOINER } from './config.js';
+import { groundY, findBiome, seeds, river, lakes, biomeAt, forestAt, slopeAt, canyonAt, PASSES, SHAPE, LEAN, reachable } from './world.js';
 import { buildTerrain } from './terrain.js';
 import { buildEnvironment, FOG_COLOR } from './environment.js';
 import { buildBog, localFog } from './bog.js';
@@ -44,6 +44,19 @@ const qrow = document.getElementById('quality');
 for (const [k, v] of Object.entries(QUALITY)) { const b = document.createElement('button'); b.textContent = v.label; b.className = 'q' + (k === QUALITY_KEY ? ' on' : '');
   b.onclick = () => { if (k !== QUALITY_KEY) { logEvent('quality', { from: QUALITY_KEY, to: k }); setQuality(k); } }; qrow.appendChild(b); }
 
+// the world's seed (slice 13c): its name on the menu and the pause screen; New world rolls another, a typed name plays that one
+{ const name = document.getElementById('seedname'), inp = document.getElementById('seedin'), play = document.getElementById('playseed');
+  name.textContent = SEED_TEXT; document.getElementById('pauseworld').innerHTML = `World <b>${SEED_TEXT}</b> · type its name on the start menu to play it again`;
+  const go = (t) => { logEvent('world-pick', { from: SEED_TEXT, to: t || 'random' }); if (t) params.set('seed', t); else params.delete('seed'); location.search = params.toString(); };
+  // what this world is like: the two lands it leans toward (world.js), or the classic world
+  const like = LEAN.length ? `Mostly ${BIOME[LEAN[0]].label} and ${BIOME[LEAN[1]].label}. ` : 'The classic world. ', note = document.getElementById('seednote');
+  note.textContent = like + note.textContent;
+  if (JOINER) { document.getElementById('seedtools').remove(); note.textContent = like + 'The host\'s world: every game that joins builds the same one.'; }
+  else { document.getElementById('newworld').onclick = () => go(null);
+    inp.addEventListener('input', () => { play.disabled = !cleanSeed(inp.value) || cleanSeed(inp.value) === SEED_TEXT; });
+    // (the menu's own keys, 1 to 5 and Enter, must not fire while a name is typed)
+    inp.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter' && !play.disabled) go(cleanSeed(inp.value)); });
+    inp.addEventListener('keyup', (e) => e.stopPropagation()); play.onclick = () => go(cleanSeed(inp.value)); } }
 const env = buildEnvironment(scene, renderer, camera);
 const charsLoading = Promise.all([loadCharacters(), loadCreatures()]); // in parallel with the terrain and trees
 status.textContent = 'Loading terrain textures…';
@@ -62,8 +75,11 @@ navigator.serviceWorker?.ready.then(r => r.active?.postMessage(performance.getEn
 status.textContent = ''; document.getElementById('go').disabled = false;
 // LAN co-op (slice 10): the menu says how to play together
 netReady.then(() => { const el = document.getElementById('netinfo'); if (!net.role) return; el.classList.remove('hidden');
+  // this page was reloaded to build the host's world (coop.js): join as the player already asked
+  let again = null; try { again = sessionStorage.getItem('iw2.rejoin'); sessionStorage.removeItem('iw2.rejoin'); } catch { /* no storage: press JOIN again */ }
+  if (net.role === 'join' && again !== null && CHARS[+again]) startGame(+again);
   if (net.role === 'join') { el.textContent = `Playing together: this joins the game hosted at ${location.host}. Pick who walks out.`; document.getElementById('go').textContent = 'JOIN THE GAME'; }
-  else el.textContent = net.info.lan ? `Play together: on the family's other computers, open ${net.info.addr} in a browser and press JOIN.` : 'Play together on the home network: start the server with  python3 scripts/serve.py --lan'; }); logEvent('loaded', { quality: QUALITY_KEY, ms: Math.round(performance.now()), w: innerWidth, h: innerHeight, ...device(), stages });
+  else el.textContent = net.info.lan ? `Play together: on the family's other computers, open ${net.info.addr} in a browser and press JOIN.` : 'Play together on the home network: start the server with  python3 scripts/serve.py --lan'; }); logEvent('loaded', { seed: SEED_TEXT, quality: QUALITY_KEY, ms: Math.round(performance.now()), w: innerWidth, h: innerHeight, ...device(), stages });
 // which graphics chip and screen this is, and how many pixels each frame draws (the play log's loaded event)
 function device() { const gl = renderer.getContext(), x = gl.getExtension('WEBGL_debug_renderer_info');
   return { gpu: String(x ? gl.getParameter(x.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)), dpr: devicePixelRatio, pr: renderer.getPixelRatio(), px: `${renderer.domElement.width}x${renderer.domElement.height}`, cores: navigator.hardwareConcurrency || 0 }; }
@@ -108,7 +124,7 @@ window.__iw = { others, net, built, deliver, /* the gate of slice 12 */ logEvent
   get rendered() { return rendered; },
   get state() { return { x: +player.x.toFixed(1), z: +player.z.toFixed(1), y: +player.y.toFixed(1), hp: player.hp, cam: getCamMode(), enemies: enemies.length, fps, biome: biomeAt(player.x, player.z),
     props: Object.fromEntries(Object.entries(placed).map(([k, v]) => [k, v.length])), calls: renderer.info.render.calls, tris: renderer.info.render.triangles }; },
-  placed, PASSES, CAMP, canyonAt, day, nightK, DAY_S, /* slice 13 */ press, nearColliders, colR, slopeAt, buildings, caches, raiderCamps, ladders, standAt, deepShadow,
+  seed: SEED_TEXT, SHAPE, LEAN, reachable, /* slice 13c */ placed, PASSES, CAMP, canyonAt, day, nightK, DAY_S, /* slice 13 */ press, nearColliders, colR, slopeAt, buildings, caches, raiderCamps, ladders, standAt, deepShadow,
   findCanyon() { let best = null, bd = 1e9; // the nearest stretch of canyon floor
     for (let z = -440; z < 440; z += 4) for (let x = -440; x < 440; x += 4) { if (canyonAt(x, z) < 0.92 || groundY(x, z) < WATER_Y + 1) continue; const d = Math.hypot(x, z); if (d < bd) { bd = d; best = { x, z }; } } return best; },
   findForest() { let best = null, bd = 1e9; // a walkable spot inside a grass-biome forest, nearest the spawn
