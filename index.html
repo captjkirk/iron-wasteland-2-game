@@ -24,7 +24,8 @@
   .chip { background: var(--panel); border: 1px solid var(--edge); padding: 5px 10px; border-radius: 4px; white-space: nowrap; }
   @media (max-width: 1100px) { #hud-b { gap: 6px; } #hud-b .chip { padding: 4px 7px; font-size: 12px; } }
   #name { font-weight: 700; letter-spacing: .04em; margin-bottom: 6px; }
-  #hpbar { width: 220px; height: 12px; background: var(--hp-back); border: 1px solid var(--edge); border-radius: 3px; overflow: hidden; }
+  #hpbar { position: relative; width: 220px; height: 16px; background: var(--hp-back); border: 1px solid var(--edge); border-radius: 3px; overflow: hidden; }
+  #hpnum { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; line-height: 1; color: #fff; text-shadow: 0 0 2px #000, 0 1px 2px #000; font-variant-numeric: tabular-nums; } /* health as a number on the bar (#37) */
   #breath { position: fixed; left: 50%; bottom: 64px; width: 180px; height: 8px; margin-left: -90px; border-radius: 4px; background: rgba(0,20,30,.6); border: 1px solid rgba(160,220,255,.5); }
   #breath > div { height: 100%; background: linear-gradient(90deg, #6fd0ff, #c8f0ff); border-radius: 3px; }
   #breath::before { content: "Breath"; position: absolute; top: -18px; left: 0; font-size: 12px; color: #c8f0ff; text-shadow: 0 1px 2px #000; }
@@ -120,7 +121,7 @@
 </head>
 <body>
 <div id="breath" class="hud hidden"><div></div></div>
-<div id="hud-tl" class="hud hidden"><div id="name">—</div><div id="hpbar"><div id="hpfill"></div></div><div id="team" class="hidden" style="margin-top:6px;color:var(--dim)"></div></div>
+<div id="hud-tl" class="hud hidden"><div id="name">—</div><div id="hpbar"><div id="hpfill"></div><span id="hpnum"></span></div><div id="team" class="hidden" style="margin-top:6px;color:var(--dim)"></div></div>
 <div id="hud-tr" class="hud hidden"><div id="biome" class="chip">—</div><div id="cam" class="chip" style="margin-top:6px">—</div><div id="fps" style="margin-top:6px;color:var(--dim)">—</div></div>
 <div id="hud-b" class="hud hidden"><span class="chip res wood" id="inv-wood"><i></i><span>Wood 0</span></span><span class="chip res metal" id="inv-metal"><i></i><span>Metal 0</span></span><span class="chip res fiber" id="inv-fiber"><i></i><span>Fiber 0</span></span><span class="chip res food" id="inv-food"><i></i><span>Food 0</span></span><span class="chip res cooked" id="inv-cooked"><i></i><span>Cooked 0</span></span><span class="chip res arrows hidden" id="inv-arrows"><i></i><span>Arrows 0</span></span><span class="chip" id="inv-kills"><span>Kills 0</span></span><span class="chip" id="sec">—</span></div>
 <div id="prompt" class="hud hidden"><span></span><i><b></b></i></div>

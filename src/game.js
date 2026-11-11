@@ -740,8 +740,9 @@ function perfHint(fps, dt) { if (slowHinted || navigator.webdriver || paused || 
   slowT = fps > 0 && fps < 24 ? slowT + dt : 0; if (slowT > 12) { slowHinted = true; log('Running slowly here: try Quality → Low (P opens settings).'); } }
 export function hud(fps, dt = 0) { perfHint(fps, dt); lastFps = fps;
   const watch = player.out && [...others.values()].find(o => !o.out); // co-op: down, or out and watching a friend
-  document.getElementById('name').textContent = `${player.ch.player.toUpperCase()} · ${player.ch.title}   ` + (player.out ? `OUT${watch ? ' · watching ' + watch.name : ''}` : player.down > 0 ? `DOWN ${Math.ceil(player.down)} s · ${player.revT > 0 ? `${watch?.name || 'a friend'} is reviving you ${Math.round(player.revT / 2.5 * 100)}%` : 'a friend can revive you (they hold E beside you)'}` : `${Math.max(0, Math.ceil(player.hp))}/${player.maxHp}`);
+  document.getElementById('name').textContent = `${player.ch.player.toUpperCase()} · ${player.ch.title}   ` + (player.out ? `OUT${watch ? ' · watching ' + watch.name : ''}` : player.down > 0 ? `DOWN ${Math.ceil(player.down)} s · ${player.revT > 0 ? `${watch?.name || 'a friend'} is reviving you ${Math.round(player.revT / 2.5 * 100)}%` : 'a friend can revive you (they hold E beside you)'}` : '').trimEnd(); // health moved onto the bar (#37)
   document.getElementById('hpfill').style.width = Math.max(0, player.hp / player.maxHp * 100) + '%';
+  document.getElementById('hpnum').textContent = `${Math.max(0, Math.ceil(player.hp))} / ${player.maxHp}`;
   document.getElementById('biome').textContent = `${BIOME[biomeAt(player.x, player.z)].label} · Day ${day.n} · ${phase()}`; // (slice 13: the time of day)
   // the resources (slice 11), each chip bumping when it goes up; Abigail's arrows beside them
   for (const k of ['wood', 'metal', 'fiber', 'food', 'cooked']) chip(k, k[0].toUpperCase() + k.slice(1), player.inv[k] || 0);
