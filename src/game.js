@@ -12,8 +12,9 @@ import { nearColliders, colR, placed, hideOccluders, addCollider, standAt, steps
 import { markDirty } from './scatter.js';
 import { part, box, rockG, MAT, merged } from './models.js';
 import { buildCreature } from './creatures.js';
+import { initFireflies, tickFireflies } from './fireflies.js';
 import { initEffects, tickEffects, hitBurst, splash, dustPuff, floatText, healthBars, hitMarker, buildLoot, nameTags } from './effects.js';
-import { unlockAudio, toggleMute, isMuted, sfx, setListener, windLevel, ambient } from './audio.js';
+import { unlockAudio, toggleMute, isMuted, sfx, setListener, windLevel, ambient, setMusicVolume, setMusicPaused, setMusicMode } from './audio.js';
 import { W } from './weather.js';
 const BIOME_WIND = { tundra: 0.03, waste: 0.025, desert: 0.02 };
 import { buildCharacter, buildViewModel } from './characters.js';
@@ -30,7 +31,7 @@ import { ammo, resetSupplies, tickSupplies, fought, useRound, useFlower, reload,
 
 let scene, camera, renderer, env, viewModel;
 const muzzleFlash = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffd890, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false })); muzzleFlash.t = 0;
-export function initGame(ctx) { ({ scene, camera, renderer, env } = ctx); viewModel = new THREE.Group(); camera.add(viewModel); muzzleFlash.position.set(0.24, 0.03, -0.85); muzzleFlash.visible = false; camera.add(muzzleFlash); initEffects(scene, camera); bindInput(); buildMenu(); bindSettings(); prepHarvest(); }
+export function initGame(ctx) { ({ scene, camera, renderer, env } = ctx); viewModel = new THREE.Group(); camera.add(viewModel); muzzleFlash.position.set(0.24, 0.03, -0.85); muzzleFlash.visible = false; camera.add(muzzleFlash); initEffects(scene, camera); initFireflies(scene); bindInput(); buildMenu(); bindSettings(); prepHarvest(); }
 
 export const enemies = [];
 let packN = 0, enemyN = 0;
@@ -209,15 +210,16 @@ export function readPad() { const p = [...(navigator.getGamepads?.() || [])].fin
   const dz = v => Math.abs(v) < 0.15 ? 0 : v, b = i => p.buttons[i]?.pressed, edge = i => b(i) && !padPrev[i];
   const out = { mx: dz(p.axes[0]), mz: dz(p.axes[1]), lx: dz(p.axes[2]), ly: dz(p.axes[3]), atk: b(7) || b(2), jump: edge(0), jumpHeld: b(0), dive: b(10), use: edge(1), useHeld: b(1), sec: edge(4) || edge(6), cam: edge(3), pause: edge(9), left: edge(14), right: edge(15), menu: edge(8), up: edge(12), down: edge(13), downHeld: b(13), rb: edge(5), tearHeld: b(5), close: edge(11) };
   padPrev = p.buttons.map(x => x.pressed); return out; }
-export function togglePause(on = !paused) { if (!running) return; paused = on; if (on) { keys.clear(); mouseDown = false; } logEvent(on ? 'pause' : 'resume'); document.getElementById('pause').classList.toggle('hidden', !paused); syncCursor();
+export function togglePause(on = !paused) { if (!running) return; paused = on; setMusicPaused(on); if (on) { keys.clear(); mouseDown = false; } logEvent(on ? 'pause' : 'resume'); document.getElementById('pause').classList.toggle('hidden', !paused); syncCursor();
   document.getElementById(paused ? 'pause-settings' : 'menu-settings').appendChild(document.getElementById('settings'));
   if (paused && document.pointerLockElement) document.exitPointerLock?.(); }
 // Settings (menu and pause screen share one panel): mouse/stick look sensitivity, invert up/down, sound. Quality is in main.js.
-export const settings = { sens: 1, invertY: false };
-try { const s = JSON.parse(localStorage.getItem('iw2.settings') || '{}'); if (s.sens > 0) settings.sens = s.sens; settings.invertY = !!s.invertY; } catch { /* storage blocked */ }
+export const settings = { sens: 1, invertY: false, music: 0.5 };
+try { const s = JSON.parse(localStorage.getItem('iw2.settings') || '{}'); if (s.sens > 0) settings.sens = s.sens; settings.invertY = !!s.invertY; if (s.music >= 0 && s.music <= 1) settings.music = s.music; } catch { /* storage blocked */ }
 function saveSettings() { logEvent('settings', { ...settings }); try { localStorage.setItem('iw2.settings', JSON.stringify(settings)); } catch { /* fine */ } }
 function bindSettings() {
-  const sens = document.getElementById('sens'), sv = document.getElementById('sensv'), inv = document.getElementById('invy'), snd = document.getElementById('snd');
+  const sens = document.getElementById('sens'), sv = document.getElementById('sensv'), inv = document.getElementById('invy'), snd = document.getElementById('snd'), mus = document.getElementById('music');
+  mus.value = settings.music; setMusicVolume(settings.music); mus.oninput = () => { settings.music = +mus.value; setMusicVolume(settings.music); saveSettings(); };
   sens.value = settings.sens; sv.textContent = settings.sens.toFixed(1) + 'x';
   sens.oninput = () => { settings.sens = +sens.value; sv.textContent = settings.sens.toFixed(1) + 'x'; saveSettings(); };
   inv.checked = settings.invertY; inv.onchange = () => { settings.invertY = inv.checked; saveSettings(); };
@@ -703,8 +705,9 @@ export function update(dt, t) {
     if (campT > 2) { campT = 0; if (player.hp < player.maxHp) { const h = Math.min(8, player.maxHp - player.hp); player.hp += h; floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `+${h}`, '#8aff9a'); } } }
   else { campT = 0; warmLogged = false; }
   tickLog(dt, { player, cam: camMode, biome: biomeAt(player.x, player.z), fps: lastFps, enemies }, il > 0.1 && !player.dead); tickWatch(dt); // slice 13d
-  tickCoop(dt); tickEffects(dt); setListener(player.x, player.z, camMode === 'top' ? topYaw : player.yaw);
-  windLevel(0.03 + Math.min(0.06, Math.max(0, player.y - 20) / 600) + W.wind + (BIOME_WIND[biomeAt(player.x, player.z)] || 0)); ambient(dt, biomeAt(player.x, player.z), nightK(), Math.hypot(player.x, player.z) < SAFE_R); // (slice 13: storms, the open biomes' wind, the night's sounds)
+  tickCoop(dt); tickEffects(dt); tickFireflies(dt, camera.position, true); setListener(player.x, player.z, camMode === 'top' ? topYaw : player.yaw);
+  windLevel(0.03 + Math.min(0.06, Math.max(0, player.y - 20) / 600) + W.wind + (BIOME_WIND[biomeAt(player.x, player.z)] || 0)); setMusicMode(isNight() ? 'night' : 'day', dt); // (the 'boss' track is ready in audio.js for when IW2 has bosses)
+  ambient(dt, biomeAt(player.x, player.z), nightK(), Math.hypot(player.x, player.z) < SAFE_R); // (slice 13: storms, the open biomes' wind, the night's sounds)
 }
 let spawnTick = -1, campT = 0, warmLogged = false, lastFps = 0, cooking = false;
 

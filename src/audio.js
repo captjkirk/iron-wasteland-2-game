@@ -13,6 +13,7 @@ export function unlockAudio() {
   const src = ctx.createBufferSource(); src.buffer = noiseBuf; src.loop = true; const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 400; bp.Q.value = 0.6;
   const lfo = ctx.createOscillator(); lfo.frequency.value = 0.07; const lg = ctx.createGain(); lg.gain.value = 250; lfo.connect(lg); lg.connect(bp.frequency); lfo.start();
   windGain = ctx.createGain(); windGain.gain.value = 0.05; src.connect(bp); bp.connect(windGain); windGain.connect(master); src.start();
+  startMusic();
 }
 export const isMuted = () => muted;
 export function toggleMute() { muted = !muted; try { localStorage.setItem('iw2.mute', muted ? '1' : '0'); } catch { /* fine */ } if (master) master.gain.value = muted ? 0 : 0.7; return muted; }
@@ -76,7 +77,7 @@ const SFX = {
   thunk: (d, t) => { tone(d, t, 0.06, { type: 'triangle', f0: 320, f1: 140, peak: 0.45 }); noise(d, t, 0.05, { f0: 1500, q: 2, peak: 0.35 }); },
   salvage: (d, t) => { for (let i = 0; i < 4; i++) { noise(d, t + i * 0.09, 0.07, { f0: 1800 + i * 300, q: 6, peak: 0.4 }); tone(d, t + i * 0.09, 0.1, { type: 'square', f0: 300 + i * 40, peak: 0.05 }); } },
 };
-export function sfx(name, at, vol = 1) { if (!ctx || muted) return; const d = out(at, vol); if (!d) return; const t = ctx.currentTime + 0.005; (SFX[name] || VOICE[name])?.(d, t); }
+export function sfx(name, at, vol = 1) { if (!ctx || muted) return; const d = out(at, vol); if (!d) return; duck(); const t = ctx.currentTime + 0.005; (SFX[name] || VOICE[name])?.(d, t); }
 export function windLevel(v) { if (windGain) windGain.gain.setTargetAtTime(v, ctx.currentTime, 0.5); }
 
 // ── The land's own sounds (slice 13), now and then round the listener: birds by day in the green places, frogs in the
@@ -95,3 +96,55 @@ export function ambient(dt, biome, night, safe) { if (!ctx || muted) return;
   for (const [k, a] of Object.entries(AMB)) { if (!a.when(biome, night, safe)) { ambT[k] = Math.max(ambT[k] || 0, a.gap[0]); continue; }
     if ((ambT[k] = (ambT[k] ?? a.gap[0]) - dt) > 0) continue; ambT[k] = a.gap[0] + Math.random() * (a.gap[1] - a.gap[0]);
     const r = k === 'howl' ? 55 : 8 + Math.random() * 16, ang = Math.random() * 6.28, d = out({ x: listener.x + Math.cos(ang) * Math.min(r, 50), z: listener.z + Math.sin(ang) * Math.min(r, 50) }, a.vol * (k === 'howl' ? 6 : 1)); if (d) a.play(d, ctx.currentTime + 0.01); } }
+
+// ── Background music (IW1's day tune, softer): the same 16-beat A-minor melody, bass and arpeggio as IW1's day loop, but
+// played by rounded sine/triangle voices with a slow soft pad and a dark echo, at IW1's own 125 bpm with a light beat under it, through its
+// own volume that ducks a third of the way down while any sound effect plays and gently returns. Starts with the audio (first
+// click/key); the pause screen fades it out; M mutes everything; the Music slider in settings sets its level. ──
+let musicDest = null, musicMode = 'day', bossHold = 0, musicBus = null, duckG = null, musicVol = 0.5, musicPaused = false, musicNext = 0, musicTimer = 0, duckT = 0;
+const MUSIC_BASE = 0.1; // against the master 0.7: one loud sound effect peaks near 1.0 and the wind sits at 0.05
+export function setMusicVolume(v) { musicVol = Math.max(0, Math.min(1, v)); if (musicBus) musicBus.gain.setTargetAtTime(musicPaused ? 0 : musicVol * MUSIC_BASE, ctx.currentTime, 0.2); }
+export function setMusicPaused(p) { musicPaused = p; setMusicVolume(musicVol); }
+export const audioState = () => ({ started: !!ctx, music: musicBus ? musicBus.gain.value : null, musicDuck: duckG ? duckG.gain.value : null, wind: windGain ? windGain.gain.value : null, muted, master: master ? master.gain.value : null });
+function duck() { if (!duckG) return; const t = ctx.currentTime; if (t - duckT < 0.08) return; duckT = t; duckG.gain.cancelScheduledValues(t); duckG.gain.setTargetAtTime(0.35, t, 0.05); duckG.gain.setTargetAtTime(1, t + 0.9, 0.7); }
+function startMusic() {
+  duckG = ctx.createGain(); musicBus = ctx.createGain(); musicBus.gain.value = musicPaused ? 0 : musicVol * MUSIC_BASE;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3200; lp.Q.value = 0.4;
+  const dl = ctx.createDelay(1); dl.delayTime.value = 0.45; const fb = ctx.createGain(); fb.gain.value = 0.38; const dlp = ctx.createBiquadFilter(); dlp.type = 'lowpass'; dlp.frequency.value = 1100; const wet = ctx.createGain(); wet.gain.value = 0.5;
+  lp.connect(duckG); lp.connect(dl); dl.connect(dlp); dlp.connect(fb); fb.connect(dl); dlp.connect(wet); wet.connect(duckG); duckG.connect(musicBus); musicBus.connect(master); musicBus.input = lp; musicDest = ctx.createGain(); musicDest.connect(lp);
+  musicNext = ctx.currentTime + 0.3; musicLoop(); }
+function mnote(t, f, dur, type, peak, a = 0.06) { const o = ctx.createOscillator(), g = ctx.createGain(); o.type = type; o.frequency.value = f;
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(peak, t + a); g.gain.setTargetAtTime(0, t + Math.max(a, dur - 0.1), 0.18); o.connect(g); g.connect(musicDest); o.start(t); o.stop(t + dur + 1.2); }
+function mbeat(t, kick, tick, snare, f0 = 110, vol = 0.9) { if (kick) { const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f0 * 0.4, t + 0.12); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.25); o.connect(g); g.connect(musicDest); o.start(t); o.stop(t + 0.3); }
+  else { const n = ctx.createBufferSource(), h = ctx.createBiquadFilter(), g = ctx.createGain(); n.buffer = noiseBuf; h.type = snare ? 'bandpass' : 'highpass'; h.frequency.value = snare ? 1800 : 7000; g.gain.setValueAtTime(snare ? 0.4 : tick ? 0.12 : 0.2, t); g.gain.exponentialRampToValueAtTime(0.001, t + (snare ? 0.14 : 0.05)); n.connect(h); h.connect(g); g.connect(musicDest); n.start(t, Math.random()); n.stop(t + 0.18); } }
+const MEL = [[220, 0, .7], [261.63, 1, .7], [329.63, 2, .35], [293.66, 2.5, .35], [261.63, 3, .7], [220, 4, .7], [196, 5, .35], [220, 5.5, .35], [261.63, 6, 1.4], [329.63, 8, .7], [349.23, 9, .7], [329.63, 10, .35], [293.66, 10.5, .35], [261.63, 11, .7], [220, 12, 1.4], [196, 14, .7], [220, 15, .7]];
+const BASS = [[55, 0, 6], [49, 6, 4], [43.65, 10, 4], [49, 14, 2]]; // IW1's bass notes (A, G, F, G), held long
+const PAD = [[[220, 261.63, 329.63], 0], [[196, 246.94, 293.66], 6], [[174.61, 220, 261.63], 10], [[196, 246.94, 293.66], 14]]; // chords under them: A minor, G, F, G
+const LOOPS = {
+  day: { bpm: 125, beats: 16, play(t0, b) { // IW1's day tune
+    for (const [f, t, d] of MEL) { mnote(t0 + t * b, f, d * b * 1.1, 'triangle', 0.6, 0.02); mnote(t0 + t * b + 0.01, f * 2, d * b * 0.9, 'sine', 0.2, 0.02); }
+    for (const [f, t, d] of BASS) mnote(t0 + t * b, f, d * b, 'sine', 0.7, 0.15);
+    for (const [fs, t] of PAD) for (const f of fs) mnote(t0 + t * b, f, 3.4 * b, 'sine', 0.07, 0.9);
+    for (let i = 0; i < 32; i++) { const f = [440, 523.25, 659.25, 523.25][i % 4]; mnote(t0 + i * b / 2, f, b * 0.5, 'sine', i % 8 < 4 ? 0.11 : 0.08, 0.01); }
+    for (let i = 0; i < 16; i++) { mbeat(t0 + i * b, i % 4 === 0, false, i % 4 === 2); if (i % 2) mbeat(t0 + i * b - b / 2, false, true); } } }, // a soft kick on beat one of each bar, a snare on beat three, light ticks between
+  night: { bpm: 80, beats: 16, play(t0, b) { // IW1's night loop: its low, uneasy melody, now on soft low voices, with a heartbeat and sparse bell notes
+    for (const [f, t, d] of [[110, 0, 1.5], [116.54, 2, 1.5], [103.83, 4, 1.5], [110, 6, .7], [92.5, 7, 2], [87.31, 9, 1], [98, 10, .5], [92.5, 10.5, .5], [87.31, 11, 2], [82.41, 13, 1.5], [87.31, 15, .7]]) { mnote(t0 + t * b, f, d * b * 1.2, 'triangle', 0.7, 0.12); mnote(t0 + t * b, f * 2, d * b, 'sine', 0.12, 0.12); }
+    for (const [f, t] of [[36.71, 0], [34.65, 4], [32.7, 8], [36.71, 12]]) mnote(t0 + t * b, f * 2, 4 * b, 'sine', 0.8, 0.5); // the drone
+    for (const [f, t] of [[659.25, 1], [698.46, 5], [622.25, 8.5], [739.99, 12], [659.25, 14.5]]) mnote(t0 + t * b, f, 1.2, 'sine', 0.1, 0.01); // bell notes
+    for (const t of [3, 7, 11, 15]) { mbeat(t0 + t * b, true, false, false, 85, 2); mbeat(t0 + (t + 0.3) * b, true, false, false, 85, 1.5); } // the heartbeat
+    for (let i = 0; i < 32; i++) if (i % 4 === 2) mbeat(t0 + i * b / 2, false, true); } },
+  boss: { bpm: 130, beats: 8, play(t0, b) { // IW1's boss loop: driving E-minor bass, stabs and a four-on-the-floor beat, kept soft
+    for (const [f, t] of [[82.41, 0], [82.41, 2], [98, 4], [82.41, 6]]) mnote(t0 + t * b, f * 2, b * 1.8, 'triangle', 0.6, 0.02);
+    for (const [f, t, d] of [[329.63, 0, .6], [392, 1, .5], [440, 2, .6], [392, 3, .5], [329.63, 4, .6], [311.13, 5, .5], [349.23, 6, .6], [392, 7, .5]]) { mnote(t0 + t * b, f, d * b * 1.2, 'triangle', 0.5, 0.01); mnote(t0 + t * b, f * 2, d * b, 'sine', 0.15, 0.01); }
+    for (const t of [0, 2, 4, 6]) { mnote(t0 + t * b, 196, b * 0.5, 'triangle', 0.3, 0.01); mnote(t0 + t * b, 293.66, b * 0.5, 'triangle', 0.25, 0.01); }
+    for (const [f, t] of [[98, 0], [110, 4]]) mnote(t0 + t * b, f, 4 * b, 'sine', 0.12, 0.4);
+    for (let i = 0; i < 8; i++) { mbeat(t0 + i * b, true, false, false, 120); mbeat(t0 + (i + 0.5) * b, false, true); if (i % 2) mbeat(t0 + i * b, false, false, true); } } },
+};
+// day, night or boss: a change fades the old loop out and starts the new one on the spot. Boss lingers 6 s after the last big foe.
+export function setMusicMode(m, dt = 0) { if (m === 'boss') bossHold = 6; else if (musicMode === 'boss' && (bossHold -= dt) > 0) return; if (m === musicMode || !musicDest) return;
+  const now = ctx.currentTime; musicDest.gain.setTargetAtTime(0, now, 0.25); musicDest = ctx.createGain(); musicDest.gain.setValueAtTime(0, now); musicDest.gain.linearRampToValueAtTime(1, now + 0.6); musicDest.connect(musicBus.input);
+  musicMode = m; musicNext = now + 0.1; musicLoop(); }
+function musicLoop() { if (!ctx) return; const L = LOOPS[musicMode], b = 60 / L.bpm, now = ctx.currentTime;
+  if (!musicPaused && !muted) { // (while paused or muted the loop idles; it picks up at the next bar)
+    if (musicNext < now) musicNext = now + 0.1; L.play(musicNext, b); musicNext += L.beats * b; }
+  clearTimeout(musicTimer); musicTimer = setTimeout(musicLoop, Math.max(200, (musicNext - ctx.currentTime - 1) * 1000)); }

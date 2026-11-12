@@ -22,6 +22,7 @@ import { others, deliver } from './coop.js';
 import { craft, built, toggleCraft, craftOpen, placeSpot, sleep, bedNear, bedRespawn, lightSpots } from './craft.js';
 import { day, nightK, DAY_S } from './daynight.js';
 import { buildWeather, tickWeather } from './weather.js';
+import { fireflyStats } from './fireflies.js';
 import { RECIPES } from './recipes.js';
 import { startBuild, placeNow, endBuild, building, rotateBuild, damageBuilt, toggleGate, tearTarget, refundOf, clearBuilt, wallAhead, PIECE, putPiece } from './build.js';
 import { ammo, clipSize } from './supplies.js';
@@ -116,7 +117,7 @@ requestAnimationFrame(frame);
 addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
 
 // Test hooks for the headless check (scripts/shots.js): not used by play.
-window.__iw = { others, net, built, deliver, /* the gate of slice 12 */ logEvent, playlogState, tickWatch, checkCrates, checkMsg, solidAt, pickups, HALF, /* slice 13d */
+window.__iw = { fireflies: fireflyStats, others, net, built, deliver, /* the gate of slice 12 */ logEvent, playlogState, tickWatch, checkCrates, checkMsg, solidAt, pickups, HALF, /* slice 13d */
   // a build recipe opens build mode; for the checks, craft() of one places it at once where the ghost stands (slice 12)
   craft: (key) => { const r = RECIPES.find(q => q.key === key); if (r.type !== 'build') return craft(r); if (!craft(r)) return false; const ok = placeNow(); endBuild(); return ok; },
   startBuild: (key) => startBuild(RECIPES.find(q => q.key === key)), placeNow, endBuild, building, rotateBuild, damageBuilt, toggleGate, tearTarget, refundOf, clearBuilt, wallAhead, PIECE, putPiece, liveShots, ammo, clipSize, gotPickup, spreadAt, upgraded, aimGround, /* slice 12 */ toggleCraft, craftOpen, placeSpot, sleep, bedNear, bedRespawn, felled, fell, harvestTarget, quiver, stuckArrows, // slice 11
