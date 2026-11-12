@@ -1,10 +1,10 @@
 // Enemies. Rigged and animated CC0 animals where they exist, built ones where they do not:
 //  wolf        Quaternius "Ultimate Animated Animals" Wolf (12 clips), shell fur
 //  dust_hound  Quaternius Fox, recoloured sand and lean, shell fur
-//  bear        the Quaternius wolf rig reshaped by bone scale (heavy shoulders, big head, stub tail), long brown fur
+//  bear        bear.js: its own skeleton and sculpted body, a procedural gait with planted feet (slice 19)
 //  rat         Poly Haven "Street Rat" (static, scanned-quality textures), legs and tail moved in the vertex shader
-//  ice_crawler built in code: a six-legged ice-armoured arthropod, procedural tripod gait
-//  bog_lurker  built in code: a wet-skinned amphibian ambusher, procedural crawl
+//  ice_crawler crawler.js: a frost isopod, twelve planted legs (slice 19)
+//  bog_lurker  lurker.js: a giant salamander sculpted on its own skeleton, planted legs (slice 19)
 //  brawler, shooter, heavy  raiders (IW1's human enemies): the player characters' rigged bodies in raider looks
 // loadCreatures() once; buildCreature(type) returns a Group whose userData.anim has update(dt, {speed}), attack(),
 // hit(side), die(); userData.flash(k) tints it white for a hit; userData.setDetail(near) toggles fur shells.
@@ -12,9 +12,12 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import { MarchingCubes } from 'three/addons/objects/MarchingCubes.js';
 import { Q } from './config.js';
 import { buildCharacter } from './characters.js';
+import { furMaterial, SHELLS } from './fur.js';
+import { buildBear } from './bear.js';
+import { buildCrawler } from './crawler.js';
+import { buildLurker } from './lurker.js';
 
 const DIR = new URL('../assets/beasts/', import.meta.url).href;
 const docs = {};
@@ -26,138 +29,56 @@ export async function loadCreatures() { await Promise.all(['wolf', 'fox', 'rat']
   // the Quaternius animals are flat-shaded: weld the split vertices and smooth the normals (fur wants a soft surface)
   for (const k of ['wolf', 'fox']) docs[k].scene.traverse(o => { if (o.isSkinnedMesh) { const g = o.geometry.clone(); g.deleteAttribute('normal'); const w = mergeVertices(g, 1e-4); w.computeVertexNormals(); o.geometry = w; } }); }
 
-const SHELLS = Q.furShells ?? 8;
-
-// ── Fur: the base surface gets fine colour noise, and SHELLS offset copies along the skinned normal draw strands ──
-const FUR_GLSL = /* glsl */`
-varying vec3 vRest; uniform float uH; uniform float uDens; uniform vec3 uTip; uniform float uFlash;
-float iwH3(vec3 p){ p = fract(p * 0.1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
-float iwN3(vec3 p){ vec3 i = floor(p), f = fract(p); f = f*f*(3.-2.*f);
-  return mix(mix(mix(iwH3(i), iwH3(i+vec3(1,0,0)), f.x), mix(iwH3(i+vec3(0,1,0)), iwH3(i+vec3(1,1,0)), f.x), f.y),
-             mix(mix(iwH3(i+vec3(0,0,1)), iwH3(i+vec3(1,0,1)), f.x), mix(iwH3(i+vec3(0,1,1)), iwH3(i+vec3(1,1,1)), f.x), f.y), f.z); }
-`;
-function furMaterial(color, { h = 0, dens = 18, len = 0.1, tip = 1.25, rough = 0.95 } = {}) {
-  const m = new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: 0 });
-  const u = { uH: { value: h }, uLen: { value: len }, uDens: { value: dens }, uTip: { value: new THREE.Color(color).multiplyScalar(tip) }, uFlash: { value: 0 } };
-  m.userData.u = u;
-  m.onBeforeCompile = (sh) => {
-    Object.assign(sh.uniforms, u);
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vRest; uniform float uH; uniform float uLen;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRest = position;')
-      .replace('#include <skinning_vertex>', '#include <skinning_vertex>\ntransformed += normalize(objectNormal) * uLen * uH;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + FUR_GLSL)
-      .replace('#include <color_fragment>', `#include <color_fragment>
-        float big = iwN3(vRest * uDens * 0.08), mid = iwN3(vRest * uDens * 0.35);
-        vec3 c = vRest * uDens; vec3 id = floor(c); vec3 f = fract(c) - 0.5;
-        float hs = iwH3(id); vec3 jit = vec3(iwH3(id + 7.1), iwH3(id + 3.3), iwH3(id + 9.7)) - 0.5;
-        float strand = 1. - smoothstep(0.18, 0.5, length(f - jit * 0.35) / max(0.15, 1. - uH));
-        if (uH > 0.001) { if (hs < uH * 0.75 || strand < 0.5) discard; }
-        diffuseColor.rgb *= mix(0.78, 1.18, big) * mix(0.85, 1.1, mid) * mix(0.9, 1.08, hs);
-        diffuseColor.rgb = mix(diffuseColor.rgb * mix(0.55, 1., smoothstep(0., 0.25, uH)), uTip * mix(0.9, 1.1, hs), smoothstep(0.5, 1., uH) * 0.5);
-        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0, 0.95, 0.85), uFlash);`);
-  };
-  m.customProgramCacheKey = () => 'iwfur' + (h > 0 ? 's' : 'b');
-  return m;
-}
-
 // ── Rigged beasts (Quaternius wolf and fox) ──
 const BEAST = {
-  wolf: { doc: 'wolf', height: 1.0, mats: { Main: 0x968e82, Main_Light: 0xd6cebe }, fur: 0.07, dens: 70, tip: 1.12, walk: 1.5, run: 4.5 },
-  dust_hound: { doc: 'fox', height: 1.0, mats: { Main: 0xc0a274, Main_Light: 0xe6d6b0, Grey: 0x6a5a44 }, fur: 0.04, dens: 85, tip: 1.1, walk: 1.5, run: 4.6, lean: true, shape: { 'Tail1': 0.6, 'Ear1L': 0.85, 'Ear1R': 0.85 } },
-  bear: { doc: 'wolf', height: 1.0, mats: { Main: 0x6e4e34 }, fur: 0.055, dens: 110, tip: 1.3, walk: 1.2, run: 3.6, sculpt: true },
+  // (round 1: shorter, softer coats with a real pattern, coat(); thicker legs on the wolf)
+  wolf: { doc: 'wolf', height: 1.0, mats: { Main: 0xffffff, Main_Light: 0xffffff }, fur: 0.03, dens: 160, tip: 1.0, root: 0.85, walk: 1.5, run: 4.5, coat: 'wolf',
+    shape: { FrontUpperLegL: [1.22, 1, 1.22], FrontUpperLegR: [1.22, 1, 1.22], FrontLowerLegL: [1.3, 1, 1.3], FrontLowerLegR: [1.3, 1, 1.3], BackUpperLegL: [1.15, 1, 1.15], BackUpperLegR: [1.15, 1, 1.15], BackLowerLegL: [1.3, 1, 1.3], BackLowerLegR: [1.3, 1, 1.3] } },
+  dust_hound: { doc: 'fox', height: 1.0, mats: { Main: 0xffffff, Main_Light: 0xffffff, Grey: 0xffffff }, fur: 0.022, dens: 170, tip: 1.0, root: 0.85, walk: 1.5, run: 4.6, lean: true, coat: 'hound', shape: { 'Tail1': 0.6, 'Ear1L': 0.85, 'Ear1R': 0.85 } },
 };
+const COMB = null; // (combed fur made the wolf read shaggy, slice 19: the Quaternius coats keep their strands standing; the bear's coat is combed)
 // every creature gets its own fur materials (same shader program), so a hit flash tints only the one that was hit
 function furSet(type, dens) {
   const b = BEAST[type], set = {};
   for (const [name, col] of Object.entries(b.mats)) {
-    set[name] = { base: furMaterial(col, { dens, tip: b.tip }), shells: [] };
-    for (let k = 1; k <= SHELLS; k++) set[name].shells.push(furMaterial(col, { h: k / SHELLS, dens, len: 0, tip: b.tip }));
+    const vcol = !!b.coat;
+    set[name] = { base: furMaterial(col, { dens, tip: b.tip, comb: COMB, vcol, root: b.root }), shells: [] };
+    for (let k = 1; k <= SHELLS; k++) set[name].shells.push(furMaterial(col, { h: k / SHELLS, dens, len: 0, tip: b.tip, comb: COMB, vcol, root: b.root }));
   }
   return set;
 }
+// a coat pattern painted into the geometry's vertex colours (in the model's rest space: +y up, +z toward the nose; the
+// wolf's nose is at z 2.5, its tail tip at z -3, its back at y 2.2): a grey wolf's dark saddle and tail tip over buff
+// flanks, a cream belly, chest, throat, inner legs and muzzle; the hound a sandy coat with a pale throat and dark socks
+const COATS = {
+  wolf: (x, y, z, light) => { const ax = Math.abs(x), C = (h) => _cc.set(h);
+    const c = C(light ? 0xa89c86 : 0x847866);
+    const saddle = sm(1.55, 1.95, y) * sm(-1.6, -0.9, z) * (1 - sm(0.9, 1.5, z)) * (1 - sm(0.32, 0.5, ax) * 0.6);       // the dark saddle over the back
+    const belly = (1 - sm(1.0, 1.35, y)) * sm(-1.4, -0.9, z) * (1 - sm(1.4, 1.7, z)) * (1 - sm(0.16, 0.36, ax) * 0.75);    // belly and inner legs
+    const chest = sm(0.9, 1.3, z) * (1 - sm(1.35, 1.65, y)) * (1 - sm(0.2, 0.36, ax)) * (1 - sm(2.0, 2.2, z));             // chest and throat
+    const muzzle = sm(2.1, 2.35, z) * (1 - sm(2.05, 2.2, y)), cheek = sm(1.85, 2.05, z) * (1 - sm(1.9, 2.02, y)) * sm(0.15, 0.3, ax);
+    const tail = 1 - sm(-2.55, -2.3, z), legs = (1 - sm(0.6, 1.0, y)) * (1 - belly * 0.6), face = sm(1.7, 1.95, z) * sm(1.95, 2.25, y);
+    c.lerp(_c2.set(0x3e3a34), saddle * 0.85).lerp(_c2.set(0xd6cbb2), Math.max(belly * 0.85, chest, muzzle * 0.8, cheek * 0.6)).lerp(_c2.set(0x8c7458), legs * 0.75).lerp(_c2.set(0x5e5648), face * 0.6).lerp(_c2.set(0x23201c), tail * 0.9);
+    return c; },
+  hound: (x, y, z, light) => { const ax = Math.abs(x), c = _cc.set(light ? 0xe0cfa8 : 0xc0975e);
+    const back = sm(1.9, 2.3, y) * sm(-1.4, -0.8, z) * (1 - sm(0.9, 1.4, z));
+    const throat = sm(1.0, 1.5, z) * (1 - sm(1.7, 2.0, y)) * (1 - sm(0.22, 0.42, ax)), belly = (1 - sm(1.2, 1.55, y)) * (1 - sm(0.2, 0.4, ax) * 0.5);
+    const socks = 1 - sm(0.55, 0.85, y), tail = 1 - sm(-2.9, -2.6, z);
+    c.lerp(_c2.set(0x8a6236), back * 0.6).lerp(_c2.set(0xeadfc6), Math.max(throat, belly * 0.8)).lerp(_c2.set(0x3a2c20), socks * 0.9).lerp(_c2.set(0xeee6d6), tail * 0.8);
+    return c; },
+};
+const _cc = new THREE.Color(), _c2 = new THREE.Color(), sm = (a, b, v) => { const t = Math.min(1, Math.max(0, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
+function paintCoat(geo, kind, light) { if (geo.userData.coat) return; const p = geo.attributes.position, col = new Float32Array(p.count * 3), f = COATS[kind];
+  for (let i = 0; i < p.count; i++) { const c = f(p.getX(i), p.getY(i), p.getZ(i), light); col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); geo.userData.coat = true; }
 function beastClips(doc) { if (doc.userData.clips) return doc.userData.clips; const c = {};
   for (const a of doc.animations) { const tr = a.tracks.filter(t => !t.name.endsWith('.scale')); c[a.name] = new THREE.AnimationClip(a.name, a.duration, tr); }
   return (doc.userData.clips = c); }
 
-// ── The bear: no CC0 bear exists that we could find, so its body is sculpted here as a smooth signed-distance shape
-// (barrel body, shoulder hump, thick legs, broad skull, short muzzle, round ears), meshed by marching cubes and skinned
-// to the wolf's skeleton by distance to each bone, so it moves with the wolf's 12 clips and wears the same fur.
-let bearGeo = null;
-function boneSegs(skel, bindInv) {
-  const P = {}; skel.bones.forEach((bo, i) => { P[bo.name] = new THREE.Vector3().applyMatrix4(new THREE.Matrix4().copy(skel.boneInverses[i]).invert()).applyMatrix4(bindInv); });
-  const segs = [], add = (a, bn, end) => { const i = skel.bones.findIndex(x => x.name === a); if (i >= 0 && P[a]) segs.push({ i, a: P[a], b: end || P[bn] }); };
-  add('Back', 'Torso'); add('Torso', 'Torso2'); add('Torso2', 'Torso3'); add('Torso3', 'Neck1'); add('Neck1', 'Neck2'); add('Neck2', 'Neck3'); add('Neck3', 'Head');
-  add('Head', null, P.Head.clone().add(new THREE.Vector3(0, 0.0, 0.55)));
-  for (const s of ['L', 'R']) { add('FrontUpperLeg' + s, 'FrontLowerLeg' + s); add('FrontLowerLeg' + s, 'IKFrontLeg' + s); add('IKFrontLeg' + s, 'FF' + s);
-    add('BackLeg' + s, 'BackUpperLeg' + s); add('BackUpperLeg' + s, 'BackLowerLeg' + s); add('BackLowerLeg' + s, 'IKBackLeg' + s); add('IKBackLeg' + s, 'FFB' + s);
-    add('Ear1' + s, 'Ear3' + s); }
-  add('Tail1', 'Tail2');
-  return { P, segs };
-}
-function bearGeometry(wolfMesh) {
-  if (bearGeo) return bearGeo;
-  const skel = wolfMesh.skeleton, bindInv = new THREE.Matrix4().copy(wolfMesh.bindMatrix).invert(), { P, segs } = boneSegs(skel, bindInv), V = (x, y, z) => new THREE.Vector3(x, y, z);
-  // primitives in the wolf's bind space (about 2.7 units tall, head towards +Z): [a, b, ra, rb] capsules (rounded cones)
-  const C = [], cap = (a, b, ra, rb = ra) => C.push([a, b, ra, rb]);
-  const hip = P.Back.clone(), chest = P.Torso3.clone(), mid = P.Torso2.clone();
-  cap(hip.clone().add(V(0, -0.15, -0.1)), chest.clone().add(V(0, -0.2, 0)), 0.62, 0.66);         // barrel body
-  cap(mid.clone().add(V(0, -0.35, 0)), chest.clone().add(V(0, -0.45, 0)), 0.5, 0.5);             // deep chest and belly
-  cap(chest.clone().add(V(0, 0.25, -0.25)), chest.clone().add(V(0, 0.3, 0.15)), 0.42, 0.4);      // shoulder hump
-  cap(chest, P.Neck3, 0.5, 0.4);                                                                 // thick neck
-  cap(P.Head.clone().add(V(0, 0.02, -0.05)), P.Head.clone().add(V(0, 0.0, 0.12)), 0.36, 0.34);   // broad skull
-  cap(P.Head.clone().add(V(0, -0.02, 0.2)), P.Head.clone().add(V(0, -0.1, 0.55)), 0.2, 0.13);    // short muzzle
-  for (const s of ['L', 'R']) { const sx = s === 'L' ? 1 : -1;
-    cap(P['Ear1' + s].clone().add(V(-sx * 0.04, -0.02, -0.02)), P['Ear1' + s].clone().add(V(0, 0.06, 0)), 0.1, 0.09);  // round ears
-    cap(P['FrontUpperLeg' + s].clone().add(V(-sx * 0.05, 0.1, 0)), P['FrontLowerLeg' + s], 0.3, 0.24);
-    cap(P['FrontLowerLeg' + s], P['IKFrontLeg' + s], 0.22, 0.19);
-    cap(P['IKFrontLeg' + s].clone().add(V(0, -0.05, -0.05)), P['FF' + s].clone().add(V(0, 0.02, 0.06)), 0.17, 0.14);  // paw
-    cap(P['BackLeg' + s].clone().add(V(-sx * 0.05, 0, 0)), P['BackUpperLeg' + s], 0.4, 0.3);      // big haunch
-    cap(P['BackUpperLeg' + s], P['BackLowerLeg' + s], 0.27, 0.2);
-    cap(P['BackLowerLeg' + s], P['IKBackLeg' + s], 0.2, 0.18);
-    cap(P['IKBackLeg' + s].clone().add(V(0, -0.05, -0.08)), P['FFB' + s].clone().add(V(0, 0.02, 0.08)), 0.17, 0.14); }
-  cap(P.Tail1, P.Tail1.clone().add(V(0, -0.05, -0.15)), 0.12, 0.08);                            // stub tail
-  const sdCap = (p, [a, b, ra, rb]) => { const ba = b.clone().sub(a), pa = p.clone().sub(a), h = Math.max(0, Math.min(1, pa.dot(ba) / ba.lengthSq())); return pa.sub(ba.multiplyScalar(h)).length() - (ra + (rb - ra) * h); };
-  const smin = (a, b, k) => { const h = Math.max(0, Math.min(1, 0.5 + 0.5 * (b - a) / k)); return b + (a - b) * h - k * h * (1 - h); };
-  const box = new THREE.Box3(); for (const c of C) { box.expandByPoint(c[0]); box.expandByPoint(c[1]); } box.expandByScalar(0.75);
-  const size = box.getSize(new THREE.Vector3()), S = Math.max(size.x, size.y, size.z), ctr = box.getCenter(new THREE.Vector3()), R = 48;
-  const mc = new MarchingCubes(R, new THREE.MeshBasicMaterial(), false, false, 200000);
-  const F = C.map(([a, b, ra, rb]) => { const bx = b.x - a.x, by = b.y - a.y, bz = b.z - a.z; return [a.x, a.y, a.z, bx, by, bz, 1 / Math.max(1e-9, bx * bx + by * by + bz * bz), ra, rb - ra]; });
-  for (let z = 0; z < R; z++) for (let y = 0; y < R; y++) for (let x = 0; x < R; x++) {
-    const px = (x / (R - 1) - 0.5) * S + ctr.x, py = (y / (R - 1) - 0.5) * S + ctr.y, pz = (z / (R - 1) - 0.5) * S + ctr.z;
-    let d = 1e9; for (const f of F) { const ax = px - f[0], ay = py - f[1], az = pz - f[2]; const h = Math.max(0, Math.min(1, (ax * f[3] + ay * f[4] + az * f[5]) * f[6]));
-      const qx = ax - f[3] * h, qy = ay - f[4] * h, qz = az - f[5] * h, e = Math.sqrt(qx * qx + qy * qy + qz * qz) - (f[7] + f[8] * h); d = smin(d, e, 0.16); }
-    d += (Math.sin(px * 23) * Math.sin(py * 19) * Math.sin(pz * 21)) * 0.012; // a little lumpiness under the fur
-    const edge = x === 0 || y === 0 || z === 0 || x === R - 1 || y === R - 1 || z === R - 1;
-    mc.field[x + y * R + z * R * R] = edge ? 0 : 80 - d * 600; }
-  mc.isolation = 80; mc.update();
-  // MarchingCubes writes positions in [-1, 1] with x/y/z along the field's axes
-  const n = mc.count, pos = new Float32Array(n * 3), src = mc.positionArray;
-  for (let i = 0; i < n; i++) { pos[i * 3] = src[i * 3] * S / 2 + ctr.x; pos[i * 3 + 1] = src[i * 3 + 1] * S / 2 + ctr.y; pos[i * 3 + 2] = src[i * 3 + 2] * S / 2 + ctr.z; }
-  let g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g = mergeVertices(g, 1e-4); g.computeVertexNormals();
-  // skin: the three nearest bone segments, weighted by closeness
-  const cnt = g.attributes.position.count, J = new Uint16Array(cnt * 4), W = new Float32Array(cnt * 4), q = new THREE.Vector3(), ds = [];
-  for (let v = 0; v < cnt; v++) { q.fromBufferAttribute(g.attributes.position, v); ds.length = 0;
-    for (const sg of segs) { const ba = sg.b.clone().sub(sg.a), pa = q.clone().sub(sg.a), h = Math.max(0, Math.min(1, pa.dot(ba) / Math.max(1e-6, ba.lengthSq()))); ds.push([pa.sub(ba.multiplyScalar(h)).length(), sg.i]); }
-    ds.sort((a, b) => a[0] - b[0]); let tw = 0; const seen = new Set(), pick = [];
-    for (const [d, i] of ds) { if (seen.has(i)) continue; seen.add(i); pick.push([Math.exp(-(d - ds[0][0]) / 0.03), i]); if (pick.length === 2) break; }
-    for (const [w] of pick) tw += w; pick.forEach(([w, i], k) => { J[v * 4 + k] = i; W[v * 4 + k] = w / tw; }); }
-  g.setAttribute('skinIndex', new THREE.BufferAttribute(J, 4)); g.setAttribute('skinWeight', new THREE.BufferAttribute(W, 4));
-  return (bearGeo = g);
-}
 // slice 13: animals' eyes shine in the dark (the glow of an eye catching the light), brighter as night comes
 const EYES = [], EYE_MATS = new Map(); // (one shining eye material per creature type and eye, shared by every spawn: a clone per spawn grew EYES without end)
 function shine(m) { m.emissive = new THREE.Color(0xffb848); m.emissiveIntensity = 0; EYES.push(m); return m; }
 export function eyeShine(k) { for (const m of EYES) m.emissiveIntensity = k * 2.2; }
-// eyes and nose ride the head bone
-function addBearFace(mesh, skel) {
-  const head = skel.bones.find(b => b.name === 'Head'), bindInv = new THREE.Matrix4().copy(mesh.bindMatrix).invert();
-  const hp = new THREE.Vector3().applyMatrix4(new THREE.Matrix4().copy(skel.boneInverses[skel.bones.indexOf(head)]).invert()).applyMatrix4(bindInv);
-  const put = (geo, mat, off) => { const m = new THREE.Mesh(geo, mat); m.position.copy(head.worldToLocal(mesh.localToWorld(hp.clone().add(off)))); m.scale.setScalar(1 / head.getWorldScale(new THREE.Vector3()).x * mesh.getWorldScale(new THREE.Vector3()).x); head.add(m); };
-  const eye = EYE_MATS.get('bear') || EYE_MATS.set('bear', shine(new THREE.MeshStandardMaterial({ color: 0x0a0806, roughness: 0.15 }))).get('bear'), nose = new THREE.MeshStandardMaterial({ color: 0x141010, roughness: 0.35 });
-  for (const sx of [1, -1]) put(new THREE.SphereGeometry(0.04, 10, 8), eye, new THREE.Vector3(sx * 0.16, 0.1, 0.36));
-  put(new THREE.SphereGeometry(0.07, 12, 8).scale(1.3, 0.85, 1), nose, new THREE.Vector3(0, -0.09, 0.59));
-}
-
 function buildBeast(type) {
   const b = BEAST[type], doc = docs[b.doc], src = SkeletonUtils.clone(doc.scene);
   const root = new THREE.Group(), inner = new THREE.Group(); root.add(inner); inner.add(src); inner.rotation.y = Math.PI; // the model faces +Z; the game's forward is -Z
@@ -171,8 +92,6 @@ function buildBeast(type) {
   if (b.lean) for (const n of ['Torso', 'Torso2']) bones[n]?.scale.set(0.88, 1, 1);
   src.updateMatrixWorld(true);
   let skinned = []; src.traverse(o => { if (o.isSkinnedMesh) skinned.push(o); });
-  if (b.sculpt) { const w = skinned[0], bear = new THREE.SkinnedMesh(bearGeometry(w), new THREE.MeshStandardMaterial({ name: 'Main' }));
-    for (const o of skinned) o.visible = false; w.parent.add(bear); bear.bind(w.skeleton, w.bindMatrix); addBearFace(bear, w.skeleton); skinned = [bear]; src.updateMatrixWorld(true); }
   const box = new THREE.Box3(); for (const s of skinned) { s.computeBoundingBox(); box.union(s.boundingBox.clone().applyMatrix4(s.matrixWorld)); }
   const k = b.height / (box.max.y - box.min.y); src.scale.multiplyScalar(k); src.position.y -= box.min.y * k;
   const ms = skinned[0].matrixWorld.getMaxScaleOnAxis(), perM = 1 / (k * ms); // geometry units per metre
@@ -182,12 +101,14 @@ function buildBeast(type) {
     if (!s.visible) continue; s.castShadow = true; s.frustumCulled = false; const name = s.material.name, f = set[name];
     if (!f) { const ek = type + name; if (name.startsWith('Eye')) { if (!EYE_MATS.has(ek)) { const m = s.material.clone(); m.roughness = 0.15; EYE_MATS.set(ek, shine(m)); } s.material = EYE_MATS.get(ek); continue; }
       s.material = s.material.clone(); s.material.roughness = 0.5; continue; }
+    if (b.coat) paintCoat(s.geometry, b.coat, name === 'Main_Light'); // (the geometry is shared by every clone: painted once)
     s.material = f.base; mats.push(f.base);
     f.shells.forEach((m, i) => { const sm = new THREE.SkinnedMesh(s.geometry, m); sm.bind(s.skeleton, s.bindMatrix); sm.frustumCulled = false; sm.castShadow = false;
       m.userData.u.uLen.value = b.fur * perM; s.parent.add(sm); shells.push(sm); mats.push(m); });
   }
   const anim = new BeastAnimator(src, beastClips(doc), b);
-  root.userData = { anim, mats, height: b.height, setDetail(near) { for (const s of shells) s.visible = near; }, flash: flasher(mats) };
+  anim.speeds = { Walk: clipSpeed(type, doc, k, 'Walk'), Gallop: clipSpeed(type, doc, k, 'Gallop') }; anim.root = root; anim.yaw = 0; anim.neck = bones.Neck2 || bones.Neck1; anim.head = bones.Head;
+  root.userData = { anim, mats, height: b.height, setDetail(near) { for (const s of shells) s.visible = near; }, flash: flasher(mats), paws: pawTips(src) };
   return root;
 }
 // a hit flash: all of a type's creatures share materials, so the flash is per creature through onBeforeRender
@@ -206,12 +127,45 @@ class BeastAnimator {
   hit(side) { if (!this.dead) this.play(side > 0 ? 'Idle_HitReact_Right' : 'Idle_HitReact_Left', 1.4, 4); }
   die() { this.dead = true; if (this.one) { this.one.stop(); this.one = null; } const a = this.get('Death'); a.reset(); a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true; a.play();
     if (this.base) this.base.crossFadeTo(a, 0.15, false); this.base = a; this.baseName = 'Death'; }
-  update(dt, { speed = 0, idle = 'Idle', scale = 1 } = {}) {
-    if (!this.dead) { const s = speed / scale; let n = idle, ts = 1;
-      if (s > this.b.walk * 1.6) { n = 'Gallop'; ts = s / this.b.run; } else if (s > 0.2) { n = 'Walk'; ts = s / this.b.walk; }
-      this.setBase(n, 0.25); this.base.timeScale = Math.min(1.8, Math.max(0.5, ts)); }
-    this.mixer.update(dt); }
+  // slice 19: the walk and gallop play at the rate their own feet travel (measured from the clips: clipSpeed), so the
+  // paws stay put on the ground instead of skating; a hunter turns its head toward its quarry
+  // (gate fix: the gait is picked from the speed eased over about a tenth of a second, with a margin each way, so a
+  // one-frame shove in a fight no longer flips idle, gallop, idle and restarts the clip each time; on stopping, the
+  // stride it was in holds still while it blends to the idle pose (it ran on in place for the blend, the paws skating
+  // 10 to 30 cm a frame under a body standing still))
+  update(dt, { speed = 0, idle = 'Idle', scale = 1, look = null } = {}) {
+    if (!this.dead) { const v = this.speeds, cur = this.baseName, moving = cur === 'Walk' || cur === 'Gallop';
+      this.sv = (this.sv ?? 0) + (speed / scale - (this.sv ?? 0)) * Math.min(1, dt * 12); const s = this.sv; let n = idle, ts = 1;
+      if (s > v.Walk * (cur === 'Gallop' ? 1.5 : 1.9)) { n = 'Gallop'; ts = s / v.Gallop; } else if (s > (moving ? 0.12 : 0.4)) { n = 'Walk'; ts = s / v.Walk; }
+      if (moving && n === idle) { this.base.timeScale = 0; this.setBase(n, 0.18); } else this.setBase(n, 0.25);
+      this.base.timeScale = Math.min(2.2, Math.max(0.35, ts)); }
+    this.mixer.update(dt);
+    if (this.root && this.neck) { let yaw = 0; if (look && !this.dead) { const q = this.root.worldToLocal(_lk.copy(look)); yaw = Math.max(-0.65, Math.min(0.65, Math.atan2(-q.x, -q.z))); }
+      this.yaw += (yaw - this.yaw) * Math.min(1, dt * 5);
+      if (Math.abs(this.yaw) > 1e-3) { this.root.updateMatrixWorld(true); for (const [bone, k] of [[this.neck, 0.4], [this.head, 0.6]]) turnWorldY(bone, this.yaw * k); } } }
 }
+const _lk = new THREE.Vector3(), _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _q3 = new THREE.Quaternion(), _up = new THREE.Vector3(0, 1, 0);
+// turn a bone about the world's up axis, whatever its own axes are (the Quaternius bones point along their own +Y)
+function turnWorldY(bone, a) { const pq = bone.parent.getWorldQuaternion(_q1); bone.quaternion.premultiply(_q2.copy(pq).invert().multiply(_q3.setFromAxisAngle(_up, a)).multiply(pq)); bone.updateMatrixWorld(true); }
+// how fast a clip's feet travel along the ground while planted (model units a second, after the model's scale k): the
+// rate that makes it play without sliding; measured once per animal and clip
+const SPEEDS = {};
+// the paws: each lower-leg bone carries the point its paw sat at in the rest pose (where the rig's foot-control bones
+// stand). The control bones themselves (FF, FFB) do not follow the deforming legs through the clips, so they are no
+// guide to where a paw is; the deform chain is. Returns [{ bone, tip }]: a paw is bone.localToWorld(tip.clone())
+function pawTips(model) { const by = {}; model.traverse(o => { if (o.isBone) by[o.name] = o; }); model.updateMatrixWorld(true); const out = [];
+  for (const [c, l] of [['FFL', 'FrontLowerLegL'], ['FFR', 'FrontLowerLegR'], ['FFBL', 'BackLowerLegL'], ['FFBR', 'BackLowerLegR']])
+    if (by[c] && by[l]) out.push({ bone: by[l], tip: by[l].worldToLocal(by[c].getWorldPosition(new THREE.Vector3())) });
+  return out; }
+function clipSpeed(type, doc, k, name) {
+  const key = type + name; if (SPEEDS[key]) return SPEEDS[key];
+  const m = SkeletonUtils.clone(doc.scene); m.scale.setScalar(k); const clip = beastClips(doc)[name], mix = new THREE.AnimationMixer(m); mix.clipAction(clip).play();
+  const feet = pawTips(m); if (!feet.length) return (SPEEDS[key] = name === 'Walk' ? 1.5 : 4.5);
+  const N = 48, tr = feet.map(() => []), p = new THREE.Vector3();
+  for (let i = 0; i <= N; i++) { mix.setTime(clip.duration * i / N); m.updateMatrixWorld(true); feet.forEach((f, j) => { f.bone.localToWorld(p.copy(f.tip)); tr[j].push([p.y, p.z]); }); }
+  let sum = 0, n = 0; for (const t of tr) { const lo = Math.min(...t.map(q => q[0])), cut = lo + 0.025; // (planted: within 2.5 cm of its lowest, as the walk test judges a paw on the ground)
+    for (let i = 1; i <= N; i++) if (t[i][0] < cut && t[i - 1][0] < cut) { sum += Math.abs(t[i][1] - t[i - 1][1]); n++; } }
+  return (SPEEDS[key] = n ? sum / n * N / clip.duration : name === 'Walk' ? 1.5 : 4.5); }
 
 // ── The rat: Poly Haven scan, moved in the vertex shader (legs scurry, body bobs, tail swings) ──
 let ratGeo = null, ratMatBase = null;
@@ -231,20 +185,22 @@ function buildRat() {
           transformed.y += max(0., cos(ph)) * uAmp * ${(sz * 0.02).toFixed(5)} * legW * step(${zTail.toFixed(5)}, position.z);
           transformed.y += sin(uPh * 2.) * uAmp * ${(sz * 0.006).toFixed(5)};
           float t = max(0., ${zTail.toFixed(5)} - position.z) / ${(len * 0.56).toFixed(5)};
-          transformed.x += sin(uTail - t * 4.) * t * t * ${(sz * 0.12).toFixed(5)};
+          transformed.x += sin(uTail - t * 4.) * t * t * ${(sz * 0.12).toFixed(5)}; transformed.y += t * t * ${(sz * 0.025).toFixed(5)}; // (round 2: the tail's tip curves up off the ground, where it shows)
           float hd = smoothstep(${(bb.max.z - len * 0.12).toFixed(5)}, ${bb.max.z.toFixed(5)}, position.z);
           transformed.x += uLook * hd * ${(sz * 0.03).toFixed(5)}; }`);
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uFlash;')
-      .replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb = mix(diffuseColor.rgb * 1.15, vec3(1., .95, .85), uFlash);'); };
+      .replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb = mix(min(vec3(0.6), diffuseColor.rgb * vec3(3.7, 3.55, 3.4)), vec3(1., .95, .85), uFlash);'); }; // (round 1: the scan's albedo is near black, about 0.04 linear: a brown rat's coat is about four times lighter, a touch greyer)
   m.customProgramCacheKey = () => 'iwrat';
   const mesh = new THREE.Mesh(ratGeo, m); mesh.castShadow = true; mesh.scale.setScalar(k); mesh.position.y = -bb.min.y * k; mesh.rotation.y = Math.PI;
   const root = new THREE.Group(); root.add(mesh);
-  let ph = Math.random() * 6, tl = 0, dying = 0, lunge = 0;
+  let ph = Math.random() * 6, tl = 0, dying = 0, lunge = 0, pitch = 0;
   const anim = { dead: false,
-    update(dt, { speed = 0, scale = 1 } = {}) { const s = speed / scale; ph += dt * (s > 0.1 ? 6 + s * 5 : 0); tl += dt * (2 + s * 3);
+    update(dt, { speed = 0, scale = 1, ground = null } = {}) { const s = speed / scale;
+      if (ground) { const y = root.rotation.y, fx = -Math.sin(y), fz = -Math.cos(y), d = 0.5 * scale, x = root.position.x, z = root.position.z; // (round 2: the body lies along the slope, so the tail does not sink into a hill)
+        pitch += (Math.atan2(ground(x + fx * d, z + fz * d) - ground(x - fx * d, z - fz * d), 2 * d) - pitch) * Math.min(1, dt * 8); } ph += dt * (s > 0.1 ? 6 + s * 5 : 0); tl += dt * (2 + s * 3);
       u.uPh.value = ph; u.uAmp.value += ((s > 0.1 ? 1 : 0) - u.uAmp.value) * Math.min(1, dt * 10); u.uTail.value = tl;
       u.uLook.value = Math.sin(tl * 0.7) * (s > 0.1 ? 0.2 : 1);
-      lunge = Math.max(0, lunge - dt * 4); mesh.position.z = -Math.sin(lunge * Math.PI) * 0.25; mesh.rotation.x = -Math.sin(lunge * Math.PI) * 0.25;
+      lunge = Math.max(0, lunge - dt * 4); mesh.position.z = -Math.sin(lunge * Math.PI) * 0.25; mesh.rotation.x = pitch - Math.sin(lunge * Math.PI) * 0.25;
       if (dying) { dying = Math.min(1, dying + dt * 4); mesh.rotation.z = dying * Math.PI * 0.95; } },
     attack() { lunge = 1; }, hit() { lunge = 0.5; }, die() { this.dead = true; dying = 0.01; } };
   root.userData = { anim, mats: [m], height: 0.8, setDetail() {}, flash: (v) => { u.uFlash.value = v; } };
@@ -259,8 +215,8 @@ function builtMats() {
   if (BM) return BM;
   let s = 7; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
   // chitin: blue-grey plates with frost speckle and dark seams
-  const chitin = canvasTex(256, (g, n) => { g.fillStyle = '#5d7d92'; g.fillRect(0, 0, n, n);
-    for (let i = 0; i < 900; i++) { const v = 120 + rnd() * 120; g.fillStyle = `rgba(${v * 0.85},${v * 0.95},${v},${0.15 + rnd() * 0.3})`; g.beginPath(); g.arc(rnd() * n, rnd() * n, rnd() * 5 + 0.5, 0, 6.3); g.fill(); }
+  const chitin = canvasTex(256, (g, n) => { g.fillStyle = '#6e6a74'; g.fillRect(0, 0, n, n);
+    for (let i = 0; i < 900; i++) { const v = 120 + rnd() * 120; g.fillStyle = `rgba(${v * 0.96},${v * 0.94},${v},${0.15 + rnd() * 0.3})`; g.beginPath(); g.arc(rnd() * n, rnd() * n, rnd() * 5 + 0.5, 0, 6.3); g.fill(); }
     g.strokeStyle = 'rgba(20,30,40,0.55)'; for (let i = 0; i < 40; i++) { g.lineWidth = 0.5 + rnd() * 1.5; g.beginPath(); const x = rnd() * n, y = rnd() * n; g.moveTo(x, y); g.bezierCurveTo(x + rnd() * 40 - 20, y + rnd() * 40 - 20, x + rnd() * 60 - 30, y + rnd() * 60 - 30, x + rnd() * 80 - 40, y + rnd() * 80 - 40); g.stroke(); } });
   // wet amphibian skin: olive with dark blotches, pale warts
   const skin = canvasTex(512, (g, n) => { const gr = g.createLinearGradient(0, 0, 0, n); gr.addColorStop(0, '#2c3220'); gr.addColorStop(1, '#3a3e26'); g.fillStyle = gr; g.fillRect(0, 0, n, n);
@@ -269,9 +225,10 @@ function builtMats() {
   const belly = canvasTex(256, (g, n) => { g.fillStyle = '#8a8458'; g.fillRect(0, 0, n, n); for (let i = 0; i < 600; i++) { const v = 110 + rnd() * 60; g.fillStyle = `rgba(${v},${v * 0.95},${v * 0.6},0.4)`; g.fillRect(rnd() * n, rnd() * n, 2, 2); } });
   const P = (o) => new THREE.MeshPhysicalMaterial(o);
   BM = {
-    chitin: P({ map: chitin, color: 0x8c9ca6, roughness: 0.62, metalness: 0.0, clearcoat: 0.25, clearcoatRoughness: 0.5 }),
-    chitinDark: P({ map: chitin, color: 0x4a5a66, roughness: 0.6, clearcoat: 0.2, clearcoatRoughness: 0.5 }),
-    ice: P({ color: 0xd8f0ff, roughness: 0.08, metalness: 0, clearcoat: 1, transparent: true, opacity: 0.82, emissive: 0x2a5068, emissiveIntensity: 0.4, envMapIntensity: 1.6 }),
+    chitin: P({ map: chitin, color: 0x9c98a2, roughness: 0.75, metalness: 0.0, clearcoat: 0.1, clearcoatRoughness: 0.6 }),
+    chitinDark: P({ map: chitin, color: 0x58545e, roughness: 0.72, clearcoat: 0.1, clearcoatRoughness: 0.6 }), // (round 1: ash grey legs and underside, not blue)
+    chitinPale: P({ map: chitin, color: 0xb8b4b0, roughness: 0.55, clearcoat: 0.2, clearcoatRoughness: 0.4 }),
+    ice: P({ color: 0xd8e8f0, roughness: 0.2, metalness: 0, clearcoat: 0.6, transparent: true, opacity: 0.75, emissive: 0x1a3040, emissiveIntensity: 0.25, envMapIntensity: 1.0 }),
     mandible: P({ color: 0x1c2228, roughness: 0.25, clearcoat: 1 }),
     eyeGlow: new THREE.MeshBasicMaterial({ color: 0x9ff4ff }),
     skin: new THREE.MeshStandardMaterial({ map: skin, color: 0xb0a890, roughness: 0.88 }),
@@ -282,94 +239,6 @@ function builtMats() {
     pupil: new THREE.MeshBasicMaterial({ color: 0x050505 }),
   };
   return BM;
-}
-const mk = (geo, mat, p = [0, 0, 0], r = [0, 0, 0], s = [1, 1, 1]) => { const m = new THREE.Mesh(geo, mat); m.position.set(...p); m.rotation.set(...r); m.scale.set(...s); m.castShadow = true; return m; };
-// lumpy sphere: noise-displaced, smooth normals
-function lumpy(r, w, h, seed, amp = 0.12) { const g = new THREE.SphereGeometry(r, w, h), p = g.attributes.position, v = new THREE.Vector3();
-  for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i); const n = Math.sin(v.x * 9 + seed) * Math.sin(v.y * 7 + seed * 2) * Math.sin(v.z * 8 + seed * 3) + 0.5 * Math.sin(v.x * 23 + v.z * 17 + seed);
-    v.multiplyScalar(1 + n * amp); p.setXYZ(i, v.x, v.y, v.z); } g.computeVertexNormals(); return g; }
-
-// ── Ice crawler: segmented body, six two-part legs, crystal spines; facing -Z ──
-function buildCrawler() {
-  const M = builtMats(), root = new THREE.Group(), body = new THREE.Group(); root.add(body); body.position.y = 0.55;
-  const segs = [];
-  const segDef = [[0.0, 0.30, 0.42], [0.36, 0.34, 0.40], [0.72, 0.30, 0.36], [1.02, 0.24, 0.30], [1.26, 0.17, 0.24]];
-  let parent = body;
-  segDef.forEach(([z, r, w], i) => { const g = new THREE.Group(); g.position.z = i ? z - segDef[i - 1][0] : 0; parent.add(g); parent = g; segs.push(g);
-    g.add(mk(lumpy(r, 18, 12, i * 3.1, 0.05), M.chitin, [0, 0, 0], [0, 0, 0], [w / r, 0.72, 1.0]));
-    g.add(mk(new THREE.SphereGeometry(r * 0.98, 16, 8, 0, Math.PI * 2, Math.PI * 0.55, Math.PI * 0.45), M.chitinDark, [0, -0.02, 0], [0, 0, 0], [w / r * 0.95, 0.7, 0.95]));
-    // crystal spines along the back
-    for (let k = 0; k < (i < 4 ? 3 : 1); k++) { const sx = (k - 1) * w * 0.55 * (i < 4 ? 1 : 0), hgt = (0.22 + (i === 1 ? 0.15 : 0) - Math.abs(sx) * 0.5) * (i < 4 ? 1 : 0.6);
-      g.add(mk(new THREE.ConeGeometry(0.06, hgt, 5), M.ice, [sx, r * 0.62 + hgt * 0.4, 0], [-0.5, 0, -sx * 1.2])); } });
-  // head with mandibles and glowing eyes, at the front (-Z)
-  const head = new THREE.Group(); head.position.set(0, 0.0, -0.36); body.add(head);
-  head.add(mk(lumpy(0.22, 16, 12, 9, 0.06), M.chitin, [0, 0, 0], [0, 0, 0], [1.25, 0.75, 1.1]));
-  const mand = [-1, 1].map(sx => { const g = new THREE.Group(); g.position.set(sx * 0.12, -0.06, -0.2); head.add(g);
-    g.add(mk(new THREE.ConeGeometry(0.035, 0.32, 6), M.mandible, [sx * 0.04, 0, -0.14], [-Math.PI / 2, 0, sx * 0.5])); return g; });
-  for (const sx of [-1, 1]) for (const k of [0, 1]) head.add(mk(new THREE.SphereGeometry(0.03, 8, 6), M.eyeGlow, [sx * (0.1 + k * 0.06), 0.08 - k * 0.03, -0.2 + k * 0.04]));
-  // antennae
-  for (const sx of [-1, 1]) head.add(mk(new THREE.CylinderGeometry(0.006, 0.012, 0.5, 4), M.chitinDark, [sx * 0.08, 0.15, -0.35], [-1.1, 0, sx * 0.35]));
-  // legs: hip on segments 0..2, femur up and out, tibia down to the ground
-  const legs = [];
-  for (let i = 0; i < 3; i++) for (const sx of [-1, 1]) {
-    const hip = new THREE.Group(); hip.position.set(sx * segDef[i][2] * 0.85, -0.05, 0); segs[i].add(hip);
-    const femur = new THREE.Group(); hip.add(femur); femur.rotation.z = sx * 0.9; femur.add(mk(new THREE.CylinderGeometry(0.035, 0.05, 0.5, 6), M.chitin, [sx * 0.25, 0, 0], [0, 0, Math.PI / 2]));
-    const knee = new THREE.Group(); knee.position.x = sx * 0.5; femur.add(knee); knee.rotation.z = -sx * 2.1;
-    knee.add(mk(new THREE.CylinderGeometry(0.012, 0.035, 0.62, 6), M.chitinDark, [sx * 0.31, 0, 0], [0, 0, Math.PI / 2]));
-    knee.add(mk(new THREE.ConeGeometry(0.02, 0.1, 5), M.ice, [sx * 0.64, 0, 0], [0, 0, -sx * Math.PI / 2]));
-    legs.push({ hip, femur, knee, sx, i, group: (i + (sx > 0 ? 1 : 0)) % 2 });
-  }
-  let ph = Math.random() * 6, atk = 0, dying = 0, hitT = 0;
-  const anim = { dead: false,
-    update(dt, { speed = 0, scale = 1 } = {}) { const s = speed / scale, moving = s > 0.15 ? 1 : 0; ph += dt * (moving ? 5 + s * 2.2 : 1.2);
-      for (const L of legs) { const p = ph + L.group * Math.PI + L.i * 0.3; L.hip.rotation.y = Math.sin(p) * 0.45 * moving * -L.sx; L.femur.rotation.z = L.sx * (0.9 + Math.max(0, Math.cos(p)) * 0.35 * moving + (dying ? dying * 0.8 : 0)); }
-      segs.forEach((g, i) => { if (i) g.rotation.y = Math.sin(ph * 0.5 - i * 0.8) * (moving ? 0.12 : 0.04); });
-      body.position.y = 0.55 - (dying ? dying * 0.4 : 0) + Math.abs(Math.sin(ph)) * 0.025 * moving;
-      atk = Math.max(0, atk - dt * 3); const a = Math.sin(atk * Math.PI); body.rotation.x = a * 0.35 - hitT * 0.4; head.position.z = -0.36 - a * 0.12;
-      mand.forEach((m, k) => m.rotation.y = (k ? -1 : 1) * (0.25 + 0.6 * a + 0.12 * Math.sin(ph * 3)));
-      hitT = Math.max(0, hitT - dt * 4); if (dying) { dying = Math.min(1, dying + dt * 2.5); body.rotation.z = dying * 2.6; } },
-    attack() { atk = 1; }, hit() { hitT = 1; }, die() { this.dead = true; dying = 0.01; } };
-  const mats = [M.chitin, M.chitinDark];
-  root.userData = { anim, height: 0.8, setDetail() {}, flash: perMeshFlash(root) };
-  return root;
-}
-
-// ── Bog lurker: a long wet amphibian, low and wide, big mouth; facing -Z ──
-function buildLurker() {
-  const M = builtMats(), root = new THREE.Group(), body = new THREE.Group(); root.add(body); body.position.y = 0.42;
-  body.add(mk(lumpy(0.5, 28, 18, 2.2, 0.08), M.skin, [0, 0.02, 0.05], [0, 0, 0], [1.05, 0.6, 1.55]));
-  body.add(mk(lumpy(0.48, 20, 12, 5.1, 0.03), M.belly, [0, -0.1, 0.05], [0, 0, 0], [1.0, 0.45, 1.45]));
-  // warts / ridge
-  for (let i = 0; i < 14; i++) body.add(mk(new THREE.SphereGeometry(0.03 + (i % 3) * 0.012, 8, 6), M.skin, [Math.sin(i * 2.3) * 0.3, 0.29 - Math.abs(Math.sin(i * 2.3)) * 0.05, -0.5 + i * 0.08], [0, 0, 0], [1.4, 0.5, 1.4]));
-  // tail
-  const tail = []; let tp = body;
-  for (let i = 0; i < 5; i++) { const g = new THREE.Group(); g.position.z = i ? 0.24 : 0.72; tp.add(g); tp = g; tail.push(g); g.add(mk(lumpy(0.2 - i * 0.032, 12, 8, i, 0.05), M.skin, [0, 0, 0.1], [0, 0, 0], [1, 0.6, 1.6])); }
-  // head: upper skull and a jaw that drops
-  const head = new THREE.Group(); head.position.set(0, 0.04, -0.72); body.add(head);
-  head.add(mk(lumpy(0.36, 22, 14, 7.7, 0.05), M.skin, [0, 0.05, -0.12], [0, 0, 0], [1.15, 0.45, 1.05]));
-  const jaw = new THREE.Group(); jaw.position.set(0, -0.04, 0.12); head.add(jaw);
-  jaw.add(mk(lumpy(0.34, 20, 10, 3.3, 0.03), M.belly, [0, -0.06, -0.24], [0, 0, 0], [1.1, 0.28, 1.0]));
-  jaw.add(mk(new THREE.SphereGeometry(0.3, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), M.mouth, [0, -0.02, -0.24], [0, 0, 0], [1.05, 0.25, 0.95]));
-  for (let i = 0; i < 12; i++) { const a = (i / 11 - 0.5) * 2.6; head.add(mk(new THREE.ConeGeometry(0.018, 0.07, 4), M.teeth, [Math.sin(a) * 0.36, -0.03, -0.12 - Math.cos(a) * 0.33], [Math.PI, 0, 0])); }
-  for (const sx of [-1, 1]) { head.add(mk(new THREE.SphereGeometry(0.085, 12, 8), M.skin, [sx * 0.22, 0.17, -0.02])); head.add(mk(new THREE.SphereGeometry(0.07, 12, 8), M.lurkEye, [sx * 0.23, 0.2, -0.05], [0, 0, 0], [0.8, 0.8, 0.8]));
-    head.add(mk(new THREE.BoxGeometry(0.014, 0.08, 0.02), M.pupil, [sx * 0.235, 0.205, -0.115])); }
-  // four splayed legs
-  const legs = [];
-  for (const [z, sx, k] of [[-0.45, -1, 0], [-0.45, 1, 1], [0.45, -1, 1], [0.45, 1, 0]]) { const hip = new THREE.Group(); hip.position.set(sx * 0.42, -0.05, z); body.add(hip);
-    const up = mk(lumpy(0.1, 10, 8, z + sx, 0.05), M.skin, [sx * 0.22, -0.14, 0], [0, 0, sx * 0.9], [1, 3.0, 1]); hip.add(up);
-    const foot = mk(lumpy(0.09, 10, 6, sx * 3, 0.1), M.skin, [sx * 0.45, -0.36, -0.04], [0, 0, 0], [1.4, 0.4, 1.6]); hip.add(foot); legs.push({ hip, sx, k }); }
-  let ph = Math.random() * 6, atk = 0, dying = 0, hitT = 0, breathe = Math.random() * 6;
-  const anim = { dead: false, submerged: 0,
-    update(dt, { speed = 0, scale = 1 } = {}) { const s = speed / scale, moving = s > 0.15 ? 1 : 0; ph += dt * (moving ? 3 + s * 2 : 0); breathe += dt * 2;
-      for (const L of legs) { const p = ph + L.k * Math.PI; L.hip.rotation.y = Math.sin(p) * 0.5 * moving * L.sx; L.hip.position.y = -0.05 + Math.max(0, Math.cos(p)) * 0.06 * moving; }
-      body.rotation.y = Math.sin(ph) * 0.12 * moving; tail.forEach((g, i) => g.rotation.y = Math.sin(ph * (moving ? 1 : 0.3) + breathe * 0.2 - i * 0.7) * (0.18 + 0.08 * i) * (moving ? 1 : 0.4));
-      body.scale.set(1 + Math.sin(breathe) * 0.015, 1 + Math.sin(breathe) * 0.03, 1);
-      atk = Math.max(0, atk - dt * 2.4); const a = Math.sin(atk * Math.PI); jaw.rotation.x = 0.08 + a * 0.75 + (moving ? 0 : Math.max(0, Math.sin(breathe * 0.3)) * 0.06); head.rotation.x = -a * 0.35 + hitT * 0.3;
-      body.position.y = 0.42 - (dying ? dying * 0.25 : 0); hitT = Math.max(0, hitT - dt * 4);
-      if (dying) { dying = Math.min(1, dying + dt * 2); body.rotation.z = dying * 2.9; } },
-    attack() { atk = 1; }, hit() { hitT = 1; }, die() { this.dead = true; dying = 0.01; } };
-  root.userData = { anim, height: 0.8, setDetail() {}, flash: perMeshFlash(root) };
-  return root;
 }
 // built creatures share materials across instances: a flash swaps in per-creature emissive clones
 function perMeshFlash(root) { let on = false; const orig = new Map();
@@ -388,7 +257,8 @@ function buildRaider(type) { const m = buildCharacter({ id: type, color: 0x8a3a2
 export function buildCreature(type) {
   if (type === 'brawler' || type === 'shooter' || type === 'heavy') return buildRaider(type);
   if (type === 'rat') return buildRat();
-  if (type === 'ice_crawler') return buildCrawler();
-  if (type === 'bog_lurker') return buildLurker();
+  if (type === 'ice_crawler') { const M = builtMats(); return buildCrawler({ M, eye: M.eyeGlow, perMeshFlash }); }
+  if (type === 'bog_lurker') { const M = builtMats(); return buildLurker({ M, eye: M.lurkEye, perMeshFlash }); }
+  if (type === 'bear') return buildBear({ eye: EYE_MATS.get('bear') || EYE_MATS.set('bear', shine(new THREE.MeshStandardMaterial({ color: 0x0a0806, roughness: 0.15 }))).get('bear'), flasher });
   return buildBeast(type);
 }

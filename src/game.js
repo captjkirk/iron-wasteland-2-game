@@ -70,7 +70,7 @@ function alertPack(e) { for (const o of enemies) if (o.pack === e.pack && !o.dea
 
 // ── Pickups and projectiles ─────────────────────────────────────────────
 export const pickups = []; const shots = []; let lootN = 0;
-export function dropLoot(x, z, kind) { const a = rng() * 6.28, s = 1 + rng() * 1.5, v = [Math.cos(a) * s, 3.5 + rng() * 1.5, Math.sin(a) * s], id = ++lootN;
+export function dropLoot(x, z, kind, r = 0) { const a = rng() * 6.28, s = 1 + rng() * 1.5, v = [Math.cos(a) * s, 3.5 + rng() * 1.5, Math.sin(a) * s], id = ++lootN; x += Math.cos(a) * r; z += Math.sin(a) * r; // (r: thrown from the body's edge, not out of its middle, so it does not land inside a big corpse)
   addPickup(id, kind, x, z, false, v); send('all', { t: 'loot', id, kind, x: +x.toFixed(2), z: +z.toFixed(2), v: v.map(q => +q.toFixed(2)) }); }
 // a pickup on the ground (co-op: the host's; a joined game draws the ones the host tells it of, landed when it joins late)
 export function addPickup(id, kind, x, z, landed, v = [0, 0, 0]) { const m = buildLoot(kind); m.position.set(x, groundY(x, z) + (landed ? 0.35 : 0.6), z); scene.add(m);
@@ -160,7 +160,7 @@ export function startGame(i) {
   for (let r = 0; r < 60; r += 2) { let found = false; for (let a = 0; a < 6.28; a += 0.4) { const x = Math.cos(a) * r, z = Math.sin(a) * r;
     if (groundY(x, z) > WATER_Y + 1 && slopeAt(x, z) < 0.3 && !nearColliders(x, z).some(c => Math.hypot(c.x - x, c.z - z) < c.r + 1.5)) { player.x = x; player.z = z; found = true; break; } } if (found) break; }
   player.y = groundY(player.x, player.z);
-  for (const e of enemies) scene.remove(e.mesh); enemies.length = 0;
+  for (const e of enemies) { scene.remove(e.mesh); e.mesh.userData.dispose?.(); } enemies.length = 0;
   if (!joining()) { spawnAround(0, 0, 26, SAFE_R + 15, SAFE_R + 230); // out beyond the ring: the valley is safe
   // each raider camp's crew, round its fire; they keep to the camp until they see you
   raiderCamps.forEach((c, i) => c.raiders.forEach((type, k) => { const a = c.a0 + 0.4 + k * 1.9; spawnEnemy(c.x + Math.cos(a) * 3, c.z + Math.sin(a) * 3, type, 9000 + i, k, c.raiders.length); enemies.at(-1).home = c; })); }
@@ -388,7 +388,7 @@ export function hitEnemy(e, dmg, nx, nz, at, by = null) {
   const p = at || enemyCentre(e); hitBurst(p, new THREE.Vector3(nx, 0, nz), PUFFK[e.type]); floatText(p, String(dmg), dmg >= 20 ? '#ffd27a' : '#fff0d8', dmg >= 20); if (!by) hitMarker();
   sfx(e.type === 'ice_crawler' ? 'chitin' : dmg >= 20 ? 'hitHard' : 'hit', e);
   if (e.hp <= 0) { e.dead = 5; e.mesh.userData.anim.die(); e.mesh.userData.flash(0); sfx(e.type, e, 0.8); sfx('thud', e, 0.6);
-    for (const k of st.loot) if (rng() < 0.75) dropLoot(e.x, e.z, k); if (by) send(by, { t: 'kill', s: `${LABEL[e.type]} down.` }); else { player.kills++; log(`${LABEL[e.type]} down.`); } }
+    for (const k of st.loot) if (rng() < 0.75) dropLoot(e.x, e.z, k, 0.5 * st.scale); if (by) send(by, { t: 'kill', s: `${LABEL[e.type]} down.` }); else { player.kills++; log(`${LABEL[e.type]} down.`); } }
   logEvent('hit', { enemy: e.type, dmg, hp: Math.max(0, e.hp), killed: e.hp <= 0 }); }
 // Lauren's flower: the enemy it hits forgets the fight for 4 s and wanders (hitting it again breaks the charm)
 export function charm(e) { if (joining()) send('host', { t: 'charm', id: e.id }); else { e.state = 'charmed'; e.chT = 4; e.wander = 0; } hitBurst(enemyCentre(e), new THREE.Vector3(0, 1, 0), 'petal', 18); floatText(enemyCentre(e).setY(e.mesh.position.y + 2.2), 'charmed', '#ff9ad0'); }
@@ -495,7 +495,11 @@ export function update(dt, t) {
   // cliffs: too steep to walk up (sliding along them still works, and walking down is always allowed)
   if (slopeAt(player.x, player.z) > 1.05 && groundY(player.x, player.z) > oy + 0.02) {
     const tx = player.x, tz = player.z; player.z = oz; if (slopeAt(player.x, player.z) > 1.05 && groundY(player.x, player.z) > oy + 0.02) { player.x = ox; player.z = tz;
-      if (slopeAt(player.x, player.z) > 1.05 && groundY(player.x, player.z) > oy + 0.02) player.z = oz; } }
+      if (slopeAt(player.x, player.z) > 1.05 && groundY(player.x, player.z) > oy + 0.02) player.z = oz; }
+    // (the mix of old and new axes was never collision-checked: walking up a slope into an arch leg it stood 5 cm inside
+    // the leg, slice 19's gate; out of every solid it is a no-op)
+    collide(player, 0.45, player.y); // (its push-out can land on the cliff just refused: then stay where this frame began, a place both checks passed)
+    if (slopeAt(player.x, player.z) > 1.05 && groundY(player.x, player.z) > oy + 0.02) { player.x = ox; player.z = oz; } }
   if (il > 0.1) { player.walk += dt * sp * 1.6; if ((camMode === 'top' || camMode === 'angled') && player.swing <= 0) { const target = Math.atan2(-wx, -wz); let d = target - player.faceYaw; d = Math.atan2(Math.sin(d), Math.cos(d)); player.faceYaw += d * Math.min(1, dt * 12); } }
   if (camMode === 'first') player.faceYaw = player.yaw;
   tickHarvest(dt, (keys.has('KeyE') || !!pad?.useHeld) && !player.rv && !player.mantle && !player.climbing && !building() && !cooking); // hold E by a tree: chop it (slice 11)
@@ -560,7 +564,7 @@ export function update(dt, t) {
   let alive = 0; const striking = new Set(enemies.filter(e => !e.dead && e.state === 'windup').map(e => e.tg)), awake = []; for (const [k, v] of strikeCD) strikeCD.set(k, v - dt);
   for (const e of enemies) {
     const st = ENEMY[e.type], u = e.mesh.userData, an = u.anim;
-    if (e.dead) { e.dead -= dt; const tr = e.mesh.getObjectByName('threat'); if (tr) tr.visible = false; an.update(dt, { speed: 0, scale: st.scale }); if (e.dead < 1.2 && !e.dropped) { e.dropped = true; dropFrom(e); } /* its arrows fall beside it */ if (e.dead < 1) e.mesh.position.y -= dt * 0.6; if (e.dead <= 0) { scene.remove(e.mesh); e.gone = true; } continue; }
+    if (e.dead) { e.dead -= dt; const tr = e.mesh.getObjectByName('threat'); if (tr) tr.visible = false; an.update(dt, { speed: 0, scale: st.scale, ground: groundY }); if (e.dead < 1.2 && !e.dropped) { e.dropped = true; dropFrom(e); } /* its arrows fall beside it */ if (e.dead < 1) e.mesh.position.y -= dt * 0.6; if (e.dead <= 0) { scene.remove(e.mesh); e.mesh.userData.dispose?.(); e.gone = true; } continue; }
     alive++; const tg = joining() ? player : nearestP(e.x, e.z) || player, tgGone = gone(tg); if (joining()) followHost(e, dt); // a joined game's enemies go where the host's are
     const dx = tg.x - e.x, dz = tg.z - e.z, d = Math.hypot(dx, dz) || 1e-3, tx = dx / d, tz = dz / d;
     if (d > WAKE_RADIUS) { e.mesh.visible = d < 200; continue; } e.mesh.visible = true; awake.push(e);
@@ -644,7 +648,9 @@ export function update(dt, t) {
     if (e.state === 'emerge' && e.emT > 0.7) { const at = new THREE.Vector3(e.x, Math.max(gy, WATER_Y), e.z); if (gy < WATER_Y + 0.2) { splash(at); sfx('splash', e); } else dustPuff(at, 14); e.emT = 0.7; }
     e.mesh.position.set(e.x, Math.max(gy, WATER_Y - 0.55 * st.scale) - sink * st.scale, e.z); e.mesh.rotation.y = e.yaw;
     e.mesh.visible = e.state !== 'lurk' || d < 4;
-    if (d < 80) an.update(dt, { speed: joining() ? e.spd || 0 : Math.hypot(e.x - ex, e.z - ez) / Math.max(dt, 1e-3), scale: st.scale });
+    // slice 19: built creatures plant their feet on the ground and turn their heads to the one they hunt
+    const eyes = !tgGone && ['chase', 'windup', 'recover', 'emerge', 'siege'].includes(e.state) ? (e.lookV ||= new THREE.Vector3()).set(tg.x, groundY(tg.x, tg.z) + 1.3, tg.z) : null;
+    if (d < 80) an.update(dt, { speed: joining() ? e.spd || 0 : Math.hypot(e.x - ex, e.z - ez) / Math.max(dt, 1e-3), scale: st.scale, ground: groundY, look: eyes });
   }
   // keep awake enemies from stacking on one another
   for (let i = 0; i < awake.length; i++) for (let j = i + 1; j < awake.length; j++) { const a = awake[i], b = awake[j]; if (a.state === 'lurk' || b.state === 'lurk') continue;
@@ -654,7 +660,7 @@ export function update(dt, t) {
   // the land round the player stays alive: spawns follow them (the cap counts only animals within 150 m), far idle ones are cleared
   // (co-op: round every player; the host's game spawns for all)
   if (!joining() && Math.floor(t) % 4 === 0 && Math.floor(t) !== spawnTick) { spawnTick = Math.floor(t); const P = everyone();
-    for (const e of enemies) if (!e.home && !e.posed && e.state === 'idle' && P.every(q => Math.hypot(e.x - q.x, e.z - q.z) > 320)) { dropFrom(e); scene.remove(e.mesh); e.gone = true; }
+    for (const e of enemies) if (!e.home && !e.posed && e.state === 'idle' && P.every(q => Math.hypot(e.x - q.x, e.z - q.z) > 320)) { dropFrom(e); scene.remove(e.mesh); e.mesh.userData.dispose?.(); e.gone = true; }
     for (const q of P) if (enemies.filter(e => !e.dead && !e.home && Math.hypot(e.x - q.x, e.z - q.z) < 150).length < 12 + Math.round(6 * NK)) spawnAround(q.x, q.z, 3 + Math.round(2 * NK), 60, 110); } // (busier at night: slice 13)
   // projectiles
   for (let i = shots.length - 1; i >= 0; i--) { const s = shots[i]; s.life -= dt; if (s.kind === 'shield') { if (tickShield(s, dt)) { scene.remove(s.mesh); shots.splice(i, 1); } continue; }
