@@ -17,10 +17,41 @@ export const colliders = []; const CG = 8, cgrid = new Map(); // spatial hash of
 export function addCollider(x, z, r, ref) { const c = { x, z, r, ref }; colliders.push(c);
   for (let a = Math.floor((x - r) / CG); a <= Math.floor((x + r) / CG); a++) for (let b = Math.floor((z - r) / CG); b <= Math.floor((z + r) / CG); b++) { const k = a + ',' + b; (cgrid.get(k) || cgrid.set(k, []).get(k)).push(c); }
   return c; }
-// rocks carry their real footprint (radius per direction, from the mesh); everything else is a circle
-export function colR(c, x, z) { if (!c.prof) return c.r; const dx = x - c.x, dz = z - c.z, cs = Math.cos(c.ry), sn = Math.sin(c.ry), n = c.prof.length;
-  const f = ((Math.atan2(dx * sn + dz * cs, dx * cs - dz * sn) / (2 * Math.PI) + 1) % 1) * n, i = Math.floor(f) % n, t = f - Math.floor(f);
-  return (c.prof[i] * (1 - t) + c.prof[(i + 1) % n] * t) * c.s; }
+// rocks carry their real footprint (radius per direction, from the mesh); everything else is a circle. With a height h, a
+// rock's outline there: the outline of all of it at or above h (issue #44: bands, below)
+export function colR(c, x, z, h) { if (!c.prof) return c.r; const dx = x - c.x, dz = z - c.z, cs = Math.cos(c.ry), sn = Math.sin(c.ry), n = c.prof.length;
+  const f = ((Math.atan2(dx * sn + dz * cs, dx * cs - dz * sn) / (2 * Math.PI) + 1) % 1) * n, i = Math.floor(f) % n, t = f - Math.floor(f), at = (P) => (P[i] * (1 - t) + P[(i + 1) % n] * t) * c.s;
+  if (h == null || !c.bands) return at(c.prof);
+  const L = c.lv, B = c.bands, k = L.findLastIndex(y => y <= h); if (k < 0) return at(B[0]);
+  const y1 = k + 1 < L.length ? L[k + 1] : c.peak; if (h >= c.peak) return 0; const r0 = at(B[k]), r1 = k + 1 < L.length ? at(B[k + 1]) : 0;
+  return r0 + (r1 - r0) * (h - L[k]) / (y1 - L[k]); }
+// issue #44 (Jared's play, 2026-11-12: "rocks having hitboxes that are weird?"): a big boulder's footprint was its widest
+// outline at any height, buried part included, stood straight up to its top, and its top was flat and as wide: an
+// invisible wall up to 1.7 m out from the rock you see, and a ledge in the air 2 m up at its edge. Now each rock's shape is
+// measured where it stands, from its mesh as placed (scale, turn and tilt): only the part above the ground, in 8 height
+// bands from the ground at its middle to its peak, each band the outline of everything at or above it. The surface a foot
+// stands on (topAt) is the dome those outlines make, capped at the old stand height; the wall a walker meets (rockCol) is
+// the outline at their height
+function rockShape(it, geo, n = 24) { const P = geo.attributes.position, m = new THREE.Matrix4().fromArray(it.layer.elems, it.index * 16), v = new THREE.Vector3(), pts = [];
+  let peak = -Infinity; for (let i = 0; i < P.count; i++) { v.fromBufferAttribute(P, i).applyMatrix4(m); if (v.y < groundY(v.x, v.z) + 0.05) continue; pts.push(v.x - it.x, v.y, v.z - it.z); peak = Math.max(peak, v.y); }
+  if (!pts.length) return null; const base = Math.min(groundY(it.x, it.z), peak - 0.05), NBD = 8, lv = Array.from({ length: NBD }, (_, b) => base + (peak - base) * b / NBD), bands = lv.map(() => new Float32Array(n));
+  for (let i = 0; i < pts.length; i += 3) { const dx = pts[i], y = pts[i + 1], dz = pts[i + 2], r = Math.hypot(dx, dz), k = Math.round(((Math.atan2(dz, dx) / (2 * Math.PI) + 1) % 1) * n) % n;
+    for (let b = 0; b < NBD && (b === 0 || y >= lv[b]); b++) if (r > bands[b][k]) bands[b][k] = r; }
+  for (const B of bands) { const has = [...B.keys()].filter(k => B[k] > 0); if (!has.length) continue; // (a band near the peak may miss a sector: filled between its neighbours)
+    for (let k = 0; k < n; k++) if (!(B[k] > 0)) { let a = 1, c = 1; while (!(B[(k - a + n) % n] > 0)) a++; while (!(B[(k + c) % n] > 0)) c++; B[k] = (B[(k - a + n) % n] * c + B[(k + c) % n] * a) / (a + c); } }
+  for (let b = 1; b < NBD; b++) for (let k = 0; k < n; k++) bands[b][k] = Math.min(bands[b][k], bands[b - 1][k]); // (at or above: never wider higher up)
+  return { prof: bands[0], bands, lv, peak, base }; }
+// the height of a rock's surface at (x, z) (its stand height for anything but a measured rock); -Infinity off it
+export function topAt(c, x, z) { if (!c.bands) return c.stand; const r = Math.hypot(x - c.x, z - c.z), L = c.lv;
+  if (r > colR(c, x, z, -Infinity) + 0.15) return -Infinity;
+  for (let k = L.length - 1; k >= 0; k--) { const rk = colR(c, x, z, L[k]); if (rk < r && k > 0) continue; const y1 = k + 1 < L.length ? L[k + 1] : c.peak, r1 = k + 1 < L.length ? colR(c, x, z, y1) : 0;
+    return Math.min(c.stand, rk <= r1 ? y1 : L[k] + (y1 - L[k]) * Math.max(0, Math.min(1, (rk - r) / (rk - r1)))); }
+  return L[0]; }
+// the wall a walker with feet at `feet` meets at a measured rock: on the ground, its outline above the ground; up off the
+// ground (on it, or on another rock beside it), the outline of what rises above the feet (on its gentle top, within 0.5 m
+// of its stand height, a step up is allowed). Walking up its steeper sides is a climb (jump at it), as before. (Still a
+// prism on the ground: where a boulder leans out over a drop, its overhang is a wall down to the ground below it)
+export function rockCol(c, x, z, feet) { if (feet < groundY(x, z) + 0.3) return colR(c, x, z); return colR(c, x, z, feet + (feet >= c.stand - 0.5 ? STEP : 0.02)); }
 function footprint(geo, n = 24) { const p = geo.attributes.position, prof = new Float32Array(n);
   for (let i = 0; i < p.count; i++) { const x = p.getX(i), z = p.getZ(i), k = Math.round(((Math.atan2(z, x) / (2 * Math.PI) + 1) % 1) * n) % n; prof[k] = Math.max(prof[k], Math.hypot(x, z)); }
   return prof; }
@@ -32,9 +63,11 @@ export function nearColliders(x, z) { const out = [], gx = Math.floor(x / CG), g
 export const STEP = 0.35, surfaces = []; // surfaces: { x, z, r, at(x, z) -> height or null }, registered by buildings.js
 // a step up onto a solid's top is only for a solid that rises no more than a step from the ground at its own centre (a
 // broken wall, low rubble): a crate or a rock on a slope is not stepped onto from its uphill side; from above, anything is
-export const steps = (c, feet, step = STEP) => feet >= c.stand - 0.02 || (feet >= c.stand - step && c.stand - (c.base ??= groundY(c.x, c.z)) <= STEP);
+export const steps = (c, feet, step = STEP, top = c.stand) => feet >= top - 0.02 || (feet >= top - step && top - (c.base ??= groundY(c.x, c.z)) <= STEP);
 export function standAt(x, z, y, step = STEP) { let s = -Infinity;
-  for (const c of nearColliders(x, z)) if (c.stand != null && c.r && (y === Infinity || steps(c, y, step)) && Math.hypot(c.x - x, c.z - z) < colR(c, x, z) + 0.15) s = Math.max(s, c.stand);
+  for (const c of nearColliders(x, z)) { if (c.stand == null || !c.r) continue;
+    if (c.bands) { const h = topAt(c, x, z); if (h > -Infinity && (y === Infinity || steps(c, y, step, h))) s = Math.max(s, h); } // (a measured rock: its surface there, issue #44)
+    else if ((y === Infinity || steps(c, y, step)) && Math.hypot(c.x - x, c.z - z) < colR(c, x, z) + 0.15) s = Math.max(s, c.stand); }
   for (const f of surfaces) if (Math.abs(f.x - x) < f.r && Math.abs(f.z - z) < f.r) { const h = f.at(x, z); if (h != null && h <= y + step) s = Math.max(s, h); }
   return s; }
 
@@ -154,7 +187,9 @@ export async function buildProps(scene, renderer, status) {
     if (type === 'arch') { const dx = Math.cos(p.ry) * p.s, dz = -Math.sin(p.ry) * p.s, half = 0.85; for (const k of [-1, 1]) { const col = addCollider(p.x + dx * half * k, p.z + dz * half * k, 0.3 * p.s, p); col.vr = 0; } continue; }
     if (type === 'ruinwall') { const dx = Math.cos(p.ry) * p.s, dz = -Math.sin(p.ry) * p.s; for (const k of [-1.8, 0, 1.8]) { const col = addCollider(p.x + dx * k, p.z + dz * k, 0.8, p); col.vr = 1.2; col.top = p.y + 3.4; col.stand = p.y + p.hgt * p.s * 0.9; } continue; }
     if (!c) continue; const tree = SPECIES[type] && !type.endsWith('bush');
-    if (p.prof) { p.col = addCollider(p.x, p.z, Math.max(...p.prof) * p.s, p); Object.assign(p.col, { prof: p.prof, s: p.s, ry: p.ry, vr: c[1] * p.s, top: p.y + c[1] * p.s * 1.3, stand: p.y + p.hgt * p.s * 0.92 }); continue; }
+    if (p.prof) { const sh = p.layer && rockShape(p, p.layer.near[0].geometry); // (issue #44: its shape as it stands; the old outline if none)
+      if (sh) { p.col = addCollider(p.x, p.z, Math.max(...sh.prof), p); Object.assign(p.col, { prof: sh.prof, bands: sh.bands, lv: sh.lv, peak: sh.peak, base: sh.base, s: 1, ry: 0, vr: c[1] * p.s, top: p.y + c[1] * p.s * 1.3, stand: Math.min(p.y + p.hgt * p.s * 0.92, sh.peak) }); continue; }
+      p.col = addCollider(p.x, p.z, Math.max(...p.prof) * p.s, p); Object.assign(p.col, { prof: p.prof, s: p.s, ry: p.ry, vr: c[1] * p.s, top: p.y + c[1] * p.s * 1.3, stand: p.y + p.hgt * p.s * 0.92 }); continue; }
     p.col = addCollider(p.x, p.z, tree ? Math.max(0.25, c[0] * p.s) : c[0] * p.s, p); p.col.vr = tree ? Math.max(1, c[1] * p.s * 2) : c[1] * p.s; p.col.top = p.y + (tree ? p.s : c[1] * p.s * 1.3); }
 }
 

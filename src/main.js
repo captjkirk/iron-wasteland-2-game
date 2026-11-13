@@ -28,7 +28,7 @@ import { startBuild, placeNow, endBuild, building, rotateBuild, damageBuilt, tog
 import { ammo, clipSize } from './supplies.js';
 import { felled, fell, harvestTarget } from './harvest.js';
 import { quiver, stuckArrows } from './arrows.js';
-import { pickups, initGame, hurtPlayer, gotPickup, selected, liveShots, spreadAt, upgraded, aimGround, togglePause, startGame, setCam, update, placeCamera, hud, menuPad, isRunning, getCamMode, player, enemies, spawnEnemy, attack, teleport, look, hitEnemy, press, secondary, turrets, dropLoot } from './game.js';
+import { warmCreatures, pickups, initGame, hurtPlayer, gotPickup, selected, liveShots, spreadAt, upgraded, aimGround, togglePause, startGame, setCam, update, placeCamera, hud, menuPad, isRunning, getCamMode, player, enemies, spawnEnemy, attack, teleport, look, hitEnemy, press, secondary, turrets, dropLoot } from './game.js';
 
 const status = document.getElementById('loading');
 const renderer = new THREE.WebGLRenderer({ antialias: Q.antialias, powerPreference: 'high-performance' });
@@ -71,6 +71,7 @@ await buildProps(scene, renderer, (t) => status.textContent = t); stage('props')
 buildGrass(scene); buildBog(scene, env.normals); buildDeepWater(scene, env.normals); buildWeather(scene); await buildCamp(scene); await buildBuildings(scene); stage('world');
 await charsLoading; stage('chars');
 initGame({ scene, camera, renderer, env }); initPortraits(scene); stage('init');
+await warmCreatures(); stage('warm'); // (issue #44: every creature's shaders compiled now, not on its first sight in play)
 // the offline cache (sw.js) keeps everything this load fetched, the CDN's Three.js too (slice 13a)
 navigator.serviceWorker?.ready.then(r => r.active?.postMessage(performance.getEntriesByType('resource').map(e => e.name)));
 status.textContent = ''; document.getElementById('go').disabled = false;

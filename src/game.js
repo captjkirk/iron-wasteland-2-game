@@ -8,7 +8,7 @@ import { day, tickDay, resetDay, nightK, isNight, phase } from './daynight.js';
 const DEEP_BITE = 20; // the lake serpent's bite (slice 13: 15 before, from the shadow)
 import { rng } from './noise.js';
 import { groundY, biomeAt, slopeAt } from './world.js';
-import { nearColliders, colR, placed, hideOccluders, addCollider, standAt, steps, STEP } from './props.js';
+import { nearColliders, colR, placed, hideOccluders, addCollider, standAt, steps, STEP, rockCol } from './props.js';
 import { markDirty } from './scatter.js';
 import { part, box, rockG, MAT, merged } from './models.js';
 import { buildCreature } from './creatures.js';
@@ -38,10 +38,20 @@ let packN = 0, enemyN = 0;
 export function spawnEnemy(x, z, type, pack = ++packN, slot = 0, size = 1) {
   const st = ENEMY[type], mesh = buildCreature(type); mesh.scale.setScalar(st.scale); mesh.position.set(x, groundY(x, z), z); scene.add(mesh);
   mesh.add(...threatMarks(type));
-  const lurk = type === 'bog_lurker';
+  const lurk = type === 'bog_lurker' && (biomeAt(x, z) === 'swamp' || groundY(x, z) < WATER_Y + 0.3); // (issue #44: on the Fungal Hollow's dry ground it roams in sight)
   enemies.push({ id: ++enemyN, type, mesh, x, z, hp: st.hp, maxHp: st.hp, vx: 0, vz: 0, yaw: rng() * 6.28, state: lurk ? 'lurk' : 'idle', wander: 0, atkT: 0, stag: 0, flashT: 0, dead: 0,
     pack, slot, size, flank: (slot - (size - 1) / 2) * 0.85, circle: rng() < 0.5 ? 1 : -1, voiceT: 2 + rng() * 4, barT: 0, emT: 0, wT: 0, rT: 0 });
 }
+// issue #44: the 1.1 s freeze 32 s into Jared's play, as the first bears and wolves came into view: the first creature of
+// each kind on screen compiled its shaders then (on this Mac's M5 GPU 150 to 600 ms a kind, more on older machines). While
+// the world loads, one of each (fur shells on, threat ring showing) is compiled and drawn once in front of the camera, so
+// play starts with them ready. They are kept (not disposed): disposing their own materials would free the shared programs
+export async function warmCreatures() {
+  const g = new THREE.Group(); camera.updateMatrixWorld(); g.position.copy(camera.position).add(camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(9)); g.quaternion.copy(camera.quaternion);
+  Object.keys(ENEMY).forEach((type, i) => { const m = buildCreature(type); m.scale.setScalar(ENEMY[type].scale); m.add(...threatMarks(type)); m.userData.setDetail?.(true);
+    const ring = m.getObjectByName('threat'); ring.visible = true; ring.material.opacity = 0.5; m.position.set((i - 4) * 1.8, -1, 0); g.add(m); });
+  scene.add(g); scene.updateMatrixWorld(); try { await renderer.compileAsync(g, camera, scene); } catch { /* (compiled by the draw below) */ } renderer.render(scene, camera); scene.remove(g); WARM = g; }
+let WARM = null;
 // Under every creature: a soft dark contact blob (it grounds them and lifts them off bright ground at range), and a
 // red threat ring that shows while it hunts you and flares during a wind-up, so a pack at 20 m is easy to pick out.
 let MARKS = null;
@@ -55,15 +65,33 @@ function threatMarks(type) {
   const ring = new THREE.Mesh(MARKS.ring, new THREE.MeshBasicMaterial({ color: 0xff3a22, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
   ring.scale.setScalar(len * 0.62); ring.position.y = 0.06; ring.visible = false; ring.name = 'threat'; return [blob, ring];
 }
-function spawnAround(cx, cz, count, minD = 25, maxD = 90) {
+function spawnAround(cx, cz, count, minD = 25, maxD = 90, land = null, ok = null) {
   let made = 0, tries = 0;
   while (made < count && tries++ < count * 20) { const a = rng() * 6.28, d = minD + rng() * (maxD - minD), x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d;
-    if (Math.abs(x) > HALF - 60 || Math.abs(z) > HALF - 60 || Math.hypot(x, z) < SAFE_R + 12) continue; /* nothing spawns in the safe valley */ if (groundY(x, z) < (biomeAt(x, z) === 'swamp' ? WATER_Y - 0.4 : WATER_Y + 0.4) || slopeAt(x, z) > 0.7) continue;
-    const list = BIOME[biomeAt(x, z)].enemies; const type = list[Math.floor(rng() * list.length)];
+    if (Math.abs(x) > HALF - 60 || Math.abs(z) > HALF - 60 || Math.hypot(x, z) < SAFE_R + 12) continue; /* nothing spawns in the safe valley */ if (groundY(x, z) < (biomeAt(x, z) === 'swamp' ? WATER_Y - 0.4 : WATER_Y + 0.4) || slopeAt(x, z) > 0.7 || (ok && !ok(x, z))) continue;
+    const list = BIOME[land || biomeAt(x, z)].enemies; const type = list[Math.floor(rng() * list.length)];
     // wolves and hounds run in packs of 2 to 4, rats in twos and threes
     const pack = (type === 'wolf' || type === 'dust_hound' ? 2 + Math.floor(rng() * 3) : type === 'rat' ? 1 + Math.floor(rng() * 3) : 1) + (isNight() && type !== 'bear' ? 1 : 0), id = ++packN; // (slice 13: a pack runs one bigger at night)
     for (let k = 0; k < pack; k++) spawnEnemy(x + (rng() - 0.5) * 5, z + (rng() - 0.5) * 5, type, id, k, pack); made += pack; }
 }
+// issue #44 (Jared's play, 2026-11-12: "no enemies really showing up?"): a steady trickle of threats. A player out of the
+// valley whom nothing has hunted for 45 to 75 s (a third less at night) has a pack sent at them: an idle pack 35 to 62 m
+// off (within 10 m of their height) is woken, or else a pack of their own land's creatures comes from 45 to 60 m out. It does not give up on the way
+// (until it has come within its notice range, or 30 s pass). The host's game only, as every spawn; never in the valley
+const HUNT_WAIT = (nk) => (45 + rng() * 30) * (1 - 0.35 * nk);
+function sendHunt(q, t, nk) {
+  // (from where it can run to them: within 10 m of their height, and the straight way in has no deep water and no rise too
+  // steep to scramble; a pack sent across the river sat on its far bank, the walk check's first try)
+  const qy = groundY(q.x, q.z), level = (x, z) => { if (Math.abs(groundY(x, z) - qy) >= 10) return false; const L = Math.hypot(q.x - x, q.z - z), n = Math.ceil(L / 2.5);
+    for (let k = 1; k < n; k++) { const px = x + (q.x - x) * k / n, pz = z + (q.z - z) * k / n, y = groundY(px, pz), y0 = groundY(x + (q.x - x) * (k - 1) / n, z + (q.z - z) * (k - 1) / n);
+      if (y < WATER_Y - 0.6 || (slopeAt(px, pz) > 1.3 && y > y0)) return false; } return true; };
+  let pick = null, bd = 1e9; for (const e of enemies) { if (e.dead || e.home || e.posed || e.hunter?.until > t || (e.state !== 'idle' && e.state !== 'lurk')) continue;
+    const d = Math.hypot(e.x - q.x, e.z - q.z); if (d > 35 && d < 62 && level(e.x, e.z) && Math.abs(d - 50) < bd) { bd = Math.abs(d - 50); pick = e; } }
+  const land = biomeAt(q.x, q.z), n0 = enemies.length; if (!pick) spawnAround(q.x, q.z, 1, 45, 60, BIOME[land] ? land : null, level);
+  const pack = pick ? enemies.filter(o => o.pack === pick.pack && !o.dead) : enemies.slice(n0); if (!pack.length) return;
+  for (const e of pack) { e.hunter = { until: t + 30 }; if (e.state === 'lurk') { e.state = 'emerge'; e.emT = 0.8; } else e.state = 'chase'; }
+  logEvent('hunt', { enemy: pack[0].type, n: pack.length, d: Math.round(Math.hypot(pack[0].x - q.x, pack[0].z - q.z)), woke: !!pick, biome: land, night: nk > 0.5 || undefined });
+  sfx(pack[0].type, pack[0]); }
 function alertPack(e) { for (const o of enemies) if (o.pack === e.pack && !o.dead && (o.state === 'idle' || o.state === 'lurk')) {
   if (o.state === 'lurk') { o.state = 'emerge'; o.emT = 0.8; } else o.state = 'chase'; }
   sfx(e.type, e); }
@@ -448,7 +476,7 @@ export function gameOver(why = null) { toggleCraft(false); running = false; paus
   document.getElementById('go').textContent = 'WALK OUT AGAIN'; document.getElementById('menu').classList.remove('hidden'); }
 // a few passes: pushing out of one circle can push into its neighbour; feet at or above a solid's top pass over it
 // (slice 12: a gate lets players through; enemies only while it is held open. Only the player's own move passes feet.)
-function collide(o, radius, feet) { for (let pass = 0; pass < 3; pass++) for (const c of nearColliders(o.x, o.z)) { if (!c.r || (feet != null && c.stand != null && steps(c, feet)) || (c.gate && (feet != null || c.gate.open))) continue; const dx = o.x - c.x, dz = o.z - c.z, d = Math.hypot(dx, dz), m = colR(c, o.x, o.z) + radius;
+function collide(o, radius, feet) { for (let pass = 0; pass < 3; pass++) for (const c of nearColliders(o.x, o.z)) { if (!c.r || (feet != null && c.stand != null && steps(c, feet)) || (c.gate && (feet != null || c.gate.open))) continue; const dx = o.x - c.x, dz = o.z - c.z, d = Math.hypot(dx, dz), m = (feet != null && c.bands ? rockCol(c, o.x, o.z, feet) : colR(c, o.x, o.z)) + radius;
   if (d < m && d > 1e-4) { o.x = c.x + dx / d * m; o.z = c.z + dz / d * m; } }
   const lim = HALF - 6; o.x = Math.max(-lim, Math.min(lim, o.x)); o.z = Math.max(-lim, Math.min(lim, o.z)); }
 
@@ -567,21 +595,32 @@ export function update(dt, t) {
     if (e.dead) { e.dead -= dt; const tr = e.mesh.getObjectByName('threat'); if (tr) tr.visible = false; an.update(dt, { speed: 0, scale: st.scale, ground: groundY }); if (e.dead < 1.2 && !e.dropped) { e.dropped = true; dropFrom(e); } /* its arrows fall beside it */ if (e.dead < 1) e.mesh.position.y -= dt * 0.6; if (e.dead <= 0) { scene.remove(e.mesh); e.mesh.userData.dispose?.(); e.gone = true; } continue; }
     alive++; const tg = joining() ? player : nearestP(e.x, e.z) || player, tgGone = gone(tg); if (joining()) followHost(e, dt); // a joined game's enemies go where the host's are
     const dx = tg.x - e.x, dz = tg.z - e.z, d = Math.hypot(dx, dz) || 1e-3, tx = dx / d, tz = dz / d;
-    if (d > WAKE_RADIUS) { e.mesh.visible = d < 200; continue; } e.mesh.visible = true; awake.push(e);
+    if (d > WAKE_RADIUS && !(e.hunter?.until > t)) { e.mesh.visible = d < 200; continue; } e.mesh.visible = true; awake.push(e); // (a pack sent hunting stays awake on its way: issue #44)
     u.setDetail(camera.position.distanceTo(e.mesh.position) < 32); // fur shells near the camera
     e.stag = Math.max(0, e.stag - dt); e.flashT = Math.max(0, e.flashT - dt); e.barT = Math.max(0, e.barT - dt); u.flash(e.flashT / 0.15);
-    { const ring = e.mesh.getObjectByName('threat'), hunt = ['chase', 'windup', 'recover', 'emerge', 'siege'].includes(e.state), want = hunt ? (e.state === 'windup' ? 1.0 : 0.55 + 0.12 * Math.sin(t * 5)) : e.state !== 'lurk' && d < 45 ? 0.22 : 0; // a faint ring on idle creatures in range
+    { const ring = e.mesh.getObjectByName('threat'), hunt = HUNTS.includes(e.state), want = hunt ? (e.state === 'windup' ? 1.0 : 0.55 + 0.12 * Math.sin(t * 5)) : e.state !== 'lurk' && d < 45 ? 0.22 : 0; // a faint ring on idle creatures in range
       ring.material.opacity += (want - ring.material.opacity) * Math.min(1, dt * 6); ring.visible = ring.material.opacity > 0.02; }
     // slice 13: at night an animal sees further, runs faster and bites harder (IW1: 1.35), unless its quarry is by a fire
     const nb = NK && !warm(tg) ? NK : 0, aggro = st.aggro / 12 * (1 + 0.35 * nb), reach = 0.9 + st.scale * 0.75, bite = Math.round(st.dmg * (1 + 0.35 * nb));
+    // issue #44: an idle animal notices a little further than IW1's sight (1.19x: the night check keeps a day wolf at 19 m
+    // idle), and wolves, hounds and bears smell blood: a player under half health from twice IW1's sight; one dug in the mud
+    // still only close. A creature below a player stood up on a ledge or a rock strikes up at them: its reach grows with the
+    // rise, as far as it can rear (1.2 m + its size: a bear 2.8 m, a wolf 2.2 m); anyone higher than that it cannot reach,
+    // and one stood up on a rock or a roof out of its reach it backs off from and circles (a slope it climbs instead)
+    const blood = SMELL.has(e.type) && tg.hp < (tg.maxHp ?? tg.mx ?? Infinity) * 0.5, notice = aggro * (e.state === 'lurk' ? 1 : blood ? 2 : 1.19);
+    const ty0 = tg.y ?? groundY(tg.x, tg.z), rise = ty0 - groundY(e.x, e.z), rear = 1.2 + st.scale, up = rise <= rear, reachUp = reach + (rise > 0.4 && up ? Math.min(1.6, rise * 0.7) : 0);
+    const high = !up && ty0 - groundY(tg.x, tg.z) > 0.3; // (stood up on a rock or a roof out of reach: it circles; up a slope it climbs on)
+    const hunting = HUNTS.includes(e.state);
     // perception: a pack wakes together; giving up only far away; rats and hounds run when badly hurt
     // the safe valley: nothing follows the player in; anything inside the ring wanders back out
     const safe = Math.hypot(tg.x, tg.z) < SAFE_R - 12, inside = Math.hypot(e.x, e.z) < SAFE_R, host = !joining();
     if (host) { if (tgGone || (safe && !e.posed)) { if (e.state !== 'lurk' && e.state !== 'idle') { e.state = 'idle'; e.wander = 0; } }
     if (inside && e.state === 'idle' && !e.posed) { e.wyaw = Math.atan2(e.x, e.z); e.wmove = true; e.wander = Math.max(e.wander, 1); }
     if (tgGone || (safe && !e.posed)) { /* no new hunts */ }
-    else if ((e.state === 'idle' || e.state === 'lurk') && d < aggro) alertPack(e);
-    else if (e.state !== 'idle' && e.state !== 'lurk' && d > aggro * 2.6) e.state = 'idle';
+    else if ((e.state === 'idle' || e.state === 'lurk') && d < notice) alertPack(e);
+    else if (e.state !== 'idle' && e.state !== 'lurk' && d > Math.max(aggro * 2.6, notice * 1.3) && !(e.hunter?.until > t)) e.state = 'idle'; // (a sent pack holds on until it arrives)
+    if (e.hunter && (d < notice || tgGone || safe)) e.hunter.until = 0;
+    if (hunting && !tgGone && d < 45) tg.huntedAt = t; // (the trickle waits while anything near hunts them)
     if ((e.type === 'rat' || e.type === 'dust_hound') && !e.fled && e.hp < e.maxHp * 0.3 && e.state !== 'idle') { e.state = 'flee'; e.fleeT = 3; e.fled = true; }
     // slice 12: an upgraded Lauren's charm aura: an animal that closes in on her is charmed (each one at most every 10 s)
     if (!st.raider && (e.state === 'chase' || e.state === 'windup') && !(e.auraT > t)) for (const q of everyone()) if (!gone(q) && (q === player ? upgraded('charmer') : (q.u & 8) && CHARS[q.c]?.id === 'charmer') && Math.hypot(q.x - e.x, q.z - e.z) < AURA_R) { e.auraT = t + 10; charm(e); break; } }
@@ -595,7 +634,7 @@ export function update(dt, t) {
       case 'charmed': e.chT -= dt; if (e.chT <= 0) e.state = 'chase'; e.wander -= dt; if (e.wander <= 0) { e.wander = 1 + rng() * 2; e.wyaw = rng() * 6.28; } mx = Math.sin(e.wyaw); mz = Math.cos(e.wyaw); spd *= 0.3; break;
       case 'flee': mx = -tx; mz = -tz; spd *= 1.15; e.fleeT -= dt; if (e.fleeT <= 0) e.state = 'chase'; break;
       case 'windup': face = true; e.wT -= dt; mx = tx * 0.15; mz = tz * 0.15;
-        if (e.wT <= 0) { if (st.shoot && d > reach + 0.7) { enemyShot(e, bite, tg); strikeCD.set(tg, Math.max(strikeCD.get(tg) || 0, d / 70 + 0.45)); } /* the turn lasts until the bullet lands */ else { e.vx += tx * 5; e.vz += tz * 5; if (d < reach + 0.7 && !wallAhead(e.x, e.z, tx, tz, 0.2, d - 0.3)) hurt(tg, bite, e.type, e); } e.state = 'recover'; e.rT = st.atk / 1000 * 0.75; } break;
+        if (e.wT <= 0) { if (st.shoot && d > reach + 0.7) { enemyShot(e, bite, tg); strikeCD.set(tg, Math.max(strikeCD.get(tg) || 0, d / 70 + 0.45)); } /* the turn lasts until the bullet lands */ else { e.vx += tx * 5; e.vz += tz * 5; if (d < reachUp + 0.7 && up && !wallAhead(e.x, e.z, tx, tz, 0.2, d - 0.3)) hurt(tg, bite, e.type, e); } e.state = 'recover'; e.rT = st.atk / 1000 * 0.75; } break;
       case 'recover': e.rT -= dt; face = true; if (e.type === 'wolf' || e.type === 'dust_hound' || e.type === 'rat') { if (e.rT > st.atk / 1000 * 0.4) { mx = -tx; mz = -tz; spd *= 0.7; } }
         if (e.rT <= 0) e.state = 'chase'; break;
       case 'chase': {
@@ -606,7 +645,8 @@ export function update(dt, t) {
         const blk = aim ? null : wallAhead(e.x, e.z, tx, tz, 0.4 * st.scale, Math.min(d - 0.3, 1.4 + 0.6 * st.scale));
         if (blk) { if (e.rollFor !== blk) { e.rollFor = blk; e.rollSiege = fortSize(blk) >= 3 || rng() < 0.35; e.blkT = 0; } e.blkT += dt;
           if (e.rollSiege || e.blkT > 3) { e.state = 'siege'; e.wall = blk; e.sT = 0.35; logEvent('siege', { enemy: e.type, key: blk.key }); break; } }
-        if ((d <= reach && !blk || aim) && turn) { e.state = 'windup'; e.wT = aim ? 0.5 : e.type === 'bear' ? 0.6 : e.type === 'bog_lurker' ? 0.45 : 0.32; e.tg = tg; striking.add(tg); strikeCD.set(tg, e.wT + 0.45); an.attack(); if (rng() < 0.4) sfx(e.type, e, 0.7); face = true; break; }
+        if (high && !aim && d < 7) { const k = (d - 5) * 0.5; mx = -tz * e.circle + tx * k; mz = tx * e.circle + tz * k; spd *= 0.5; face = true; break; } // out of reach above: back off to 5 m and circle, waiting
+        if ((d <= reachUp && up && !blk || aim) && turn) { e.state = 'windup'; e.wT = aim ? 0.5 : e.type === 'bear' ? 0.6 : e.type === 'bog_lurker' ? 0.45 : 0.32; e.tg = tg; striking.add(tg); strikeCD.set(tg, e.wT + 0.45); an.attack(); if (rng() < 0.4) sfx(e.type, e, 0.7); face = true; break; }
         if (!turn && (d < 5.5 || aim)) { // someone else's turn: circle at a few metres (shooters sidestep) and wait for an opening
           const k = d < 5.5 ? (d - 3.6) * 0.5 : 0; mx = -tz * e.circle + tx * k; mz = tx * e.circle + tz * k; spd *= 0.55; face = true; break; }
         // flanking: pack members curve out to their own side and close from different angles
@@ -632,7 +672,7 @@ export function update(dt, t) {
     // too steep or too deep: slide along it one axis at a time, as the player does; still pinned while meaning to move for
     // a third of a second, turn off to one side for a second or two (the other side if that pins too). His log, 2026-11-03:
     // hunting wolves and hounds held one distance for 5 to 10 s at the foot of slopes they could not climb
-    const bad = (x, z) => (slopeAt(x, z) > 1.0 && groundY(x, z) > groundY(ex, ez)) || (groundY(x, z) < WATER_Y - 0.8 && e.type !== 'bog_lurker');
+    const bad = (x, z) => (slopeAt(x, z) > (hunting ? 1.4 : 1.0) && groundY(x, z) > groundY(ex, ez)) || (groundY(x, z) < WATER_Y - 0.8 && e.type !== 'bog_lurker');
     if (host && bad(e.x, e.z)) { if (!bad(e.x, ez)) e.z = ez; else if (!bad(ex, e.z)) e.x = ex; else { e.x = ex; e.z = ez; } e.wander = 0; }
     const want = Math.hypot(mx, mz) * spd * dt; e.pin = host && want > 1e-3 && Math.hypot(e.x - ex, e.z - ez) < want * 0.3 ? (e.pin || 0) + dt : 0;
     // pinned: try headings further and further off to one side, then the other, for the first whose next 1 and 2.5 m are
@@ -661,7 +701,10 @@ export function update(dt, t) {
   // (co-op: round every player; the host's game spawns for all)
   if (!joining() && Math.floor(t) % 4 === 0 && Math.floor(t) !== spawnTick) { spawnTick = Math.floor(t); const P = everyone();
     for (const e of enemies) if (!e.home && !e.posed && e.state === 'idle' && P.every(q => Math.hypot(e.x - q.x, e.z - q.z) > 320)) { dropFrom(e); scene.remove(e.mesh); e.mesh.userData.dispose?.(); e.gone = true; }
-    for (const q of P) if (enemies.filter(e => !e.dead && !e.home && Math.hypot(e.x - q.x, e.z - q.z) < 150).length < 12 + Math.round(6 * NK)) spawnAround(q.x, q.z, 3 + Math.round(2 * NK), 60, 110); } // (busier at night: slice 13)
+    for (const q of P) if (enemies.filter(e => !e.dead && !e.home && Math.hypot(e.x - q.x, e.z - q.z) < 150).length < 12 + Math.round(6 * NK)) spawnAround(q.x, q.z, 3 + Math.round(2 * NK), 60, 110); // (busier at night: slice 13)
+    for (const q of P) { if (gone(q)) continue; // issue #44: the hunting trickle (sendHunt); the clock waits in the valley, and starts afresh on a teleport or a respawn
+      if (q.huntedAt == null || Math.hypot(q.x, q.z) < SAFE_R) { q.huntedAt = t; q.huntWait = HUNT_WAIT(NK); continue; }
+      if (t - q.huntedAt >= q.huntWait) { q.huntedAt = t; q.huntWait = HUNT_WAIT(NK); sendHunt(q, t, NK); } } }
   // projectiles
   for (let i = shots.length - 1; i >= 0; i--) { const s = shots[i]; s.life -= dt; if (s.kind === 'shield') { if (tickShield(s, dt)) { scene.remove(s.mesh); shots.splice(i, 1); } continue; }
     s.v.y -= s.grav * dt; const p = s.mesh.position; const prev = p.clone(); p.addScaledVector(s.v, dt);
@@ -670,7 +713,7 @@ export function update(dt, t) {
     // (a frame's path is far shorter than a grid cell, so one lookup at its middle covers it; a collider stops shots below its top)
     let hit = false, stop = null, last = prev; const n = Math.max(1, Math.ceil(prev.distanceTo(p) / 0.3)), near = nearColliders((prev.x + p.x) / 2, (prev.z + p.z) / 2);
     for (let k = 1; k <= n && !hit; k++) { const q = prev.clone().lerp(p, k / n), gq = groundY(q.x, q.z); hit = q.y < gq;
-      for (const c of near) if (c.r && !(c.gate && c.gate.open) && Math.hypot(c.x - q.x, c.z - q.z) < colR(c, q.x, q.z) && q.y < (c.top ?? gq + 4)) { hit = true; stop = c; } if (hit) p.copy(q); else last = q; }
+      for (const c of near) if (c.r && !(c.gate && c.gate.open) && Math.hypot(c.x - q.x, c.z - q.z) < colR(c, q.x, q.z, q.y) && q.y < (c.top ?? gq + 4)) { hit = true; stop = c; } if (hit) p.copy(q); else last = q; }
     if (stop) hitScenery(stop, p.clone(), s.v.clone().setY(0).normalize()); else if (hit) dustPuff(prev, 4);
     if (stop?.bp && s.hostile && !s.ghost && !joining()) damageBuilt(stop.bp, s.dmg * 0.5, s.o); // a raider's bullet chips the wall it hits (slice 12)
     if (s.hostile && s.ghost) { /* another game's shot: seen here, felt there */ }
@@ -715,6 +758,7 @@ export function update(dt, t) {
   windLevel(0.03 + Math.min(0.06, Math.max(0, player.y - 20) / 600) + W.wind + (BIOME_WIND[biomeAt(player.x, player.z)] || 0)); setMusicMode(isNight() ? 'night' : 'day', dt); // (the 'boss' track is ready in audio.js for when IW2 has bosses)
   ambient(dt, biomeAt(player.x, player.z), nightK(), Math.hypot(player.x, player.z) < SAFE_R); // (slice 13: storms, the open biomes' wind, the night's sounds)
 }
+const HUNTS = ['chase', 'windup', 'recover', 'emerge', 'siege'], SMELL = new Set(['wolf', 'dust_hound', 'bear']);
 let spawnTick = -1, campT = 0, warmLogged = false, lastFps = 0, cooking = false;
 
 const strikeCD = new Map(); // player -> seconds until the next enemy may wind up at them
@@ -830,7 +874,7 @@ export function aimGround(min = 1.6, max = 6) { const clampTo = (x, z) => { cons
   else { const o = camera.position, dir = new THREE.Vector3(), q = new THREE.Vector3(); camera.getWorldDirection(dir);
     for (let t = 0.5; t < 16; t += 0.25) { q.copy(o).addScaledVector(dir, t); if (q.y < groundY(q.x, q.z) + 0.05) return clampTo(q.x, q.z); } }
   const h = camMode === 'top' ? player.faceYaw : player.yaw; return clampTo(player.x - Math.sin(h) * max, player.z - Math.cos(h) * max); }
-export function teleport(x, z) { player.x = x; player.z = z; player.y = Math.max(groundY(x, z), WATER_Y - 1.25); player.swimY = WATER_Y - 1.25; player.mantle = null; player.vy = 0; player.fallTop = null; snapCam = true; }
+export function teleport(x, z) { player.huntedAt = null; player.x = x; player.z = z; player.y = Math.max(groundY(x, z), WATER_Y - 1.25); player.swimY = WATER_Y - 1.25; player.mantle = null; player.vy = 0; player.fallTop = null; snapCam = true; }
 // test hook: hold a key (scripts/walktest.js drives the player through the real movement code)
 export function press(code, on = true) { if (on) keys.add(code); else keys.delete(code); }
 export function look(yaw, pitch) { player.yaw = yaw; player.pitch = pitch; player.faceYaw = yaw; snapCam = true; }
