@@ -13,6 +13,7 @@ import { markDirty } from './scatter.js';
 import { part, box, rockG, MAT, merged } from './models.js';
 import { buildCreature } from './creatures.js';
 import { initFireflies, tickFireflies } from './fireflies.js';
+import { resetExplored } from './explore.js';
 import { initEffects, tickEffects, hitBurst, splash, dustPuff, floatText, healthBars, hitMarker, buildLoot, nameTags } from './effects.js';
 import { unlockAudio, toggleMute, isMuted, sfx, setListener, windLevel, ambient, setMusicVolume, setMusicPaused, setMusicMode } from './audio.js';
 import { W } from './weather.js';
@@ -177,7 +178,7 @@ let camMode = params.get('cam') && CAMS.includes(params.get('cam')) ? params.get
 export function startGame(i) {
   if (joining() && !net.host) return requestJoin(i); // walks out when the host welcomes it (coop.js)
   // (the other players are forgotten: each comes back with their next message, standing)
-  clearOthers(); const ch = CHARS[i]; player.ch = ch; player.maxHp = ch.maxHp; player.hp = ch.maxHp; player.startT = performance.now(); player.kills = 0; player.inv = { wood: 0, metal: 0, fiber: 0, food: 0 };
+  clearOthers(); resetExplored(); const ch = CHARS[i]; player.ch = ch; player.maxHp = ch.maxHp; player.hp = ch.maxHp; player.startT = performance.now(); player.kills = 0; player.inv = { wood: 0, metal: 0, fiber: 0, food: 0 };
   quiver.n = quiver.start; clearArrows(); player.bed = null; player.chop = null; toggleCraft(false); // slice 11: a full quiver, no bed to wake in yet
   player.up = {}; player.tear = null; player.shieldT = 0; endBuild(); resetSupplies(); player.inv.cooked = 0; // slice 12: upgrades are bought again each game; what is built stays in the world
   if (player.mesh) scene.remove(player.mesh); player.mesh = buildCharacter(ch); scene.add(player.mesh);

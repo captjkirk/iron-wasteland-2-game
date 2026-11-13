@@ -5,6 +5,7 @@ import { groundY, findBiome, seeds, river, lakes, biomeAt, forestAt, slopeAt, ca
 import { buildTerrain } from './terrain.js';
 import { buildEnvironment, FOG_COLOR } from './environment.js';
 import { buildBog, localFog } from './bog.js';
+import { markExplored, fogReach, exploredStats } from './explore.js';
 import { buildDeepWater, S as deepShadow } from './water.js';
 import { buildProps, placed, nearColliders, colR, standAt } from './props.js';
 import { buildCamp, tickCamp } from './camp.js';
@@ -107,6 +108,7 @@ function frame(now) {
   // slice 13: the hour lights the world: sky, sun or moon, fog, the far trees; fires and torches light the night
   env.setTime(day.t); eyeShine(nightK()); env.fireLights(isRunning() ? [...lightSpots(), ...campFires()] : [], camera.position, nightK(), clock);
   localFog(scene.fog, FOG_COLOR, env.fogNear, env.fogFar, camera.position.x, camera.position.z); scene.fog.color.multiply(env.fogTint);
+  if (isRunning()) { markExplored(player.x, player.z); const r = fogReach(camera.position.x, camera.position.z, dt); scene.fog.near *= 0.2 + 0.8 * r; scene.fog.far *= r; } // (#19 part 1: unseen ground is foggier)
   { const nk = nightK(), f = scene.fog; f.near += (Math.min(f.near, 10) - f.near) * nk; f.far += (Math.min(f.far, 150) - f.far) * nk; } // the night closes in (the owner: "view distance = less at night")
   tickWeather((day.n + day.t) * DAY_S, camera.position, scene.fog, nightK(), env.haze);
   const under = player.under && camera.position.y < WATER_Y; if (under) { scene.fog.color.set(0x0a262b).multiply(env.fogTint); scene.fog.near = 0.5; scene.fog.far = 20; } document.body.classList.toggle('under', under); deepShadow.camUnder = under; // under the surface
@@ -118,7 +120,7 @@ requestAnimationFrame(frame);
 addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
 
 // Test hooks for the headless check (scripts/shots.js): not used by play.
-window.__iw = { fireflies: fireflyStats, others, net, built, deliver, /* the gate of slice 12 */ logEvent, playlogState, tickWatch, checkCrates, checkMsg, solidAt, pickups, HALF, /* slice 13d */
+window.__iw = { fireflies: fireflyStats, explored: exploredStats, others, net, built, deliver, /* the gate of slice 12 */ logEvent, playlogState, tickWatch, checkCrates, checkMsg, solidAt, pickups, HALF, /* slice 13d */
   // a build recipe opens build mode; for the checks, craft() of one places it at once where the ghost stands (slice 12)
   craft: (key) => { const r = RECIPES.find(q => q.key === key); if (r.type !== 'build') return craft(r); if (!craft(r)) return false; const ok = placeNow(); endBuild(); return ok; },
   startBuild: (key) => startBuild(RECIPES.find(q => q.key === key)), placeNow, endBuild, building, rotateBuild, damageBuilt, toggleGate, tearTarget, refundOf, clearBuilt, wallAhead, PIECE, putPiece, liveShots, ammo, clipSize, gotPickup, spreadAt, upgraded, aimGround, /* slice 12 */ toggleCraft, craftOpen, placeSpot, sleep, bedNear, bedRespawn, felled, fell, harvestTarget, quiver, stuckArrows, // slice 11

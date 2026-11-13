@@ -8,7 +8,7 @@
 // lifts the roof off the building the player is in (third-person cameras) and hides far buildings.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { Q } from './config.js';
+import { Q, SEED, DEFAULT_SEED } from './config.js';
 import { vnoise } from './noise.js';
 import { groundY } from './world.js';
 import { buildings, raiderCamps, R, toW, toL } from './plan.js';
@@ -134,6 +134,12 @@ function buildHouse(b, P, g) { const { w, d, h } = b, k = b.moss ? 'moss' : b.ma
     for (let x = -w / 2 + 0.6; x < w / 2 - 0.3; x += 1.3) { const len = 1.2 + R() * d * 0.45; if (R() < 0.35) continue; const a = Math.asin(Math.min(0.95, top / len));
       box(P, 'beam', 0.14, 0.18, len, x, b.y + 0.05 + len * Math.sin(a) / 2, d / 2 - 0.2 - len * Math.cos(a) / 2, 0, -a); }
     box(P, 'roof', w * 0.45, 0.14, d * 0.4, w * 0.15, gAt(b, w * 0.15, -d * 0.05) + 0.55, -d * 0.05, 0.3, 0.32, 0.12); }
+  // a porch (issue #17): a deck, two posts and a lean-to roof in front of the door of about a third of the intact gable houses; it is
+  // picked from the house's place, never from the world's random stream (nothing else moves), and never in the classic world
+  if (b.roof === 'gable' && SEED !== DEFAULT_SEED && ((Math.round(b.x * 10) * 73856093 ^ Math.round(b.z * 10) * 19349663) >>> 0) % 3 === 0 && (() => { const pz = -d / 2 - 1.1, ys = [-1.6, 1.6].flatMap(x => [pz - 0.9, pz + 0.9].map(z => gAt(b, x, z))); return Math.max(...ys) - Math.min(...ys) < 0.3; })()) { b.porch = true; // (only on level ground: on a slope the deck would hover or sink)
+    const pz = -d / 2 - 0.225 - 0.9, py = b.y - 0.1; // no colliders: it is a low deck you walk over, the posts are thin
+    box(P, 'planks', 3.2, 0.22, 1.8, 0, py, pz); for (const x of [-1.5, 1.5]) box(P, 'beam', 0.14, 2.3, 0.14, x, py + 1.2, pz - 0.7);
+    box(P, 'roof', 3.6, 0.1, 2.2, 0, py + 2.45, pz - 0.15, 0, 0.14); }
   furnish(b, P, g, w, d); }
 
 // IW1's watchtower: a square brick tower with arrow slits, crenellations and a broken crown, a ladder inside
