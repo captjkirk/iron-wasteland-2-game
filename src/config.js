@@ -23,9 +23,19 @@ const info = !isLocal || params.has('join') ? await netInfo : null;
 export const JOINER = !!info;
 // after a reload to build the host's world (coop.js: the welcome named another seed than the server did) the address wins,
 // so two host pages naming different seeds cannot reload a joiner round and round
-const hostSeed = JOINER && !params.has('reseed') ? cleanSeed(info.seed) : '';
+// A joiner opened with no world in its address builds nothing until it knows the host's: the server's answer, else the host
+// game's own, asked each second (November 15, 2026: five joiners whose server answer had no seed each built a random world, 6 to
+// 38 s of loading, only to throw it away on the host's welcome)
+async function askHost() { const id = 'ask' + Math.random().toString(36).slice(2, 10), es = new EventSource(`/net/listen?id=${id}&role=join`); let iv;
+  const s = await new Promise(ok => { es.onmessage = (e) => { for (const m of JSON.parse(e.data).m) if (m.t === 'seed' && m.s) ok(m.s); };
+    const ask = () => { fetch(`/net/send?id=${id}&to=host`, { method: 'POST', body: '[{"t":"seed?"}]' }).catch(() => {}); fetch('/net/info').then(r => r.json()).then(j => j?.seed && ok(j.seed)).catch(() => {}); };
+    const el = document.getElementById('loading'); if (el) el.textContent = 'Asking the host computer which world it is on…'; ask(); iv = setInterval(ask, 1000); });
+  clearInterval(iv); es.close(); return cleanSeed(s); }
+const hostSeed = JOINER && !params.has('reseed') ? cleanSeed(info.seed) || (params.get('seed') ? '' : await askHost()) : '';
 export const SEED_TEXT = hostSeed || cleanSeed(params.get('seed')) || (globalThis.navigator?.webdriver ? String(DEFAULT_SEED) : randomSeed());
 export const SEED = seedNumber(SEED_TEXT), CLASSIC = SEED === DEFAULT_SEED;
+// a world that is kept after a game over (game.js): one whose name was typed on the start menu (main.js marks it), or the classic one
+export const KEEP = CLASSIC || params.has('keep');
 // the seed rides in the address, so a reload (a quality change, back to character select) keeps this world
 if (params.get('seed') !== SEED_TEXT && globalThis.history?.replaceState) { params.set('seed', SEED_TEXT); history.replaceState(null, '', '?' + params.toString() + location.hash); }
 
@@ -38,9 +48,9 @@ export const WATER_Y = 0, WAKE_RADIUS = 70;
 // reeds and flowers stop at smallDist; rocks and wrecks at propFar. Medium is the default; the choice is kept in localStorage.
 // fireLights (slice 13): how many point lights the nearest fires and torches get at night (each one costs every pixel).
 export const QUALITY = {
-  low:    { label: 'Low',    pixelRatio: 1,   antialias: false, shadows: true, shadowSize: 1024, shadowExtent: 40,  drawDist: 380,  lod0: 110, water: 'simple', waterRes: 0,   albedoRes: 512,  anisotropy: 2, furShells: 4, fireLights: 2, grassDensity: 0.3, grassDist: 22, treeNear: 32, bushNear: 18, smallDist: 26, propFar: 220, impostorRes: 128 },
-  medium: { label: 'Medium', pixelRatio: 1.5, antialias: true,  shadows: true, shadowSize: 2048, shadowExtent: 70,  drawDist: 650,  lod0: 190, water: 'mirror', waterRes: 384, albedoRes: 1024, anisotropy: 4, furShells: 10, fireLights: 3, grassDensity: 0.6, grassDist: 38, treeNear: 55, bushNear: 30, smallDist: 40, propFar: 380, impostorRes: 256 },
-  high:   { label: 'High',   pixelRatio: 2,   antialias: true,  shadows: true, shadowSize: 4096, shadowExtent: 110, drawDist: 1100, lod0: 320, water: 'mirror', waterRes: 512, albedoRes: 1024, anisotropy: 8, furShells: 16, fireLights: 5, grassDensity: 1.0, grassDist: 60, treeNear: 95, bushNear: 50, smallDist: 65, propFar: 700, impostorRes: 256 },
+  low:    { label: 'Low',    pixelRatio: 1,   antialias: false, shadows: true, shadowSize: 1024, shadowExtent: 40,  drawDist: 380,  lod0: 110, water: 'simple', waterRes: 0,   albedoRes: 512,  anisotropy: 2, furShells: 4, fireLights: 2, grassDensity: 0.3, grassDist: 22, treeNear: 32, bushNear: 18, smallDist: 26, propFar: 220, impostorRes: 128, tracks: 300 },
+  medium: { label: 'Medium', pixelRatio: 1.5, antialias: true,  shadows: true, shadowSize: 2048, shadowExtent: 70,  drawDist: 650,  lod0: 190, water: 'mirror', waterRes: 384, albedoRes: 1024, anisotropy: 4, furShells: 10, fireLights: 3, grassDensity: 0.6, grassDist: 38, treeNear: 55, bushNear: 30, smallDist: 40, propFar: 380, impostorRes: 256, tracks: 600 },
+  high:   { label: 'High',   pixelRatio: 2,   antialias: true,  shadows: true, shadowSize: 4096, shadowExtent: 110, drawDist: 1100, lod0: 320, water: 'mirror', waterRes: 512, albedoRes: 1024, anisotropy: 8, furShells: 16, fireLights: 5, grassDensity: 1.0, grassDist: 60, treeNear: 95, bushNear: 50, smallDist: 65, propFar: 700, impostorRes: 256, tracks: 1000 },
 };
 function storedQuality() { try { return localStorage.getItem('iw2.quality'); } catch { return null; } }
 export const QUALITY_KEY = [params.get('q'), storedQuality(), 'medium'].find(k => k && QUALITY[k]);

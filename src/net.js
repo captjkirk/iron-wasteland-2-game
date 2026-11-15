@@ -7,7 +7,10 @@ import { logEvent } from './playlog.js';
 
 export const net = { role: null, id: Math.random().toString(36).slice(2, 10), host: null, info: null, stream: 'none', fails: 0 };
 // what the play log says about the link (the gate of slice 12: a joined game that never got in left no trace of why)
-let netLogs = 0; const netLog = (type, data) => { if (netLogs++ < 40) logEvent(type, data); };
+// (a page that is going, a reload or the app back to its start screen or quitting, cuts its own link: not a fault to log; the
+// host's log of November 15, 2026 at 12:15 PM ended on a "closed" stream and a TypeError post as its window went)
+let netLogs = 0, leaving = false; const netLog = (type, data) => { if (!leaving && netLogs++ < 40) logEvent(type, data); };
+for (const ev of ['beforeunload', 'pagehide']) addEventListener(ev, () => { leaving = true; });
 const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname), out = new Map(); let busy = false, handler = () => {};
 // (config.js asks /net/info, before the world is built: a joining game needs the host's seed first, slice 13c)
 // the host's stream carries its world's seed, which the server hands every game that joins (slice 13c)

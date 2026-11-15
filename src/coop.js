@@ -3,7 +3,7 @@
 // who wins a hit. Each game moves its own player and works out its own attacks, then tells the host what it hit.
 // Each game sends its player 15 times a second; the host sends every enemy 12 times a second.
 import * as THREE from 'three';
-import { CHARS, ENEMY, SEED_TEXT, params, JOINER } from './config.js';
+import { CHARS, ENEMY, SEED_TEXT, params, JOINER, KEEP, randomSeed } from './config.js';
 import { groundY } from './world.js';
 import { radioOn, radioLater, places } from './places.js';
 import { caches } from './buildings.js';
@@ -22,7 +22,7 @@ import { felled, applyFelled, onChop, onFell, onShake, onDig, onDug, onGrew } fr
 import { dropFrom } from './arrows.js';
 import { spit } from './spiders.js';
 import { onTearReq, onGateReq, onGone, onBst, onFixReq } from './build.js';
-import { player, score, enemies, spawnEnemy, hitEnemy, charm, scare, crateOpen, smashCrate, hurtPlayer, log, fireShot, deployTurret, slash, gameOver, startGame, isRunning, dangerCue, pickups, addPickup, scene3, gotPickup, turrets, applyUp, upBits } from './game.js';
+import { player, score, enemies, spawnEnemy, hitEnemy, charm, scare, crateOpen, smashCrate, hurtPlayer, log, fireShot, deployTurret, slash, gameOver, ALL_OUT, startGame, isRunning, dangerCue, pickups, addPickup, scene3, gotPickup, turrets, applyUp, upBits } from './game.js';
 
 export const RIVAL = '#ff5a48'; // (slice 33: a rival's name tag and score in free-for-all)
 export const others = new Map(); // id -> { id, c, name, x, y, z, f, hp, mx, down, out, rv, rt, mesh, seen }
@@ -66,11 +66,17 @@ export function setRules(r) { if (joining()) return; Object.assign(rules, r); tr
   showRules(); if (!isRunning()) return; send('all', { t: 'rules', ...rules }); logEvent('rules', { mode: modeKey(), lvl: rules.lvl }); log(`The game is now ${modeName()}.`); }
 const NOTE = { ffa: 'Every player for themselves: weapons hurt everyone, nobody revives a rival, and a knocked-out player is back at their bed or the camp. A creature scores 1, knocking out a rival 3.',
   coop: 'A team against the wasteland: you cannot hurt each other, and you revive a friend who is down.' };
+// what a fall does in each kind of game (Jared, 2026-11-15: "its not clear what setting makes you respawn vs game over at death")
+export const FALL = { solo: 'When you fall: you wake at your bed if you slept in it. No bed: game over.',
+  coop: 'When you fall: a friend has 15 seconds to revive you, then you wake at your bed if you slept in it. Game over only when nobody is left standing.',
+  ffa: 'When you fall: back in 6 seconds at your bed, or the camp if you have none. Never game over.' };
 function showRules() { const $ = (id) => document.getElementById(id);
   const on = (id, v) => { $(id).classList.toggle('on', v); $(id).setAttribute('aria-pressed', String(v)); }; // (the chosen one says so without colour: a check mark and aria-pressed, index.html)
   for (const k in LEVELS) on('mode-' + k, rules.lvl === k);
   on('mode-coop', !rules.ffa); on('mode-ffa', rules.ffa);
   $('modenote').textContent = NOTE[modeKey()];
+  const host = net.role === 'host'; // (the Game row shows only where others can join: a lone game gets its one line; the chosen mode's says so without colour, a check mark)
+  $('modefall').innerHTML = (host ? ['coop', 'ffa'] : ['solo']).map(k => `<p${!host || k === modeKey() ? ' class="on"' : ''}>${host ? `${k === modeKey() ? '✓ ' : ''}<b>${k === 'ffa' ? 'Free-for-all' : 'Co-op'}</b> · ` : ''}${FALL[k]}</p>`).join('');
   $('pausemode').innerHTML = `Game: <b>${modeName()}</b>${joining() ? ' · the host\'s choice' : ''}`; $('pausemode').title = NOTE[modeKey()]; $('pausemode').classList.toggle('hidden', !net.role); }
 document.getElementById('mode-coop').onclick = () => setRules({ ffa: false });
 document.getElementById('mode-ffa').onclick = () => setRules({ ffa: true });
@@ -90,25 +96,44 @@ setInterval(() => { if (joinT && !running()) { send('host', { t: 'hello', c: wan
     document.getElementById('loading').textContent = net.stream !== 'open' ? `No link to the host computer (${s} s): check its server still runs (serve.py --lan) and this computer is on the same network, then reload.` : `No answer from the host's game yet (${s} s). Is the host computer in a game? This keeps trying.`; } }
   flush(); }, 1000);
 
+// build the host's world, then join as asked. The address lists each world this join reloaded for: one met again (two host
+// pages open on different worlds would bounce a joiner between them) says so instead of reloading round and round; any other
+// is a real change of world and is followed (November 15, 2026: a once-only guard left two joiners stuck on the old world)
+function reseed(s) { const was = (params.get('reseed') || '').split('.').filter(Boolean), again = was.includes(s); joinT = 0;
+  logEvent('join-reseed', { mine: SEED_TEXT, host: s, again });
+  if (again) { document.getElementById('loading').textContent = 'The host computer has two games open on different worlds: close one, then reload this page.'; return; }
+  document.getElementById('loading').textContent = 'Building the host\'s world…'; carry(wantCh);
+  params.set('seed', s); params.set('reseed', [...was, s].join('.')); location.search = params.toString(); }
+// what the reloaded page needs: who to walk out as (main.js), and the last game's result for the title
+function carry(i) { try { sessionStorage.setItem('iw2.rejoin', String(i)); const f = document.getElementById('fallen');
+  if (!f.classList.contains('hidden')) sessionStorage.setItem('iw2.fallen', JSON.stringify([f.querySelector('h2').textContent, f.querySelector('p').textContent])); } catch { /* the player walks out again */ } }
+// Everyone is down (Jared, November 15, 2026: "when everyone dies, the map should be respawned"): the host's next walk-out
+// builds a new world, unless its name was typed on the start menu or it is the classic one (KEEP), and each joined game
+// follows the host into it by itself: it asks to join again, builds the world the host names, and walks out when the host does.
+// (2 s on: the game-over news reaches the host before the first ask, or a still-running host would welcome it back to the old game)
+export let nextSeed = '';
+export function nextGame() { if (!joining()) { if (!KEEP) nextSeed ||= randomSeed(); return; }
+  const i = CHARS.indexOf(player.ch); setTimeout(() => { if (!running() && i >= 0) requestJoin(i); }, 2000); }
+// startGame: the walk-out after a game over, on a page built for the new world
+export function freshWorld(i) { if (!nextSeed) return false; logEvent('world-new', { from: SEED_TEXT, to: nextSeed }); carry(i);
+  params.set('seed', nextSeed); params.delete('keep'); location.search = params.toString(); return true; }
+
 onMessage((m, from) => onMsg(m, from));
 function onMsg(m, from) {
   switch (m.t) {
     case 'hello': if (net.role !== 'host') break; // a game asks to join
       // (post, not send: nobody has joined yet, and a host with nobody joined sends nothing)
-      if (!running()) { post(from, { t: 'wait' }); break; }
+      if (!running()) { post(from, { t: 'wait', seed: nextSeed || SEED_TEXT }); break; } // (the world it will build next: a joiner builds it meanwhile)
       post(from, { t: 'welcome', crates: caches.flatMap((c, i) => c.broken ? [[i, 2]] : c.opened ? [[i, 1]] : []), salv: salvaged, pickups: pickups.map(k => [k.id, k.kind, +k.mesh.position.x.toFixed(2), +k.mesh.position.z.toFixed(2)]),
         tur: turrets.map(q => [+q.x.toFixed(2), +q.z.toFixed(2), +q.head.rotation.y.toFixed(2), +q.life.toFixed(1)]), // turrets already out, so a late joiner sees them
         fell: felled, built: builtMsg(), d: [day.t, day.n, day.speed, day.g], seed: SEED_TEXT, rules: { ...rules }, radio: places.some(q => q.on) ? 1 : 0 }); /* (slice 23: the radio tower's radio, on) */ break; // (slice 13: the time of day) // slice 11: trees felled, bushes picked, and what players built
-    case 'wait': if (!waitLogged) { waitLogged = true; logEvent('join-wait'); } document.getElementById('loading').textContent = 'The host is still on the start menu: walk out there first.'; break;
+    case 'seed?': if (net.role === 'host') post(from, { t: 'seed', s: nextSeed || SEED_TEXT }); break; // a joiner, before it builds anything (config.js)
+    case 'wait': if (joinT && m.seed && m.seed !== SEED_TEXT) { reseed(m.seed); break; } if (!waitLogged) { waitLogged = true; logEvent('join-wait'); } document.getElementById('loading').textContent = 'The host is still on the start menu: walk out there first.'; break;
     case 'welcome': if (!joinT || running()) break; if (m.radio) radioLater();
       // another world than this page built (the host rolled a new one after this page loaded): build the host's, then join
       // as asked (slice 13c; a joining page normally gets the host's seed before it builds anything, config.js)
-      // (once: a page already rebuilt this way that still differs says so instead of reloading again)
-      if (m.seed && m.seed !== SEED_TEXT) { joinT = 0; logEvent('join-reseed', { mine: SEED_TEXT, host: m.seed, again: params.has('reseed') });
-        if (params.has('reseed')) { document.getElementById('loading').textContent = 'The host computer has two games open on different worlds: close one, then reload this page.'; break; }
-        document.getElementById('loading').textContent = 'Building the host\'s world…';
-        try { sessionStorage.setItem('iw2.rejoin', String(wantCh)); } catch { /* the player presses JOIN again */ }
-        params.set('seed', m.seed); params.set('reseed', '1'); location.search = params.toString(); break; }
+      if (m.seed && m.seed !== SEED_TEXT) { reseed(m.seed); break; }
+      if (params.has('reseed')) { params.delete('reseed'); history.replaceState(null, '', '?' + params.toString() + location.hash); } // (in: the next world change is followed too)
       joinT = 0; net.host = from; logEvent('join-welcome', { ms: Math.round(performance.now() - joinAt), hellos });
       for (const [i, s] of m.crates) { const c = caches[i]; if (!c) continue; s === 2 ? c.smash() : c.open(); }
       for (const [k, i] of m.salv) applySalvage(k, i);
@@ -151,7 +176,7 @@ function onMsg(m, from) {
       if (i < 0) { send(from, { t: 'take', id: m.id }); break; } // (gone already: the claimer drops its copy)
       if (o && !gone(o) && !(pickups[i].kind === 'ammo' && CHARS[o.c]?.id !== 'gunslinger')) { send(from, { t: 'got', kind: pickups[i].kind }); scene3().remove(pickups[i].mesh); pickups.splice(i, 1); send('all', { t: 'take', id: m.id }); } } break;
     case 'take': { const i = pickups.findIndex(k => k.id === m.id); if (i >= 0) { scene3().remove(pickups[i].mesh); pickups.splice(i, 1); } break; }
-    case 'end': if (running()) gameOver(); break;
+    case 'end': if (running()) { gameOver(null, ALL_OUT); nextGame(); } break;
     // the host's side of another player's actions
     case 'hit': if (net.role === 'host') { const e = enemies.find(q => q.id === m.id); if (e) hitEnemy(e, m.dmg, m.nx, m.nz, null, from); } break;
     case 'charm': if (net.role === 'host') { const e = enemies.find(q => q.id === m.id); if (e && !e.dead) charm(e); } break;

@@ -221,6 +221,8 @@
   .mrow > span { width: 100px; font-size: 13px; letter-spacing: .12em; color: var(--dim); text-transform: uppercase; }
   .seg { flex: 1; display: flex; gap: 6px; }
   .seg button { flex: 1; min-height: 40px; font-size: 14px; }
+  #modefall p { margin: 6px 4px 0; font-size: 13px; line-height: 1.5; color: var(--dim); text-shadow: 0 1px 4px #000; } #modefall p.on { color: var(--ink); } #modefall b { font-weight: 600; }
+  #pausefall { margin: 0 0 10px; color: var(--ink); }
   #modenote { color: var(--dim); font-size: 13px; line-height: 1.5; padding: 0 4px; text-shadow: 0 1px 4px #000; }
   #pause-modes #modes { margin-top: 4px; }
   #world { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 10px 12px; color: var(--dim); font-size: 13px; }
@@ -310,6 +312,7 @@
         <div class="mrow"><span>Creatures</span><div class="seg"><button id="mode-easy" type="button">Easy</button><button id="mode-normal" type="button">Normal</button><button id="mode-hard" type="button">Hard</button></div></div>
         <small id="modenote"></small>
       </div></div></div>
+      <div id="modefall" aria-live="polite"></div>
 
       <div class="snav"><button class="ghost" id="setup-back" type="button">‹ Back</button><button class="next" id="setup-next" type="button"><b>WHO WALKS OUT? ›</b><span></span></button></div>
     </div>
@@ -333,7 +336,7 @@
   </div></div><form method="dialog"><button class="ghost">Close</button></form></dialog>
   <dialog id="dlg-help" aria-label="How to play"><h2>HOW TO PLAY</h2><div class="dbody"><table class="keys"><thead><tr><th scope="col">To</th><th scope="col">Keyboard and mouse</th><th scope="col">Controller</th></tr></thead><tbody><tr><th scope="row">Move</th><td>W A S D</td><td>Left stick</td></tr><tr><th scope="row">Look</th><td>Mouse (click to lock, or right-drag) · arrow keys</td><td>Right stick</td></tr><tr><th scope="row">Attack</th><td>Click</td><td>RT or X</td></tr><tr><th scope="row">Special</th><td>F or right click</td><td>LB or LT</td></tr><tr><th scope="row">Pistol-whip (Gunslinger)</th><td>Z</td><td>Right stick click</td></tr><tr><th scope="row">Jump</th><td>Space</td><td>A</td></tr><tr><th scope="row">Search, salvage, sleep in a bed, change character at the camp tent</th><td>E</td><td>B</td></tr><tr><th scope="row">Chop, pick, dig up a stump, revive a friend, cook at a fire</th><td>Hold E</td><td>Hold B</td></tr><tr><th scope="row">Repair a damaged wall or gate</th><td>Hold H</td><td>Hold d-pad right</td></tr><tr><th scope="row">Tear down what you built</th><td>Hold X</td><td>Hold RB</td></tr><tr><th scope="row">Put away or take out a hand torch</th><td>T</td><td>D-pad left (top-down: turns the view)</td></tr><tr><th scope="row">Eat</th><td>Hold G</td><td>Hold d-pad down</td></tr><tr><th scope="row">Craft and build</th><td>Tab</td><td>View</td></tr><tr><th scope="row">Camera: first person, angled, top-down</th><td>V (Q and E turn the top-down view)</td><td>Y</td></tr><tr><th scope="row">Pause and settings</th><td>P or Esc</td><td>Menu</td></tr><tr><th scope="row">Sound on or off</th><td>M</td><td></td></tr></tbody></table></div><form method="dialog"><button class="ghost">Close</button></form></dialog>
 </div>
-<div id="pause" class="overlay hidden"><div class="pplate"><h1>PAUSED</h1><div class="sub">P or Esc to resume</div><div class="pcols"><div class="pcol"><div id="pauseworld" class="sub"></div></div><div class="pcol"><div id="pausemode" class="sub"></div><div id="pause-modes"></div><div id="pause-settings"></div></div></div>
+<div id="pause" class="overlay hidden"><div class="pplate"><h1>PAUSED</h1><div class="sub">P or Esc to resume</div><div class="pcols"><div class="pcol"><div id="pauseworld" class="sub"></div></div><div class="pcol"><div id="pausemode" class="sub"></div><div id="pausefall" class="sub"></div><div id="pause-modes"></div><div id="pause-settings"></div></div></div>
   <div id="pause-switch" class="sub hidden"><span>Pick who walks out of the tent</span><small>You keep your pack and your share of health</small><div id="pause-chars"></div></div>
   <div class="prow"><button class="go" id="resume" type="button">RESUME</button><button class="go alt" id="tour-skip" type="button" hidden>SKIP THE TOUR</button><button class="go alt" id="tomenu" type="button">LEAVE THE GAME</button></div></div></div>
 

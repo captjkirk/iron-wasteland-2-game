@@ -104,11 +104,12 @@ export function tickSleep(dt) { const s = player.sleep; if (!s) return; s.t += d
   const rest = [...others.values()].filter(o => !gone(o)), awake = rest.filter(o => !o.sl).map(o => o.name);
   sleepEl.firstChild.textContent = (day.speed > 1 ? 'Asleep · the night passes…' : awake.length ? `Asleep · waiting for ${awake.join(' and ')} to sleep too (${rest.length - awake.length + 1} of ${rest.length + 1} in bed)` : 'Asleep…') + ' · move, click or Space to get up'; } // (slice 21, Jared 2026-11-14: "there's no way to leave the bed to save us": the hint had scrolled away in the log)
 // (camp: where a player knocked out in free-for-all with no bed comes back, on the same terms: slice 33)
+export const hasBed = () => built.some(q => q.id === player.bed && q.key === 'bed');
 export function bedRespawn(camp = null) { const b = built.find(q => q.id === player.bed && q.key === 'bed'); if (!b && !camp) return false;
   if (b) { teleport(b.x + Math.cos(b.f) * 1.25, b.z - Math.sin(b.f) * 1.25); player.y = Math.max(player.y, b.y); } else teleport(camp.x, camp.z); // beside the bed, on its floor
   Object.assign(player, { dead: 0, down: 0, out: false, revT: 0, hp: Math.ceil(player.maxHp / 2) }); for (const k of RES) player.inv[k] = Math.floor((player.inv[k] || 0) / 2); quiver.n = Math.floor(quiver.n / 2); ammo.reserve = Math.floor(ammo.reserve / 2); ammo.flowers = Math.floor(ammo.flowers / 2);
   player.mesh.visible = getCamMode() !== 'first'; player.mesh.userData.anim.revive();
-  fade(`You ${b ? 'wake at your bed' : 'are back at the camp'}, with half your health and half your things.`); logEvent(b ? 'bed-respawn' : 'camp-respawn', { hp: player.hp, ...player.inv });
+  fade(`You ${b ? 'wake at your bed (you slept in it)' : 'are back at the camp (no bed slept in)'}, with half your health and half your things.`); logEvent(b ? 'bed-respawn' : 'camp-respawn', { hp: player.hp, ...player.inv });
   log(`${player.ch.player} ${b ? 'woke at the bed' : 'is back at the camp'} with half health and half of everything.`); return true; }
 
 // ── The craft menu (Tab, or View on a pad): the recipes this character can use, what each costs, and what is short ──

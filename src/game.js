@@ -24,8 +24,8 @@ import { buildCharacter, buildViewModel } from './characters.js';
 import { logEvent, tickLog, savePlayLog, startVideo, recording } from './playlog.js';
 import { tickWatch, watchStart, solidAt } from './watch.js';
 import { buildMenu, menuKey, showStep, moveFocus, padIn } from './menu.js';
-import { others, coop, joining, gone, nearestP, everyone, hurt, salvagedProp, requestJoin, tickCoop, followHost, net, send, clearOthers, rules, pvp, modeKey, modeName, RIVAL, level, LEVELS } from './coop.js';
-import { craftOpen, toggleCraft, craftKey, craftPad, renderMenu, bedNear, sleep, wake, tickSleep, bedRespawn, fireSpots, benchNear } from './craft.js';
+import { others, coop, joining, gone, nearestP, everyone, hurt, salvagedProp, requestJoin, tickCoop, followHost, nextGame, freshWorld, net, send, clearOthers, rules, pvp, modeKey, modeName, RIVAL, level, LEVELS } from './coop.js';
+import { craftOpen, toggleCraft, craftKey, craftPad, renderMenu, bedNear, sleep, wake, tickSleep, bedRespawn, hasBed, fireSpots, benchNear } from './craft.js';
 import { tickHarvest, harvestTarget, harvestName, harvestDoing, prepHarvest } from './harvest.js';
 import { quiver, useArrow, stick, dropFrom, tickArrows, clearArrows } from './arrows.js';
 import { torchWarm, carriedWarm, byFlame, torchOn, toggleTorch, FEARS_FIRE } from './torch.js';
@@ -34,6 +34,7 @@ import { built } from './craft.js';
 import { attachGear, eatPose } from './characters.js';
 import { startSpiders, tickSpiders, webSlow, spit, holdK, held } from './spiders.js';
 import { poison, tickPoison, clearPoison } from './poison.js';
+import { clearTracks } from './tracks.js';
 import { tourTick, capLine, kc, endTour } from './tour.js'; // #16: key caps and the first-time tour
 import { ammo, resetSupplies, tickSupplies, fought, useRound, useFlower, reload, addRounds, clipSize, foodCount, fireNear, HEAL, MAX_ROUNDS } from './supplies.js';
 
@@ -221,8 +222,9 @@ export const player = { ch: null, mesh: null, x: 0, z: 0, y: 0, vy: 0, yaw: 0, p
 const CAMS = ['first', 'angled', 'top'], CAM_LABEL = { first: 'First person', angled: 'Angled (third person)', top: 'Top-down' };
 let camMode = params.get('cam') && CAMS.includes(params.get('cam')) ? params.get('cam') : 'angled', topYaw = 0, running = false, paused = false;
 
-export function startGame(i) {
+export function startGame(i) { clearTracks(); // (slice 43)
   if (joining() && !net.host) return requestJoin(i); // walks out when the host welcomes it (coop.js)
+  if (freshWorld(i)) return; // everyone fell last game: this walk-out builds a new world first (coop.js)
   // (the other players are forgotten: each comes back with their next message, standing)
   clearOthers(); resetExplored(); const ch = CHARS[i]; player.ch = ch; player.maxHp = ch.maxHp; player.hp = ch.maxHp; player.startT = performance.now(); player.kills = 0; player.inv = { wood: 0, metal: 0, fiber: 0, food: 0 };
   quiver.n = quiver.start; clearArrows(); player.bed = null; player.chop = null; toggleCraft(false); // slice 11: a full quiver, no bed to wake in yet
@@ -572,6 +574,13 @@ export function hurtPlayer(d, by, from = null, who = null) { if (player.dead || 
 // fall damage (the owner, 2026-11-04: "we need fall damage"): a drop of up to 4 m is free (a jump on flat ground is 1.3 m,
 // off the ladder's top 7 m), then 10 HP a metre, so 16 m kills the Gunslinger and the Ranger and 24 m the Knight; water breaks any fall
 const FALL_SAFE = 4, FALL_HP = 10, KO_S = 6;
+// why a game ended, on the title's fallen plate (Jared, 2026-11-15)
+export const NO_BED = 'you had not slept in a bed, so there was nowhere to wake.', ALL_OUT = 'everyone was out, and nobody had a bed they had slept in.';
+// what a fall does in this game right now, on the pause screen
+export function fallNow() { const bed = hasBed(), mode = !coop() ? 'solo' : rules.ffa ? 'ffa' : 'coop';
+  return 'If you fall: ' + (mode === 'ffa' ? `back in ${KO_S} s at ${bed ? 'your bed (you slept in it).' : 'the camp. Sleep in a bed to come back there instead.'}`
+    : mode === 'coop' ? `a friend has 15 s to revive you, then ${bed ? 'you wake at your bed (you slept in it).' : 'you are out until everyone falls. Sleep in a bed to wake there instead.'}`
+    : bed ? 'you wake at your bed (you slept in it).' : 'game over. Sleep in a bed to change that.'); }
 // #86 (Jared, 2026-11-15, after a Brawl where the host knocked the joined player out twice as they came back at the camp): a
 // player back from a knockout in free-for-all cannot be hurt by a rival for this long, or until they attack; creatures still bite
 const RESPAWN_SAFE_S = 4;
@@ -579,11 +588,11 @@ function fallHurt(h, gy) { const d = Math.round((h - FALL_SAFE) * FALL_HP); if (
   if (WATER_Y - groundY(player.x, player.z) > 0.4 && gy < WATER_Y) { logEvent('fall', { h: +h.toFixed(1), dmg: 0, water: true }); return; }
   logEvent('fall', { h: +h.toFixed(1), dmg: d }); floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `-${d}`, '#ff8a6a', d >= 20); hurtPlayer(d, 'fall'); }
 // no bed, no respawn (the owner's ruling, 2026-11-03; IW1 respawns you only at a bed you built): death ends the game
-export function gameOver(why = null) { clearPoison(); riverLevel(0); /* (the quality pass: the rush played on under the start menu) */ toggleCraft(false); endTour(); running = false; paused = false; homePanels(); syncCursor(); /* (Settings and the game rows go back to the menu even when the game ends paused, the quality pass) */ net.host = null; clearOthers(); nameTags([]); const t = Math.round((performance.now() - player.startT) / 1000), by = LABEL[player.killedBy] || 'the wasteland';
+export function gameOver(why = null, reason = '') { clearPoison(); riverLevel(0); /* (the quality pass: the rush played on under the start menu) */ toggleCraft(false); endTour(); running = false; paused = false; homePanels(); syncCursor(); /* (Settings and the game rows go back to the menu even when the game ends paused, the quality pass) */ net.host = null; clearOthers(); nameTags([]); const t = Math.round((performance.now() - player.startT) / 1000), by = LABEL[player.killedBy] || 'the wasteland';
   logEvent('game-over', { by: player.killedBy, secs: t, kills: player.kills, ...player.inv });
   if (document.pointerLockElement) document.exitPointerLock(); for (const id of ['hud-tl', 'hud-tr', 'hud-b', 'cross', 'pause', 'breath', 'prompt', 'downed', 'tour']) document.getElementById(id).classList.add('hidden');
   const fallen = document.getElementById('fallen'); fallen.classList.remove('hidden'); fallen.querySelector('h2').textContent = why ? 'GAME OVER' : 'FALLEN'; // (a plate on the title; the tagline stays)
-  fallen.querySelector('p').textContent = why || `${player.ch.player} fell to ${/^[AEIOU]/.test(by) ? 'an' : 'a'} ${by.toLowerCase()} after ${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}, with ${player.kills} kill${player.kills === 1 ? '' : 's'}. Next time: build a craftbench, then a bed, and sleep in it to wake there.`;
+  fallen.querySelector('p').textContent = why || `${player.ch.player} fell to ${/^[AEIOU]/.test(by) ? 'an' : 'a'} ${by.toLowerCase()} after ${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}, with ${player.kills} kill${player.kills === 1 ? '' : 's'}.${reason && ' Game over: ' + reason} Next time: build a craftbench, then a bed, and sleep in it to wake there.`;
   document.getElementById('menu').classList.remove('hidden'); showStep('title'); }
 // a few passes: pushing out of one circle can push into its neighbour; feet at or above a solid's top pass over it
 // (slice 12: a gate lets players through; enemies only while it is held open. Only the player's own move passes feet.)
@@ -622,7 +631,7 @@ export function update(dt, t) {
   if (pad && camMode !== 'top') { player.yaw -= pad.lx * 2.6 * dt * settings.sens; player.pitch = Math.max(-1.35, Math.min(1.2, player.pitch - pad.ly * 2.0 * dt * settings.sens * (settings.invertY ? -1 : 1))); }
   // move, relative to the camera's heading
   let ix = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0), iz = (keys.has('KeyS') ? 1 : 0) - (keys.has('KeyW') ? 1 : 0);
-  if (pad) { ix += pad.mx; iz += pad.mz; } if (player.dead) { ix = iz = 0; player.dead -= dt; if (player.dead <= 0 && !bedRespawn()) gameOver(); } // a bed you slept in wakes you (slice 11)
+  if (pad) { ix += pad.mx; iz += pad.mz; } if (player.dead) { ix = iz = 0; player.dead -= dt; if (player.dead <= 0 && !bedRespawn()) { const alone = !others.size; gameOver(null, NO_BED); if (alone) nextGame(); } } // a bed you slept in wakes you (slice 11)
   if (player.sleep) { if (ix || iz || mouseDown || pad?.atk || pad?.jump || keys.has('Space')) wake('You get up.'); ix = iz = 0; } // asleep in a bed (slice 13): moving wakes you
   // co-op: down for 15 s; a friend standing close with E held for 2.5 s gets you up at a third of your health, else you are out
   player.graceT = Math.max(0, (player.graceT || 0) - dt);
@@ -632,7 +641,7 @@ export function update(dt, t) {
     else if (player.down <= 0 && bedRespawn(player.ko ? campSpot() : null)) { if (player.ko) { player.graceT = RESPAWN_SAFE_S; log(`Safe for ${RESPAWN_SAFE_S} s: no rival can hurt you until it ends or you attack.`); } player.ko = false; } // (#86: no knocking out a player as they come back)
     else if (player.down <= 0) { player.down = 0; player.out = true; player.mesh.visible = false; logEvent('out'); log('You are out: watching the others until they fall too.'); } }
   safeGlow(player.mesh, player.graceT, t); for (const o of others.values()) safeGlow(o.mesh, rivalSafe(o), t); // (#86: after the respawn above, so it shows on the first frame)
-  if (player.out && !everyone().some(q => q !== player)) { send('all', { t: 'end' }); gameOver(); return; } // everyone is out: the game ends for all
+  if (player.out && !everyone().some(q => q !== player)) { send('all', { t: 'end' }); gameOver(null, ALL_OUT); nextGame(); return; } // everyone is out: the game ends for all
   player.rv = !player.dead && !rules.ffa && (keys.has('KeyE') || !!pad?.useHeld) && [...others.values()].some(o => o.down > 0 && !o.out && Math.hypot(o.x - player.x, o.z - player.z) < 2.4); // reviving a friend
   const il = Math.hypot(ix, iz); if (il > 1) { ix /= il; iz /= il; }
   const heading = camMode === 'top' ? topYaw : player.yaw, sh = Math.sin(heading), chh = Math.cos(heading);
@@ -981,13 +990,13 @@ export function placeCamera(dt) {
 let slowT = 0, slowHinted = false;
 function perfHint(fps, dt) { if (slowHinted || navigator.webdriver || paused || QUALITY_KEY === 'low') return;
   slowT = fps > 0 && fps < 24 ? slowT + dt : 0; if (slowT > 12) { slowHinted = true; log('Running slowly here: try Quality → Low (P opens settings).'); } }
-export function hud(fps, dt = 0) { perfHint(fps, dt); lastFps = fps; if (paused) pauseChars(); // (the world runs on in co-op: down or up again while paused, review)
+export function hud(fps, dt = 0) { perfHint(fps, dt); lastFps = fps; if (paused) { pauseChars(); document.getElementById('pausefall').textContent = fallNow(); } // (the world runs on in co-op: down or up again while paused, review)
   const watch = player.out && [...others.values()].find(o => !o.out); // co-op: down, or out and watching a friend
   document.getElementById('name').textContent = `${player.ch.player.toUpperCase()} · ${player.ch.title}`; // health moved onto the bar (#37)
   // a fall says so in the middle of the screen, large (2026-11-15; it used to be a line after the name): down and how to get up, knocked out, out
-  const dn = player.out ? ['OUT', watch ? `Watching ${watch.name} until everyone is out` : 'Watching the others'] : player.down > 0 && rules.ffa ? ['KNOCKED OUT', `Back in ${Math.ceil(player.down)} s at your bed or the camp`]
-    : player.down > 0 ? [`DOWN · ${Math.ceil(player.down)} s`, player.revT > 0 ? `${watch?.name || 'A friend'} is reviving you: ${Math.round(player.revT / 2.5 * 100)}%` : 'A friend can revive you: they stand beside you and hold E']
-    : player.dead > 0 ? ['DOWN', `${player.ch.player} went down…`] : null;
+  const dn = player.out ? ['OUT', watch ? `Watching ${watch.name} until everyone is out` : 'Watching the others'] : player.down > 0 && rules.ffa ? ['KNOCKED OUT', `Back in ${Math.ceil(player.down)} s at ${hasBed() ? 'your bed' : 'the camp'}`]
+    : player.down > 0 ? [`DOWN · ${Math.ceil(player.down)} s`, player.revT > 0 ? `${watch?.name || 'A friend'} is reviving you: ${Math.round(player.revT / 2.5 * 100)}%` : `Waiting for a friend to revive you (${[...others.values()].filter(o => !gone(o)).length} still standing). If not: ${hasBed() ? 'you wake at your bed' : 'you are out until everyone falls'}.`]
+    : player.dead > 0 ? ['DOWN', `${player.ch.player} went down… ${hasBed() ? 'waking at your bed' : 'no bed slept in: game over'}`] : null;
   const dEl = document.getElementById('downed'); dEl.classList.toggle('hidden', !dn); if (dn) { if (!dEl.firstChild) dEl.innerHTML = '<b></b><span></span>'; dEl.firstChild.textContent = dn[0]; dEl.lastChild.textContent = dn[1]; }
   document.getElementById('hpfill').style.width = Math.max(0, player.hp / player.maxHp * 100) + '%';
   document.getElementById('hpnum').textContent = `${Math.max(0, Math.ceil(player.hp))} / ${player.maxHp}`;

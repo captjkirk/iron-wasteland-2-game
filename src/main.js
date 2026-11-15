@@ -22,7 +22,8 @@ import { initPortraits, drawPortraits, endPortraits, portraitStats } from './men
 import { menuStep, leaveSeedBox } from './menu.js';
 import { hintsTick, bindTour, armTour } from './tour.js'; // #16
 import { net, netReady } from './net.js';
-import { others, deliver, coop, joining, rules } from './coop.js';
+import { others, deliver, coop, joining, rules, everyone } from './coop.js';
+import { tickTracks, trackStats, groundOf, tracksMesh, fillTracks } from './tracks.js';
 import { craft, built, toggleCraft, craftOpen, placeSpot, sleep, bedNear, bedRespawn, lightSpots } from './craft.js';
 import { day, nightK, DAY_S, setDay } from './daynight.js';
 import { buildWeather, tickWeather } from './weather.js';
@@ -54,7 +55,7 @@ for (const [k, v] of Object.entries(QUALITY)) { const b = document.createElement
 // the world's seed (slice 13c): its name on the menu and the pause screen; New world rolls another, a typed name plays that one
 { const name = document.getElementById('seedname'), inp = document.getElementById('seedin'), play = document.getElementById('playseed');
   name.textContent = SEED_TEXT; document.getElementById('pauseworld').innerHTML = `World <b>${SEED_TEXT}</b> · type its name on the start menu to play it again`;
-  const go = (t) => { logEvent('world-pick', { from: SEED_TEXT, to: t || 'random' }); if (t) params.set('seed', t); else params.delete('seed'); location.search = params.toString(); };
+  const go = (t) => { logEvent('world-pick', { from: SEED_TEXT, to: t || 'random' }); if (t) { params.set('seed', t); params.set('keep', '1'); } else { params.delete('seed'); params.delete('keep'); } location.search = params.toString(); };
   // what this world is like: the two lands it leans toward (world.js), or the classic world
   const like = LEAN.length ? `Mostly ${BIOME[LEAN[0]].label} and ${BIOME[LEAN[1]].label}. ` : 'The classic world. ', note = document.getElementById('seednote');
   note.textContent = like + note.textContent;
@@ -83,10 +84,13 @@ await warmCreatures(); stage('warm'); // (issue #44: every creature's shaders co
 navigator.serviceWorker?.ready.then(r => r.active?.postMessage(performance.getEntriesByType('resource').map(e => e.name)));
 bindTour(); status.textContent = ''; document.getElementById('go').disabled = false; document.getElementById('title-go').disabled = false; document.getElementById('title-go').focus({ preventScroll: true });
 // LAN co-op (slice 10): the menu says how to play together
-netReady.then(() => { const el = document.getElementById('netinfo'); if (!net.role) return; el.classList.remove('hidden');
+// this page was reloaded to build the host's world (coop.js), or a new world after a game over (game.js): walk out as asked
+netReady.then(() => { const el = document.getElementById('netinfo');
+  let again = null, fell = null; try { again = sessionStorage.getItem('iw2.rejoin'); fell = JSON.parse(sessionStorage.getItem('iw2.fallen')); sessionStorage.removeItem('iw2.rejoin'); sessionStorage.removeItem('iw2.fallen'); } catch { /* no storage: press JOIN again */ }
+  if (fell) { const f = document.getElementById('fallen'); f.classList.remove('hidden'); f.querySelector('h2').textContent = fell[0]; f.querySelector('p').textContent = fell[1]; } // (the last game's result, carried over)
+  if (again !== null && CHARS[+again]) { armTour(); startGame(+again); } // (#16: the walk-out that reloaded this page keeps its first-time tour)
+  if (!net.role) return; el.classList.remove('hidden');
   // this page was reloaded to build the host's world (coop.js): join as the player already asked
-  let again = null; try { again = sessionStorage.getItem('iw2.rejoin'); sessionStorage.removeItem('iw2.rejoin'); } catch { /* no storage: press JOIN again */ }
-  if (net.role === 'join' && again !== null && CHARS[+again]) { armTour(); startGame(+again); } // (#16: the walk-out that reloaded this page keeps its first-time tour)
   if (net.role === 'join') { el.textContent = `Playing together: this joins the game hosted at ${location.host}.`; }
   else el.textContent = net.info.lan ? `Play together: on the family's other computers, open ${net.info.addr} in a browser and press JOIN.` : 'Play together on the home network: start the server with  python3 scripts/serve.py --lan'; }); logEvent('loaded', { seed: SEED_TEXT, quality: QUALITY_KEY, ms: Math.round(performance.now()), w: innerWidth, h: innerHeight, ...device(), stages });
 // which graphics chip and screen this is, and how many pixels each frame draws (the play log's loaded event)
@@ -127,6 +131,7 @@ function frame(now) {
   const under = player.under && camera.position.y < WATER_Y; if (under) { scene.fog.color.set(0x0a262b).multiply(env.fogTint); scene.fog.near = 0.5; scene.fog.far = 20; } document.body.classList.toggle('under', under); deepShadow.camUnder = under; // under the surface
   wind.value = clock; updateScatter(camera.position); updateGrass(camera.position);
   tickBuildings(camera.position, player.x, player.z, player.y, isRunning() && getCamMode() === 'first' && !freeCam);
+  if (isRunning()) tickTracks(scene, clock, everyone(), enemies, camera.position); // (slice 43: prints on the ground)
   env.tick(dt); tickCamp(dt, clock); renderer.render(scene, camera); snapFrame(renderer.domElement); rendered++;
 }
 requestAnimationFrame(frame);
@@ -140,7 +145,7 @@ const fit = () => { camera.aspect = innerWidth / innerHeight; camera.updateProje
 addEventListener('resize', fit); fit(); // (and once now: a window resized while the world was building drew in a corner until the next resize, Jared, 2026-11-15)
 
 // Test hooks for the headless check (scripts/shots.js): not used by play.
-window.__iw = { selected, portraits: portraitStats, get rules() { return rules; }, /* the start menu (menu.js) */ fireflies: fireflyStats, explored: exploredStats, others, net, built, deliver, /* the gate of slice 12 */ logEvent, playlogState, tickWatch, checkCrates, checkMsg, solidAt, pickups, HALF, /* slice 13d */
+window.__iw = { tracks: { stats: trackStats, groundOf, mesh: tracksMesh, fill: fillTracks }, /* slice 43 */ selected, portraits: portraitStats, get rules() { return rules; }, /* the start menu (menu.js) */ fireflies: fireflyStats, explored: exploredStats, others, net, built, deliver, /* the gate of slice 12 */ logEvent, playlogState, tickWatch, checkCrates, checkMsg, solidAt, pickups, HALF, /* slice 13d */
   // a build recipe opens build mode; for the checks, craft() of one places it at once where the ghost stands (slice 12)
   craft: (key) => { const r = RECIPES.find(q => q.key === key); if (r.type !== 'build') return craft(r); if (!craft(r)) return false; const ok = placeNow(); endBuild(); return ok; },
   lightSpots: () => [...torchLights(), ...lightSpots()], fireCount, hasFlame, saplingStats, setDay, /* slice 26 */ startBuild: (key) => startBuild(RECIPES.find(q => q.key === key)), placeNow, endBuild, building, rotateBuild, damageBuilt, toggleGate, tearTarget, repairTarget, pieceBars, refundOf, clearBuilt, wallAhead, PIECE, putPiece, liveShots, ammo, clipSize, gotPickup, spreadAt, upgraded, aimGround, /* slice 12 */ toggleCraft, craftOpen, placeSpot, sleep, bedNear, bedRespawn, felled, fell, harvestTarget, quiver, stuckArrows, // slice 11
