@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { QUALITY_KEY, PX, params, HALF, WATER_Y, WAKE_RADIUS, CHARS, ENEMY, BIOME, SAFE_R, HIDE, WARN_T, CHARGE, CLOSE, RELIGHT, SPIT_GAP, EASY_CALM, PASS_N, PASS_OUT } from './config.js';
 import { campfire, campTent } from './camp.js';
-import { caches, raiderCamps, ladderAt } from './buildings.js';
+import { caches, raiderCamps, ladderAt, foodNear, foodName, takeFood, larder, FOOD_EACH } from './buildings.js';
 import { tickDeep, resetDeep, ripple } from './water.js';
 import { day, tickDay, resetDay, nightK, isNight, phase } from './daynight.js';
 const DEEP_BITE = 20; // the lake serpent's bite (slice 13: 15 before, from the shadow)
@@ -24,7 +24,7 @@ import { buildCharacter, buildViewModel } from './characters.js';
 import { logEvent, tickLog, savePlayLog, startVideo, recording } from './playlog.js';
 import { tickWatch, watchStart, solidAt } from './watch.js';
 import { buildMenu, menuKey, showStep, moveFocus, padIn } from './menu.js';
-import { others, coop, joining, gone, nearestP, everyone, hurt, salvagedProp, requestJoin, tickCoop, followHost, nextGame, freshWorld, net, send, clearOthers, rules, pvp, modeKey, modeName, RIVAL, level, LEVELS } from './coop.js';
+import { others, coop, joining, gone, nearestP, everyone, hurt, salvagedProp, ateFood, requestJoin, tickCoop, followHost, nextGame, freshWorld, net, send, clearOthers, rules, pvp, modeKey, modeName, RIVAL, level, LEVELS } from './coop.js';
 import { craftOpen, toggleCraft, craftKey, craftPad, renderMenu, bedNear, sleep, wake, tickSleep, bedRespawn, hasBed, fireSpots, benchNear } from './craft.js';
 import { tickHarvest, harvestTarget, harvestName, harvestDoing, prepHarvest } from './harvest.js';
 import { quiver, useArrow, stick, dropFrom, tickArrows, clearArrows } from './arrows.js';
@@ -544,6 +544,9 @@ function interact(quiet) {
   // a supply crate first (a raider camp's stays shut while any of its crew lives, as in IW1)
   const cache = caches.find(c => !c.opened && Math.hypot(c.x - player.x, c.z - player.z) < 2.4 && Math.abs(feetY() - c.y) < 2.6); // (slice 23: at the crate's own height: a deck, a cap, a lake's bottom)
   if (cache) { crateOpen(cache); return true; }
+  const food = foodNear(player.x, feetY(), player.z); // (places round 2: a tin off a shelf or a table)
+  if (food) { const i = larder.indexOf(food); takeFood(i); ateFood(i); player.inv.food += FOOD_EACH; logEvent('food-take', { k: food.k }); log(`You take the ${foodName(food)}: +${FOOD_EACH} food.`); sfx('salvage', null, 0.5);
+    floatText(new THREE.Vector3(food.x, food.y + 0.3, food.z), `+${FOOD_EACH} food`, '#ffc070'); return true; }
   if (radioNear(player)) return true; // (slice 23: the radio is held, not pressed)
   // (a bed comes before a gate or a fire, as the prompt says: a bed beside a campfire could not be slept in with raw meat
   // in the pack; the review of slice 12)
@@ -1043,6 +1046,7 @@ function prompt(dt) { const c = player.chop || player.tear || player.fix || play
   else if (!rules.ffa && [...others.values()].some(o => o.down > 0 && !o.out && Math.hypot(o.x - x, o.z - z) < 2.4)) t = `Hold ${E} · revive`;
   else if (repairTarget(x, z)) { const b = repairTarget(x, z); t = `Hold ${padActive ? 'd-pad right' : 'H'} · repair the ${pieceName(b)}: ${fixCostText(b)} for +${fixGain(b)} (${Math.round(b.hp)}/${b.max})`; }
   else if (caches.some(q => !q.opened && Math.hypot(q.x - x, q.z - z) < 2.4 && Math.abs(feetY() - q.y) < 2.6)) t = `${E} · search the crate`;
+  else if (foodNear(x, feetY(), z)) t = `${E} · take the ${foodName(foodNear(x, feetY(), z))}`; // (places round 2)
   else if (placePrompt(player, E)) t = placePrompt(player, E); // slice 23 (a crate in reach comes first)
   else if (gateNear(x, z)) t = `${E} · ${gateNear(x, z).open ? 'shut the gate' : 'hold the gate open'}`;
   else if (bedNear(x, z)) t = `${E} · sleep (you wake here if you fall)`;

@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { CHARS, ENEMY, SEED_TEXT, params, JOINER, KEEP, randomSeed } from './config.js';
 import { groundY } from './world.js';
 import { radioOn, radioLater, places } from './places.js';
-import { caches } from './buildings.js';
+import { caches, takeFood } from './buildings.js';
 import { placed } from './props.js';
 import { markDirty } from './scatter.js';
 import { buildCharacter, eatPose } from './characters.js';
@@ -43,6 +43,8 @@ const running = () => isRunning() && !!player.ch;
 // (from: where the blow came from, for the Knight's shield block: slice 12)
 export function hurt(p, dmg, by, from) { if (p === player) hurtPlayer(dmg, by, from); else send(p.id, { t: 'hurt', dmg, by, ...(from && { fx: +from.x.toFixed(1), fz: +from.z.toFixed(1) }) }); }
 export const salvaged = []; // [type, index] of every scrap pile and wreck salvaged, for players who join later
+export const eaten = []; // places round 2: the larder index of every piece of food taken, for players who join later
+export function ateFood(i) { eaten.push(i); send('all', { t: 'food', i }); }
 export function salvagedProp(q) { const i = placed[q.type].indexOf(q); salvaged.push([q.type, i]); send('all', { t: 'salv', k: q.type, i }); }
 // ── The game's rules (slice 33, #63; Jared, 2026-11-14: "we should also have a co-op vs free for all (friendly fire on/off) mode
 // options"). The host picks them on its start menu or pause screen; every joined game plays by the host's (in the welcome, and
@@ -124,7 +126,7 @@ function onMsg(m, from) {
     case 'hello': if (net.role !== 'host') break; // a game asks to join
       // (post, not send: nobody has joined yet, and a host with nobody joined sends nothing)
       if (!running()) { post(from, { t: 'wait', seed: nextSeed || SEED_TEXT }); break; } // (the world it will build next: a joiner builds it meanwhile)
-      post(from, { t: 'welcome', crates: caches.flatMap((c, i) => c.broken ? [[i, 2]] : c.opened ? [[i, 1]] : []), salv: salvaged, pickups: pickups.map(k => [k.id, k.kind, +k.mesh.position.x.toFixed(2), +k.mesh.position.z.toFixed(2)]),
+      post(from, { t: 'welcome', crates: caches.flatMap((c, i) => c.broken ? [[i, 2]] : c.opened ? [[i, 1]] : []), salv: salvaged, food: eaten, pickups: pickups.map(k => [k.id, k.kind, +k.mesh.position.x.toFixed(2), +k.mesh.position.z.toFixed(2)]),
         tur: turrets.map(q => [+q.x.toFixed(2), +q.z.toFixed(2), +q.head.rotation.y.toFixed(2), +q.life.toFixed(1)]), // turrets already out, so a late joiner sees them
         fell: felled, built: builtMsg(), d: [day.t, day.n, day.speed, day.g], seed: SEED_TEXT, rules: { ...rules }, radio: places.some(q => q.on) ? 1 : 0 }); /* (slice 23: the radio tower's radio, on) */ break; // (slice 13: the time of day) // slice 11: trees felled, bushes picked, and what players built
     case 'seed?': if (net.role === 'host') post(from, { t: 'seed', s: nextSeed || SEED_TEXT }); break; // a joiner, before it builds anything (config.js)
@@ -136,7 +138,7 @@ function onMsg(m, from) {
       if (params.has('reseed')) { params.delete('reseed'); history.replaceState(null, '', '?' + params.toString() + location.hash); } // (in: the next world change is followed too)
       joinT = 0; net.host = from; logEvent('join-welcome', { ms: Math.round(performance.now() - joinAt), hellos });
       for (const [i, s] of m.crates) { const c = caches[i]; if (!c) continue; s === 2 ? c.smash() : c.open(); }
-      for (const [k, i] of m.salv) applySalvage(k, i);
+      for (const [k, i] of m.salv) applySalvage(k, i); for (const i of m.food || []) if (takeFood(i)) eaten.push(i);
       if (m.d) setDay(...m.d); applyFelled(m.fell || []); for (const b of m.built || []) addBuilt(...b); // (the host's clock first: a new game count restarts this page's own stumps, not the host's)
       takeRules(m.rules); showRules(); // (slice 33: the host's rules, before the start event logs them)
       startGame(wantCh); joinT = 0; for (const [id, kind, x, z] of m.pickups) addPickup(id, kind, x, z, true);
@@ -169,6 +171,7 @@ function onMsg(m, from) {
     case 'got': gotPickup(m.kind); break;
     case 'kill': player.kills++; log(m.s); break;
     case 'salv': applySalvage(m.k, m.i); salvaged.push([m.k, m.i]); break;
+    case 'food': if (takeFood(m.i)) eaten.push(m.i); break; // places round 2: a piece of food another player took
     case 'crated': { const c = caches[m.i]; if (c && !c.opened) c.open(); break; }
     case 'smashed': { const c = caches[m.i]; if (c && !c.broken) c.smash(); break; }
     case 'loot': if (joining() && running()) addPickup(m.id, m.kind, m.x, m.z, false, m.v); break;

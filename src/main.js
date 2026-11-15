@@ -10,7 +10,7 @@ import { markExplored, fogReach, exploredStats } from './explore.js';
 import { buildDeepWater, S as deepShadow } from './water.js';
 import { buildProps, placed, nearColliders, colR, standAt } from './props.js';
 import { buildCamp, tickCamp, campTent, fireCount, hasFlame } from './camp.js';
-import { buildBuildings, tickBuildings, buildings, caches, raiderCamps, ladders, lampSpots } from './buildings.js';
+import { buildBuildings, tickBuildings, buildings, caches, raiderCamps, ladders, larder, lampSpots } from './buildings.js';
 import { snapFrame, logEvent, frameTime, playlogState } from './playlog.js';
 import { tickWatch, checkCrates, checkMsg, solidAt } from './watch.js';
 import { updateScatter, scatterStats } from './scatter.js';
@@ -145,7 +145,7 @@ const fit = () => { camera.aspect = innerWidth / innerHeight; camera.updateProje
 addEventListener('resize', fit); fit(); // (and once now: a window resized while the world was building drew in a corner until the next resize, Jared, 2026-11-15)
 
 // Test hooks for the headless check (scripts/shots.js): not used by play.
-window.__iw = { tracks: { stats: trackStats, groundOf, mesh: tracksMesh, fill: fillTracks }, /* slice 43 */ selected, portraits: portraitStats, get rules() { return rules; }, /* the start menu (menu.js) */ fireflies: fireflyStats, explored: exploredStats, others, net, built, deliver, /* the gate of slice 12 */ logEvent, playlogState, tickWatch, checkCrates, checkMsg, solidAt, pickups, HALF, /* slice 13d */
+window.__iw = { tracks: { stats: trackStats, groundOf, mesh: tracksMesh, fill: fillTracks }, /* slice 43 */ selected, larder, /* places round 2 */ portraits: portraitStats, get rules() { return rules; }, /* the start menu (menu.js) */ fireflies: fireflyStats, explored: exploredStats, others, net, built, deliver, /* the gate of slice 12 */ logEvent, playlogState, tickWatch, checkCrates, checkMsg, solidAt, pickups, HALF, /* slice 13d */
   // a build recipe opens build mode; for the checks, craft() of one places it at once where the ghost stands (slice 12)
   craft: (key) => { const r = RECIPES.find(q => q.key === key); if (r.type !== 'build') return craft(r); if (!craft(r)) return false; const ok = placeNow(); endBuild(); return ok; },
   lightSpots: () => [...torchLights(), ...lightSpots()], fireCount, hasFlame, saplingStats, setDay, /* slice 26 */ startBuild: (key) => startBuild(RECIPES.find(q => q.key === key)), placeNow, endBuild, building, rotateBuild, damageBuilt, toggleGate, tearTarget, repairTarget, pieceBars, refundOf, clearBuilt, wallAhead, PIECE, putPiece, liveShots, ammo, clipSize, gotPickup, spreadAt, upgraded, aimGround, /* slice 12 */ toggleCraft, craftOpen, placeSpot, sleep, bedNear, bedRespawn, felled, fell, harvestTarget, quiver, stuckArrows, // slice 11

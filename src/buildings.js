@@ -11,7 +11,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Q, SEED, DEFAULT_SEED, CLASSIC, WATER_Y, CAMP } from './config.js';
 import { vnoise, mulberry32 } from './noise.js';
 import { groundY, biomeAt } from './world.js';
-import { buildings, raiderCamps, places, R, apart, toW, toL } from './plan.js';
+import { buildings, raiderCamps, places, R, apart, toW, toL, indoors } from './plan.js';
 import { islands } from './world.js';
 import { mushroomParts } from './landmarks.js';
 import { addCollider, surfaces, colliders, dropColliders } from './props.js';
@@ -887,11 +887,28 @@ async function loadKit(keys = Object.keys(KITS), K = {}) {
 // a room's props. put(kind, x, y, z, ry, o) stands one with its base at (x, y, z) in the building's frame, turned by ry (o: s its
 // scale, rx and rz tilts, c a tint); put.geo(material, geometry) adds plain geometry (a bulb, logs, a glow); put.halo(x, y, z, size,
 // colour) a soft light. put.done() merges it all, through m (a tilted hull's frame) when given, onto the building's group
+// places round 2 (Jared, 2026-11-15: "if the scenery includes stuff like food it should be able to be picked up"): the tins, fish
+// tins and salt in every room are taken with E, FOOD_EACH food apiece; larder lists them all in the order the world built them,
+// so an index names the same tin in every game (taken ones: coop.js shares them, late joiners too)
+export const FOOD_EACH = 1, larder = [];
+const FOOD = { tin: 'tin', fish: 'fish tin', salt: 'box of salt' }, GONE = new THREE.Matrix4().makeScale(0, 0, 0);
+export const foodName = (f) => FOOD[f.k];
+// the piece of food in reach of (x, y feet, z): the nearest within 1.5 m at the feet's floor, and of a stack, the top one
+// (a tin indoors is taken only from indoors: not through the wall; up to 2.7 m over the feet: a tall shelf's top board is 2.5 m up,
+// the floor above 2.9 m)
+export function foodNear(x, y, z) { let best = null, bd = 1.5; const inn = indoors(x, z); for (const f of larder) { if (f.gone || f.y < y - 0.4 || f.y > y + 2.7 || (f.in && !inn)) continue; const d = Math.hypot(f.x - x, f.z - z); if (d < bd) { bd = d; best = f; } }
+  for (let up = best; up;) { best = up; up = larder.find(f => !f.gone && f.mesh === best.mesh && f.y > best.y + 0.01 && f.y < best.y + 0.2 && Math.hypot(f.x - best.x, f.z - best.z) < 0.04); } return best; }
+// the piece at larder index i taken away (true when it was still there)
+export function takeFood(i) { const f = larder[i]; if (!f || f.gone) return false; f.gone = true; f.mesh.setMatrixAt(f.i, GONE); f.mesh.instanceMatrix.needsUpdate = true; return true; }
 export function kitRoom(b, m = null) { const L = {}, G = {}, e = new THREE.Euler(), q = new THREE.Quaternion(), V = THREE.Vector3;
   const put = (k, x, y, z, ry = 0, o = {}) => { const s = o.s || 1, M = new THREE.Matrix4().compose(new V(x, y, z), q.setFromEuler(e.set(o.rx || 0, ry, o.rz || 0, 'YXZ')), new V(s, s, s)); (L[k + '|' + (o.c ?? '')] ||= []).push(M); };
   put.geo = (k, geo) => (G[k] ||= []).push(geo);
   put.halo = (x, y, z, s, c = 0xffc890) => { const p = new V(x, y, z); if (m) p.applyMatrix4(m); const sp = new THREE.Sprite(KIT.halo(c)); sp.position.copy(p); sp.scale.setScalar(s); sp.renderOrder = 2; b.group.add(sp); lampAt(b, p, c === 0xffd6a0 ? 'lamp' : c === 0xff8a40 ? 'stove' : 'lantern'); };
-  put.done = () => { for (const key in L) { const [k, c] = key.split('|'), K = KIT[k], geo = mergeGeometries(L[key].map(M => K.geo.clone().applyMatrix4(m ? M.premultiply(m) : M)));
+  put.done = () => { b.group.updateWorldMatrix(true, false); for (const key in L) { const [k, c] = key.split('|'), K = KIT[k];
+      if (FOOD[k] && !c) { const im = new THREE.InstancedMesh(K.geo, K.mat, L[key].length); im.castShadow = im.receiveShadow = true; // (food: one instanced mesh, so each piece can go when taken)
+        L[key].forEach((M, i) => { if (m) M.premultiply(m); im.setMatrixAt(i, M); const p = new V().setFromMatrixPosition(M).applyMatrix4(b.group.matrixWorld); larder.push({ k, mesh: im, i, x: p.x, y: p.y, z: p.z, in: indoors(p.x, p.z) }); });
+        im.computeBoundingSphere(); b.group.add(im); continue; }
+      const geo = mergeGeometries(L[key].map(M => K.geo.clone().applyMatrix4(m ? M.premultiply(m) : M)));
       const mat = c ? (K['c' + c] ||= (() => { const n = K.mat.clone(); n.color.set(+c); return n; })()) : K.mat, mesh = new THREE.Mesh(geo, mat); mesh.castShadow = mesh.receiveShadow = true; b.group.add(mesh); }
     for (const k in G) { const geo = mergeGeometries(G[k].map(g => { const n = g.index ? g.toNonIndexed() : g; return m ? n.applyMatrix4(m) : n; })), mesh = new THREE.Mesh(geo, KIT.extra[k]); mesh.receiveShadow = k === 'bark' || k === 'cut'; mesh.castShadow = mesh.receiveShadow; b.group.add(mesh); } };
   return put; }
