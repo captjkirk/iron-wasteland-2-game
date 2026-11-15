@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { CHARS, ENEMY, SEED_TEXT, params, JOINER } from './config.js';
 import { groundY } from './world.js';
+import { radioOn, radioLater, places } from './places.js';
 import { caches } from './buildings.js';
 import { placed } from './props.js';
 import { markDirty } from './scatter.js';
@@ -94,9 +95,9 @@ function onMsg(m, from) {
       if (!running()) { post(from, { t: 'wait' }); break; }
       post(from, { t: 'welcome', crates: caches.flatMap((c, i) => c.broken ? [[i, 2]] : c.opened ? [[i, 1]] : []), salv: salvaged, pickups: pickups.map(k => [k.id, k.kind, +k.mesh.position.x.toFixed(2), +k.mesh.position.z.toFixed(2)]),
         tur: turrets.map(q => [+q.x.toFixed(2), +q.z.toFixed(2), +q.head.rotation.y.toFixed(2), +q.life.toFixed(1)]), // turrets already out, so a late joiner sees them
-        fell: felled, built: builtMsg(), d: [day.t, day.n, day.speed], seed: SEED_TEXT, rules: { ...rules } }); break; // (slice 13: the time of day) // slice 11: trees felled, bushes picked, and what players built
+        fell: felled, built: builtMsg(), d: [day.t, day.n, day.speed], seed: SEED_TEXT, rules: { ...rules }, radio: places.some(q => q.on) ? 1 : 0 }); /* (slice 23: the radio tower's radio, on) */ break; // (slice 13: the time of day) // slice 11: trees felled, bushes picked, and what players built
     case 'wait': if (!waitLogged) { waitLogged = true; logEvent('join-wait'); } document.getElementById('loading').textContent = 'The host is still on the start menu: walk out there first.'; break;
-    case 'welcome': if (!joinT || running()) break;
+    case 'welcome': if (!joinT || running()) break; if (m.radio) radioLater();
       // another world than this page built (the host rolled a new one after this page loaded): build the host's, then join
       // as asked (slice 13c; a joining page normally gets the host's seed before it builds anything, config.js)
       // (once: a page already rebuilt this way that still differs says so instead of reloading again)
@@ -133,6 +134,7 @@ function onMsg(m, from) {
     case 'ko': logEvent('ko', { who: m.n, mode: modeKey() }); player.pk = (player.pk || 0) + 1; log(`You knocked out ${m.n}! (+3)`); sfx('rally', null, 0.6); break; // slice 33: a rival this game knocked out
     case 'rules': if (from === net.host && joining()) { takeRules(m); showRules(); logEvent('rules', { mode: modeKey(), lvl: rules.lvl }); log(`The host changed the game: ${modeName()}.`); } break;
     case 'log': log(m.s); break;
+    case 'radio': radioOn(m.n || 'A friend'); break; // slice 23: a friend got the radio tower's radio going
     case 'gotc': crateOpen(null, null, m.got); break; // the host opened a crate for this player: its loot
     case 'got': gotPickup(m.kind); break;
     case 'kill': player.kills++; log(m.s); break;

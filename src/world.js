@@ -57,6 +57,7 @@ function riverDist(x, z) { let best = 1e9;
 { const g = seeds.filter(s => s.b === 'grass' && Math.hypot(s.x, s.z) > 170 && (CLASSIC ? Math.abs(s.x - riverRaw(s.z) - RIVER_SHIFT) > 120 : riverDist(s.x, s.z) > 120));
   if (g.length) lakes.push({ x: g[0].x, z: g[0].z, rx: 58, rz: 44, a: 0 }); }
 export { lakes };
+export const islands = []; // (slice 23: planned below, once the lakes are)
 
 // ── The passes: three saddles through the valley's ring, each toward a different land (not where the river cuts) ──
 export const PASSES = [];
@@ -108,6 +109,31 @@ for (let k = 0, tries = 0; k < SHAPE.ponds && tries < 60; tries++) { const a = V
   if (Math.abs(x) > HALF - 70 || Math.abs(z) > HALF - 70 || b === 'swamp' || (b === 'desert' && !oasis) || riverDist(x, z) < rx + 50) continue;
   if (lakes.some(l => Math.hypot(l.x - x, l.z - z) < Math.max(l.rx, l.rz) + rx + 60) || PADS.some(p => Math.hypot(p.x - x, p.z - z) < rx + p.outer + 30)) continue;
   lakes.push({ x, z, rx, rz, a: turnA, pond: b }); k++; }
+// ── Crater lakes and islands (slice 23, #52; random worlds only, so the classic world stands as it was). Jared, November 14,
+// 2026: a lake "that looked like it was a crater, and it was awesome!", and "some lakes that were larger had something like
+// small islands in them". A crater: a round rim of rock 6 m above water 8 m deep at its middle (the Thing in the deep's), out
+// beyond the ring off the mountains (its rim stands above everything round it), never in the Bog, off every pad, pass, lake and
+// the river; one or two a world. Islands: every lake at least 40 m across its narrow way (not a crater) gets one to three,
+// low and wooded, reached by swimming; the biggest lake's first is the widest (the hermit's: src/plan.js). Their own streams,
+// so everything planned before them stays as it was
+const CR = mulberry32(SEED ^ 0xc7a7e2), craterBare = (x, z) => heightAt(x, z, biomeWeights(x, z).w, true).h;
+if (!CLASSIC) for (const loose of [0, 1]) { if (lakes.some(l => l.crater)) break; const ok = [], n = CR() < 0.5 ? 2 : 1, rx = 24 + CR() * 6 - loose * 4; // (every spot on a 16 m grid that suits, then one or two of them at random; a second, looser look in a world with none)
+  for (let z = -HALF + 110; z <= HALF - 110; z += 16) for (let x = -HALF + 110; x <= HALF - 110; x += 16) { if (Math.hypot(x, z) < 270 - loose * 40 || biomeWeights(x, z).best === 'swamp' || riverDist(x, z) < rx * 2.4 + 20) continue;
+    if (lakes.some(l => Math.hypot(l.x - x, l.z - z) < Math.max(l.rx, l.rz) * 1.2 + rx * 2.6 + 20) || PADS.some(p => Math.hypot(p.x - x, p.z - z) < rx * (2.2 - loose * 0.6) + p.outer)) continue;
+    if (PASSES.some(q => { const along = x * Math.cos(q.a) + z * Math.sin(q.a); return along > 100 && along < 380 && Math.abs(z * Math.cos(q.a) - x * Math.sin(q.a)) < rx * 2.3 + 20; })) continue;
+    ok.push({ x, z }); }
+  for (let t = 0; t < 400 && ok.length && lakes.filter(l => l.crater).length < n; t++) { const { x, z } = ok[Math.floor(CR() * ok.length)];
+    if (lakes.some(l => Math.hypot(l.x - x, l.z - z) < Math.max(l.rx, l.rz) * 1.2 + rx * 2.6 + 20)) continue;
+    const hs = []; for (let q = 0; q < 25; q++) { const t = q / 12 * Math.PI * 2, e = q ? (q > 12 ? 2.6 : 1.8) : 0; hs.push(craterBare(x + Math.cos(t) * rx * e, z + Math.sin(t) * rx * e)); }
+    hs.sort((a, q) => a - q); const mid = hs[12];
+    if (hs[0] < WATER_Y + 0.6 || mid > WATER_Y + 18 + loose * 8 || hs[22] > mid + 12 + loose * 6) continue; // dry ground, not mountains: the rim stands 1.5 m over the ground's middle height, at least 6 m over the water
+    const crest = Math.max(6, mid - WATER_Y + 1.5); lakes.push({ x, z, rx, rz: rx, a: 0, crater: true, crest, rw: 0.5 * crest / 6 }); } } // (a higher rim is wider, so no wall is steeper)
+const IS = mulberry32(SEED ^ 0x15a7d5);
+if (!CLASSIC) for (const l of [...lakes].sort((p, q) => q.rx * q.rz - p.rx * p.rz)) { if (l.crater || Math.min(l.rx, l.rz) < 40) continue;
+  const ca = Math.cos(l.a), sa = Math.sin(l.a), want = 1 + Math.floor(IS() * 3);
+  for (let t = 0, made = 0; t < 30 && made < want; t++) { const r = !islands.length ? 9 : 4.5 + IS() * 4, sk = r + (6.2 / 0.42), ang = IS() * Math.PI * 2, e = IS() * 0.6;
+    const lx = Math.cos(ang) * e * Math.max(0, l.rx - sk), lz = Math.sin(ang) * e * Math.max(0, l.rz - sk), x = l.x + lx * ca - lz * sa, z = l.z + lx * sa + lz * ca;
+    if (islands.some(o => Math.hypot(o.x - x, o.z - z) < o.r + r + 22)) continue; islands.push({ x, z, r, lake: lakes.indexOf(l) }); made++; } }
 // ── Height ──
 function heightAt(x, z, w, bare = false) { // bare: without the town's shelf (to find its level)
   let off = 0, amp = 0, mtn = 0; for (const k in w) { off += BIOME[k].off * w[k]; amp += BIOME[k].amp * w[k]; mtn += BIOME[k].mtn * w[k]; }
@@ -147,6 +173,9 @@ function heightAt(x, z, w, bare = false) { // bare: without the town's shelf (to
   const rd = riverDist(x, z), halfW = 7 + fbm(z * 0.01, 9.1, 2) * 6, bed = WATER_Y - 2.4;
   if (rd < halfW + 40 && h > bed) h = bed + (h - bed) * smooth(halfW * 0.35, halfW + 30 + Math.min(40, Math.max(0, h - 10)) * 0.4, rd);
   for (const l of lakes) { const dx = x - l.x, dz = z - l.z, ca = Math.cos(l.a), sa = Math.sin(l.a); // (along the lake's own axes)
+    if (l.crater) { const e = Math.max(0, Math.hypot(dx, dz) / l.rx + (vnoise(x * 0.05, z * 0.05) - 0.5) * 0.04); if (e >= 1.8 + l.rw) continue; // (slice 23: a bowl, a rim, then down to the land round it)
+      const crest = WATER_Y + l.crest + (vnoise(x * 0.09 + 3, z * 0.09) - 0.5) * 0.8, e1 = 1 + l.rw;
+      h = e <= 1 ? WATER_Y - 8 + 8 * Math.pow(e, 1.6) : e <= e1 ? WATER_Y + (crest - WATER_Y) * smooth(1, e1, e) : crest + (h - crest) * smooth(e1, e1 + 0.8, e); continue; }
     const e = Math.hypot((dx * ca + dz * sa) / l.rx, (dz * ca - dx * sa) / l.rz) + (vnoise(x * 0.03, z * 0.03) - 0.5) * 0.25;
     if (CLASSIC && e < 1.5 && h > WATER_Y - 5) h = (WATER_Y - 5) + (h - (WATER_Y - 5)) * smooth(0.55, 1.35, e); // (a random world's bowl is the bank's cap below alone)
     // a walkable way out on every side: the bank rises no steeper than 0.6 (the owner was trapped in a pit lake, 2026-11-03)
@@ -155,6 +184,7 @@ function heightAt(x, z, w, bare = false) { // bare: without the town's shelf (to
     // held the walk test at its rim on a 1.04 step, slice 13c. The classic world's lakes stay as they were)
     const e0 = Math.hypot((dx * ca + dz * sa) / l.rx, (dz * ca - dx * sa) / l.rz);
     h = CLASSIC ? Math.min(h, WATER_Y - 5 + Math.max(0, e - 0.55) * Math.min(l.rx, l.rz) * 0.6) : Math.min(h, WATER_Y - 5 + Math.max(0, e0 - 0.55) * Math.min(l.rx, l.rz) * 0.45); }
+  for (const s of islands) { const d = Math.hypot(x - s.x, z - s.z); if (d < s.r + 16) h = Math.max(h, WATER_Y + 1.8 - Math.min(1, (d / s.r) ** 2) * 0.6 - Math.max(0, d - s.r) * 0.42 + (vnoise(x * 0.15, z * 0.15) - 0.5) * 0.3); } // (slice 23)
   // a clean shoreline: land just above the water stays up, land just below drops away, so nothing hugs the surface
   // (a random world's is 0.45 m over twice the height, which steepens a bank through it about 1.42 times, not 2.1: lakes' banks
   // went past the 1.05 a player climbs there, 4242's river lake among them, slice 13c. The classic world's stays as it was)
@@ -162,6 +192,7 @@ function heightAt(x, z, w, bare = false) { // bare: without the town's shelf (to
   return { h, rd, halfW, canyon: canyon * (1 - tk) };
 }
 
+const craterRock = (x, z, h, n2) => { let k = 0; for (const l of lakes) if (l.crater) { const e = Math.hypot(x - l.x, z - l.z) / l.rx; k = Math.max(k, smooth(0.95, 1.12, e) * smooth(1.55 + l.rw, 1.05 + l.rw, e + (n2 - 0.5) * 0.25) * smooth(WATER_Y + 0.2, WATER_Y + 1.4, h)); } return k; };
 // ── The grid: heights, best biome, normals, texture-layer weights ──
 export const H = new Float32Array(N * N), BI = new Uint8Array(N * N), WET = new Uint8Array(N * N);
 const BW = new Float32Array(N * N * NB), RD = new Float32Array(N * N), CAN = new Float32Array(N * N);
@@ -252,7 +283,7 @@ for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
   L[3] += alpine * 0.45; L[8] += alpine * 0.2;
   const scree = smooth(0.75, 1.2, CLIFF[k]) * (1 - smooth(0.55, 0.75, slope)) * (0.6 + n2 * 0.6);
   for (let l = 0; l < 10; l++) L[l] *= 1 - scree * 0.75; L[8] += scree * 0.8;
-  const rockT = smooth(0.62, 1.0, slope + (n2 - 0.5) * 0.2);
+  const rockT = Math.max(smooth(0.62, 1.0, slope + (n2 - 0.5) * 0.2), craterRock(x, z, h, n2)); // (slice 23: a crater's rim is rock)
   for (let l = 0; l < 10; l++) L[l] *= 1 - rockT; L[3] += rockT;
   for (let l = 0; l < 10; l++) if (l !== 5) L[l] *= 1 - snowT; L[5] += snowT;
   const tot = L.reduce((a, b) => a + b, 0) || 1;

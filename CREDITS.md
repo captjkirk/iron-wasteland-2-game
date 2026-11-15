@@ -16,6 +16,22 @@ Every third-party asset or library used by Iron Wasteland 2: what it is, where i
 | Terrain layer "moss" (Fungal Hollow floor, tinted violet in the shader): Mossy Rock, diffuse 1k + normal (GL) | https://polyhaven.com/a/mossy_rock | CC0 |
 | Camp crates: Wooden Crate 01 and Wooden Crate 02 (mesh + diffuse/normal) | https://polyhaven.com/a/wooden_crate_01, https://polyhaven.com/a/wooden_crate_02 | CC0 |
 | Camp lantern: Wooden Lantern 01 (mesh + diffuse/normal; its glass panes are left out, the glow is drawn in code) | https://polyhaven.com/a/wooden_lantern_01 | CC0 |
+| Interiors (slice 23): Vintage Radio Transceiver, the set and its microphone, morse key and speaker (mesh + diffuse/normal, as radio_set and radio_kit; its antenna and cables left out) | https://polyhaven.com/a/vintage_radio_transceiver | CC0 |
+| Interiors (slice 23): Metal Office Desk (mesh + diffuse/normal) | https://polyhaven.com/a/metal_office_desk | CC0 |
+| Interiors (slice 23): Steel Frame Shelves 01 (mesh + diffuse/normal) | https://polyhaven.com/a/steel_frame_shelves_01 | CC0 |
+| Interiors (slice 23): Painted Wooden Chair 01 (mesh + diffuse/normal) | https://polyhaven.com/a/painted_wooden_chair_01 | CC0 |
+| Interiors (slice 23): Wooden Table 02 (mesh + diffuse/normal) | https://polyhaven.com/a/wooden_table_02 | CC0 |
+| Interiors (slice 23): Vintage Day Bed (mesh + diffuse/normal) | https://polyhaven.com/a/vintage_day_bed | CC0 |
+| Interiors (slice 23): Scandinavian Masonry Heater (mesh + diffuse/normal) | https://polyhaven.com/a/scandinavian_masonry_heater | CC0 |
+| Interiors (slice 23): Hanging Industrial Lamp (mesh + diffuse/normal; its glass left out, the bulb drawn in code) | https://polyhaven.com/a/hanging_industrial_lamp | CC0 |
+| Interiors (slice 23): Clipboard (mesh + diffuse/normal) | https://polyhaven.com/a/clipboard | CC0 |
+| Interiors (slice 23): Medical Box (mesh + diffuse/normal) | https://polyhaven.com/a/medical_box | CC0 |
+| Interiors (slice 23): Pot Enamel 01 (mesh + diffuse/normal) | https://polyhaven.com/a/pot_enamel_01 | CC0 |
+| Interiors (slice 23): Wooden Bucket 01 (mesh + diffuse/normal) | https://polyhaven.com/a/wooden_bucket_01 | CC0 |
+| Interiors (slice 23): Retro Multimeter (mesh + diffuse/normal; its test leads left out) | https://polyhaven.com/a/retro_multimeter | CC0 |
+| Interiors (slice 23): Metal Jerrycan Green (mesh + diffuse/normal) | https://polyhaven.com/a/metal_jerrycan_green | CC0 |
+| Interiors (slice 23): Office Notepads, a sheet, a stack and a pad (mesh + diffuse/normal, as paper_sheet, paper_stack and notepad) | https://polyhaven.com/a/office_notepads | CC0 |
+| Interiors (slice 23): Russian Food Cans 01, a tin, a fish tin and a salt box (mesh + diffuse/normal, as can_cond, can_fish and salt_box) | https://polyhaven.com/a/russian_food_cans_01 | CC0 |
 | Camp chopping stump and axe: Tree Stump 01, Wooden Axe (mesh + diffuse/normal) | https://polyhaven.com/a/tree_stump_01, https://polyhaven.com/a/wooden_axe | CC0 |
 | Camp tent canvas, bedroll and sack: Rough Linen, diffuse + normal (GL), 512 px | https://polyhaven.com/a/rough_linen | CC0 |
 | Building floors, doors, furniture and the Bog cabin's walls: Brown Planks 05, diffuse + normal (GL), 1k | https://polyhaven.com/a/brown_planks_05 | CC0 |

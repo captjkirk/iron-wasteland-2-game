@@ -14,6 +14,7 @@ import { part, box, rockG, MAT, merged } from './models.js';
 import { buildCreature } from './creatures.js';
 import { initFireflies, tickFireflies } from './fireflies.js';
 import { resetExplored } from './explore.js';
+import { startPlaces, tickPlaces, placePrompt, radioNear, places } from './places.js'; // slice 23
 import { initEffects, tickEffects, hitBurst, splash, dustPuff, floatText, healthBars, hitMarker, buildLoot, nameTags } from './effects.js';
 import { unlockAudio, toggleMute, isMuted, sfx, setListener, windLevel, ambient, setMusicVolume, setMusicPaused, setMusicMode } from './audio.js';
 import { W } from './weather.js';
@@ -202,6 +203,7 @@ export function startGame(i) {
   if (!joining()) { spawnAround(0, 0, 26, SAFE_R + 15, SAFE_R + 230); // out beyond the ring: the valley is safe
   // each raider camp's crew, round its fire; they keep to the camp until they see you
   raiderCamps.forEach((c, i) => c.raiders.forEach((type, k) => { const a = c.a0 + 0.4 + k * 1.9; spawnEnemy(c.x + Math.cos(a) * 3, c.z + Math.sin(a) * 3, type, 9000 + i, k, c.raiders.length); enemies.at(-1).home = c; })); }
+  startPlaces({ spawnEnemy, enemies, joining, log, logEvent, sfx, send, player, hurt: (d, by) => hurtPlayer(d, by) }); // slice 23: the places' guards, and what this game knows of them
   startSpiders(scene, !joining(), spawnEnemy); // slice 22: the webs go; the spider nests are set down (a joined game gets them from the host)
   document.getElementById('menu').classList.add('hidden'); for (const id of ['hud-tl', 'hud-tr', 'hud-b']) document.getElementById(id).classList.remove('hidden'); running = true; log(`${ch.player} walks out as ${ch.title}. (F9 saves a play log.)`); if (net.role) log(`Game: ${modeName()}.`); setCam(camMode); logEvent('start', { ch: ch.id, cam: camMode, mode: modeKey(), lvl: rules.lvl }); watchStart(); startVideo(renderer.domElement);
 }
@@ -472,8 +474,8 @@ export function charm(e) { if (joining()) send('host', { t: 'charm', id: e.id })
 const guarded = (cache) => cache.camp && enemies.some(e => e.home === cache.camp && !e.dead);
 export function crateOpen(cache, who = null, got = null) {
   if (!got) { if (joining()) { send('host', { t: 'crate', i: caches.indexOf(cache) }); return true; }
-    if (guarded(cache)) { if (who) send(who, { t: 'log', s: 'Raiders still guard this crate.' }); else { log('Raiders still guard this crate.'); logEvent('crate-locked'); } return false; }
-    if (cache.opened) return true; const k = cache.camp ? 2 : 1; got = { metal: (2 + Math.floor(rng() * 3)) * k, food: (1 + Math.floor(rng() * 2)) * k, fiber: (2 + Math.floor(rng() * 2)) * k };
+    if (guarded(cache)) { const s = cache.camp.name ? `Its guards are still about: clear them off ${cache.camp.name}, then search it.` : 'Raiders still guard this crate.'; if (who) send(who, { t: 'log', s }); else { log(s); logEvent('crate-locked'); } return false; }
+    if (cache.opened) return true; const k = cache.k ?? (cache.camp ? 2 : 1); const rounds = cache.ammo && nearestGun(cache.x, cache.z) ? cache.ammo : 0; for (let n = 0; n < rounds / 3; n++) dropLoot(cache.x, cache.z, 'ammo', 0.8); /* (slice 23: a place's crate holds more, rounds too if a Gunslinger is about, else metal) */ got = { metal: (2 + Math.floor(rng() * 3)) * k + (cache.ammo && !rounds ? Math.ceil(cache.ammo / 3) : 0), food: (1 + Math.floor(rng() * 2)) * k, fiber: (2 + Math.floor(rng() * 2)) * k };
     cache.open(); send('all', { t: 'crated', i: caches.indexOf(cache) }); if (who) { send(who, { t: 'gotc', got }); return true; } }
   for (const q in got) player.inv[q] += got[q];
   log(`Searched the crate: ${got.metal} metal, ${got.food} food, ${got.fiber} fiber.`); logEvent('crate', { ...got, camp: !!cache?.camp }); sfx('salvage');
@@ -489,8 +491,9 @@ function hitScenery(c, at, dir) { if (c.cache) return smashCrate(c.cache, at, di
 // E: search a crate, salvage metal from a scrap pile or a wreck, or sleep in a bed (slice 11); holding E chops (harvest.js)
 function interact(quiet) {
   // a supply crate first (a raider camp's stays shut while any of its crew lives, as in IW1)
-  const cache = caches.find(c => !c.opened && Math.hypot(c.x - player.x, c.z - player.z) < 2.4);
+  const cache = caches.find(c => !c.opened && Math.hypot(c.x - player.x, c.z - player.z) < 2.4 && Math.abs(player.y - c.y) < 2.6); // (slice 23: at the crate's own height: a deck, a cap, a lake's bottom)
   if (cache) { crateOpen(cache); return true; }
+  if (radioNear(player)) return true; // (slice 23: the radio is held, not pressed)
   // (a bed comes before a gate or a fire, as the prompt says: a bed beside a campfire could not be slept in with raw meat
   // in the pack; the review of slice 12)
   const bed = bedNear(player.x, player.z); if (bed) { sleep(bed); return true; }
@@ -596,6 +599,7 @@ export function update(dt, t) {
   if (il > 0.1) { player.walk += dt * sp * 1.6; if ((camMode === 'top' || camMode === 'angled') && player.swing <= 0) { const target = Math.atan2(-wx, -wz); let d = target - player.faceYaw; d = Math.atan2(Math.sin(d), Math.cos(d)); player.faceYaw += d * Math.min(1, dt * 12); } }
   if (camMode === 'first') player.faceYaw = player.yaw;
   tickHarvest(dt, (keys.has('KeyE') || !!pad?.useHeld) && !player.rv && !player.mantle && !player.climbing && !building() && !cooking); // hold E by a tree: chop it (slice 11)
+  tickPlaces(dt, (keys.has('KeyE') || !!pad?.useHeld) && !player.rv && !building() && !caches.some(c => !c.opened && Math.hypot(c.x - player.x, c.z - player.z) < 2.4 && Math.abs(player.y - c.y) < 2.6)); // slice 23: arriving at places, the radio (not while a crate is in reach), the spores
   tickTear(dt, keys.has('KeyX') || !!pad?.tearHeld);
   tickRepair(dt, (keys.has('KeyH') || !!pad?.fixHeld) && !craftOpen() && !player.rv && !player.mantle && !player.climbing); // hold H (the d-pad's right) by a damaged wall or gate: mend it (slice 32)
   // slice 12: hold G (d-pad down) to eat, hold E at a fire to cook; R or d-pad up reloads the revolver
@@ -657,7 +661,7 @@ export function update(dt, t) {
   player.hurtT = Math.max(0, player.hurtT - dt); tickSlashes(dt);
   // enemies (dormant beyond the wake radius, as in IW1)
   // turns: one enemy winds up at a time, and the next waits a moment after it (his first play: four raiders struck inside a second)
-  const NK = nightK(), fires = [campfire, ...fireSpots()], warm = (q) => fires.some(f => Math.hypot(q.x - f.x, q.z - f.z) < f.r + 1.5);
+  const NK = nightK(), fires = [campfire, ...fireSpots(), ...HEATERS()], warm = (q) => fires.some(f => Math.hypot(q.x - f.x, q.z - f.z) < f.r + 1.5);
   let alive = 0; const striking = new Set(enemies.filter(e => !e.dead && e.state === 'windup').map(e => e.tg)), awake = []; for (const [k, v] of strikeCD) strikeCD.set(k, v - dt);
   const ppl = joining() ? null : everyone();
   for (const e of enemies) {
@@ -825,8 +829,8 @@ export function update(dt, t) {
     if (k.landed && dd < 2.6) { m.position.x += dx / dd * dt * 6; m.position.z += dz / dd * dt * 6; }
     if (dd < 0.8 || k.age > 180) { if (dd < 0.8) { if (q === player) gotPickup(k.kind); else send(q.id, { t: 'got', kind: k.kind }); } send('all', { t: 'take', id: k.id });
       scene.remove(m); pickups.splice(i, 1); } }
-  for (const c of caches) if (!c.opened && !c.hinted && Math.hypot(c.x - player.x, c.z - player.z) < 2.8) { c.hinted = true;
-    log(c.camp ? 'The raiders\' supply crate. Clear the camp, then search it (E).' : 'A supply crate. Search it (E).'); }
+  for (const c of caches) if (!c.opened && !c.hinted && Math.hypot(c.x - player.x, c.z - player.z) < 2.8 && Math.abs(player.y - c.y) < 2.6) { c.hinted = true;
+    log(c.camp?.name ? `${c.camp.name}'s stores. Clear off what guards it, then search it (E).` : c.camp ? 'The raiders\' supply crate. Clear the camp, then search it (E).' : 'A supply crate. Search it (E).'); }
   tickArrows(dt); tickBuild(dt);
   // slice 13: the clock (the host's; a joined game follows the host's), nightfall and dawn, and sleeping the night away
   const turn = tickDay(dt, !!player.sleep && everyone().every(q => q === player || q.sl || gone(q)), joining());
@@ -836,8 +840,9 @@ export function update(dt, t) {
   if (turn === 'day') { log(`Day ${day.n} dawns.`); sfx('dawn'); logEvent('dawn', { day: day.n }); }
   tickSleep(dt);
   // the campfire mends wounds, as in IW1 (every 2 s within a few metres); so does a campfire a player built (slice 11)
-  if (!player.dead && [campfire, ...fireSpots()].some(f => Math.hypot(player.x - f.x, player.z - f.z) < f.r)) { campT += dt;
-    if (!warmLogged) { log('The campfire\'s warmth mends your wounds.'); warmLogged = true; }
+  const warmF = !player.dead && [campfire, ...fireSpots(), ...HEATERS()].find(f => Math.hypot(player.x - f.x, player.z - f.z) < f.r);
+  if (warmF) { campT += dt; // (slice 23: the frozen outpost's heater too)
+    if (!warmLogged) { log(warmF.heater ? 'The heater\'s warmth mends your wounds.' : 'The campfire\'s warmth mends your wounds.'); warmLogged = true; }
     if (campT > 2) { campT = 0; if (player.hp < player.maxHp) { const h = Math.min(8, player.maxHp - player.hp); player.hp += h; floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `+${h}`, '#8aff9a'); } } }
   else { campT = 0; warmLogged = false; }
   tickLog(dt, { player, cam: camMode, biome: biomeAt(player.x, player.z), fps: lastFps, enemies }, il > 0.1 && !player.dead); tickWatch(dt); // slice 13d
@@ -846,6 +851,7 @@ export function update(dt, t) {
   ambient(dt, biomeAt(player.x, player.z), nightK(), Math.hypot(player.x, player.z) < SAFE_R); // (slice 13: storms, the open biomes' wind, the night's sounds)
 }
 const HUNTS = ['chase', 'windup', 'recover', 'emerge', 'siege'], SMELL = new Set(['wolf', 'dust_hound', 'bear']);
+const HEATERS = () => places.filter(q => q.heater).map(q => ({ ...q.heater, heater: true })); // slice 23
 let spawnTick = -1, campT = 0, warmLogged = false, lastFps = 0, cooking = false;
 
 const strikeCD = new Map(); // player -> seconds until the next enemy may wind up at them
@@ -925,7 +931,8 @@ function prompt(dt) { const c = player.chop || player.tear || player.fix || play
   else if (c) t = `Hold ${E} · ${c.it.type.endsWith('bush') ? 'pulling fiber from the ' : 'chopping the '}${harvestName(c.it)}`;
   else if (!rules.ffa && [...others.values()].some(o => o.down > 0 && !o.out && Math.hypot(o.x - x, o.z - z) < 2.4)) t = `Hold ${E} · revive`;
   else if (repairTarget(x, z)) { const b = repairTarget(x, z); t = `Hold ${padActive ? 'd-pad right' : 'H'} · repair the ${pieceName(b)}: ${fixCostText(b)} for +${fixGain(b)} (${Math.round(b.hp)}/${b.max})`; }
-  else if (caches.some(q => !q.opened && Math.hypot(q.x - x, q.z - z) < 2.4)) t = `${E} · search the crate`;
+  else if (caches.some(q => !q.opened && Math.hypot(q.x - x, q.z - z) < 2.4 && Math.abs(player.y - q.y) < 2.6)) t = `${E} · search the crate`;
+  else if (placePrompt(player, E)) t = placePrompt(player, E); // slice 23 (a crate in reach comes first)
   else if (gateNear(x, z)) t = `${E} · ${gateNear(x, z).open ? 'shut the gate' : 'hold the gate open'}`;
   else if (bedNear(x, z)) t = `${E} · sleep (you wake here if you fall)`;
   else if (atTent(x, z)) t = `${E} · change character`;

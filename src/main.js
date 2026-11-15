@@ -1,6 +1,7 @@
 // Boot: renderer, world, environment, game loop, and the test hooks the headless check uses.
 import * as THREE from 'three';
 import { CAMP, CHARS, BIOME, Q, QUALITY, QUALITY_KEY, setQuality, WATER_Y, HALF, SEED_TEXT, params, cleanSeed, JOINER } from './config.js';
+import { places } from './places.js';
 import { groundY, findBiome, seeds, river, lakes, biomeAt, forestAt, slopeAt, canyonAt, PASSES, SHAPE, LEAN, reachable } from './world.js';
 import { buildTerrain } from './terrain.js';
 import { buildEnvironment, FOG_COLOR } from './environment.js';
@@ -140,7 +141,7 @@ window.__iw = { fireflies: fireflyStats, explored: exploredStats, others, net, b
   get rendered() { return rendered; },
   get state() { return { x: +player.x.toFixed(1), z: +player.z.toFixed(1), y: +player.y.toFixed(1), hp: player.hp, cam: getCamMode(), enemies: enemies.length, fps, biome: biomeAt(player.x, player.z),
     props: Object.fromEntries(Object.entries(placed).map(([k, v]) => [k, v.length])), calls: renderer.info.render.calls, tris: renderer.info.render.triangles }; },
-  spiders, spawnPack, /* slice 22 */
+  places, /* slice 23 */ spiders, spawnPack, /* slice 22 */
   seed: SEED_TEXT, SHAPE, LEAN, reachable, /* slice 13c */ placed, PASSES, CAMP, canyonAt, day, nightK, DAY_S, /* slice 13 */ press, nearColliders, colR, slopeAt, buildings, caches, raiderCamps, ladders, standAt, deepShadow,
   seed: SEED_TEXT, SHAPE, LEAN, reachable, /* slice 13c */ placed, PASSES, CAMP, campTent, /* #60 */ canyonAt, day, nightK, DAY_S, /* slice 13 */ press, nearColliders, colR, slopeAt, buildings, caches, raiderCamps, ladders, standAt, deepShadow,
   findCanyon() { let best = null, bd = 1e9; // the nearest stretch of canyon floor

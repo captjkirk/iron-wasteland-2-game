@@ -2,11 +2,11 @@
 // plans every seed's town, landmarks and raider camps in Node and checks them). planBuildings() runs before the props are
 // placed (they keep out of every footprint, and it adds the camps' scrap and the station's wrecks); buildings.js builds
 // the meshes, colliders and crates from these records.
-import { HALF, WATER_Y, SEED } from './config.js';
+import { HALF, WATER_Y, SEED, CLASSIC, ENEMY } from './config.js';
 import { mulberry32 } from './noise.js';
-import { groundY, biomeAt, slopeAt, isWet, canyonAt, street, reachable } from './world.js';
+import { groundY, biomeAt, slopeAt, isWet, canyonAt, street, reachable, lakes, islands } from './world.js';
 
-export const buildings = [], raiderCamps = [];
+export const buildings = [], raiderCamps = [], places = [];
 const sites = [];
 export const R = mulberry32(SEED ^ 0x8b1d5); // its own stream: the props' layout stays as it was (buildings.js draws on after the plan)
 export const clearOf = (x, z, pad = 0) => sites.every(s => Math.hypot(x - s.x, z - s.z) > s.r + pad);
@@ -77,7 +77,74 @@ export function planBuildings() { const adds = []; // props for props.js to plac
     for (let k = 0; k < 11; k++) { const a = c.a0 + k * 0.57; if (k === 3 || k === 8) continue; // a scrap barricade with two ways in
       adds.push(['scrap', { x: s.x + Math.cos(a) * 11.5, z: s.z + Math.sin(a) * 11.5, s: 1 + R() * 0.3, ry: a, v: k % 6 }]); }
     adds.push(['hulk', { x: s.x + Math.cos(c.a0 + 1.71) * 15.5, z: s.z + Math.sin(c.a0 + 1.71) * 15.5, s: 1, ry: c.a0, v: 0 }]); }
+  if (!CLASSIC) planPlaces(adds);
   for (const [, it] of adds) it.y = groundY(it.x, it.z) - 0.1;
   return adds;
 }
+
+// ── Places worth going to (slice 23, #52). Jared, November 14, 2026: "there really weren't many unique points of interest (like
+// IW1 had the radio tower for instance)". Each has something to see, something guarding it and something to win, names itself
+// on screen the first time a player arrives, and is logged then (src/places.js runs them). Random worlds only: the classic
+// world (the checks' own) stays as it was. A place: { kind, name, x, z, r (you have arrived inside r), guards (creature
+// types that keep to it), and what its kind needs }; the meshes, colliders and crates are buildings.js's
+// The radio tower's guards are spiders (IW1's, slice 22, #51): until that creature is in the game the Ruins' own stand in,
+// and the moment it is (any creature whose name says spider), they are spiders, with no change here
+const SPIDER = Object.keys(ENEMY).find(k => /spider/.test(k));
+// the nearest spot beyond minR that suits, clear of everything planned by gap, that a player can reach (a place whose ground
+// findSite's level test is too strict for: the barge on its shore, a second building in a land that already has one)
+function spot(ok, minR, gap) { let best = null, bd = 1e9;
+  for (let z = -HALF + 70; z < HALF - 70; z += 6) for (let x = -HALF + 70; x < HALF - 70; x += 6) { const d = Math.hypot(x, z);
+    if (d < minR || d >= bd || !clearOf(x, z, gap) || !reachable(x, z) || !ok(x, z)) continue; best = { x, z }; bd = d; } return best; }
+function planPlaces(adds) {
+  const CLEAR = { radio: 20, plane: 27, shrooms: 13, outpost: 13, barge: 18, island: 11 }; // (props keep this far off the middle: no hoodoo hides the mast)
+  const place = (kind, name, x, z, r, o = {}) => { const p = { kind, name, x, z, r, guards: [], seen: false, reached: false, heard: false, ...o }; places.push(p); if (CLEAR[kind]) sites.push({ x, z, r: CLEAR[kind] }); return p; };
+  // the radio tower: a 30 m lattice mast on the Ruins' edge with the radio shack at its foot (IW1: hold Interact 10 s)
+  const rs = findSite('ruins', 260, 9) || findSite('waste', 260, 9) || findSite('desert', 260, 9);
+  if (rs) { const b = bld('radio', rs.x, rs.z, R() * 6.283, { w: 7, d: 7 }), [sx, sz] = toW(b, 0, 7.5); // the radio shack, its door toward the mast
+    const sh = bld('house', sx, sz, b.a, { w: 4.4, d: 3.6, h: 2.6, mat: 'planks', ruin: 0, roof: 'gable', tint: 0x4e5a52, furnish: 'radio' }), [x, z] = toW(sh, 0, sh.d / 2 - 1);
+    place('radio', 'The Radio Tower', rs.x, rs.z, 16, { b, shack: sh, radio: { x, z }, guards: SPIDER ? [SPIDER, SPIDER, SPIDER] : ['wolf', 'dust_hound', 'rat', 'rat'] }); }
+  // the crashed plane: an airliner broken in three in the Waste or the Glass Desert, dust hounds nesting in the wreck (at real scale,
+  // 38 m long with 34 m of wing: the footprint holds the pieces, the debris and the furrow's start; the furrow runs on back along
+  // the frame's +z, kept clear of rocks too)
+  const ps = findSite('waste', 280, 18) || findSite('desert', 280, 18) || spot((x, z) => groundY(x, z) > WATER_Y + 1 && slopeAt(x, z) < 0.25 && ['waste', 'desert', 'ruins'].some(q => deep(x, z, q, 14)), 220, 32);
+  if (ps) { const b = bld('plane', ps.x, ps.z, R() * 6.283, { w: 38, d: 50 }); place('plane', 'The Crashed Plane', ps.x, ps.z, 26, { b, guards: ['dust_hound', 'dust_hound', 'dust_hound', 'dust_hound'] });
+    for (const lz of [36, 48, 60]) { const [x, z] = toW(b, -1 + 1.4 * Math.sin((lz - 8) / 30), lz); sites.push({ x, z, r: 6 }); } }
+  // the frozen outpost: a snowed-in polar research station in the Frostline with a heater that mends, ice crawlers round it
+  const os = findSite('tundra', 250, 8) || spot((x, z) => groundY(x, z) > WATER_Y + 1 && slopeAt(x, z) < 0.3 && deep(x, z, 'tundra', 8), 220, 16);
+  if (os) { const b = bld('house', os.x, os.z, R() * 6.283, { w: 8, d: 6, h: 2.8, mat: 'paint', ruin: 0, roof: 'gable', tint: 0xeef3f7, furnish: 'outpost' }), [x, z] = toW(b, b.w / 2 - 1.6, b.d / 2 - 1.4); // (slice 23 polish: an 8 x 6 m red hut; the heater is buildings.js's stove, the same spot)
+    place('outpost', 'The Frozen Outpost', os.x, os.z, 14, { b, heater: { x, z, r: 3.2 }, guards: ['ice_crawler', 'ice_crawler', 'ice_crawler'] }); }
+  // the sunken barge: a 28 m river cargo barge run aground on the Bog's edge, its bow sunk in the water and its stern up the
+  // bank, its cargo in the shallows (polish, Jared, November 14, 2026: "the same sort of scale and quality/detail check")
+  // A barge needs its length of shore: of 24 headings, the one whose bow (13 m ahead) is lowest, its stern (13 m behind) up the
+  // bank but no more than a few metres, level across its beam; it fits if that bow is down in the water
+  const lie = (x, z) => { const y = groundY(x, z); let best = null;
+    for (let k = 0; k < 24; k++) { const a = k * Math.PI / 12, fx = Math.sin(a), fz = -Math.cos(a), at = (s, t) => groundY(x + fx * s - fz * t, z + fz * s + fx * t);
+      const bow = Math.max(at(13, 0), at(11, 3), at(11, -3)), stern = at(-13, 0), cross = Math.abs(at(0, 4) - at(0, -4)) + Math.abs(at(-9, 4) - at(-9, -4));
+      const sc = bow - 0.4 * Math.min(stern - y, 2.5) + cross + (stern - y > 3.2 ? 4 : 0); if (!best || sc < best.sc) best = { a, sc, bow, stern, cross, y }; } return best; };
+  const fits = (x, z) => { const o = lie(x, z); return o.bow < WATER_Y + 0.4 && o.stern - o.y < 3.2 && o.cross < 2; };
+  const shallow = (lo, hi) => (x, z) => { const y = groundY(x, z); return y >= WATER_Y + lo && y <= WATER_Y + hi && slopeAt(x, z) < 0.3; };
+  const bs = spot((x, z) => shallow(-0.5, 0.5)(x, z) && deep(x, z, 'swamp', 16) && fits(x, z), 250, 30) || spot((x, z) => shallow(-0.8, 0.9)(x, z) && deep(x, z, 'swamp', 6) && fits(x, z), 230, 24)
+    || spot((x, z) => shallow(-0.6, 0.4)(x, z) && biomeAt(x, z) !== 'swamp' && fits(x, z), 230, 24) // (a Bog with no shore: aground on a lake's edge)
+    || spot((x, z) => shallow(-0.8, 0.9)(x, z) && deep(x, z, 'swamp', 5), 230, 20) || spot((x, z) => shallow(-0.6, 0.4)(x, z), 230, 20); // (and if no shore fits it whole, any)
+  if (bs) { R(); const a = lie(bs.x, bs.z).a; // (its front, local -z, the bow down into the water; R() still drawn: what follows is as it was)
+    const b = bld('barge', bs.x, bs.z, a, { w: 8, d: 30, wl: WATER_Y + (biomeAt(bs.x, bs.z) === 'swamp' ? 0.62 : 0) }); // (wl: the water it sinks in, the Bog's table or a lake's)
+    place('barge', 'The Sunken Barge', bs.x, bs.z, 18, { b, guards: ['bog_lurker', 'bog_lurker', 'rat', 'rat'] }); }
+  // the mushroom ring: giant glowing caps round a clearing in the Fungal Hollow, climbable as a stair; a spore cloud hangs in the
+  // middle (it hurts on the ground) over the rare loot on the middle cap
+  const ms = findSite('fungal', 250, 12) || spot((x, z) => groundY(x, z) > WATER_Y + 1 && slopeAt(x, z) < 0.25 && deep(x, z, 'fungal', 12), 220, 20);
+  if (ms) { const b = bld('shrooms', ms.x, ms.z, R() * 6.283, { w: 20, d: 20 }); place('shrooms', 'The Mushroom Ring', ms.x, ms.z, 13, { b, spore: 5, guards: ['bog_lurker', 'bog_lurker', 'rat'] }); }
+  // the crater lakes (world.js shapes them): a chest at the bottom, the Thing in the deep in the water
+  lakes.filter(l => l.crater).forEach((l, i) => place('crater', i ? 'The Little Crater' : 'The Crater Lake', l.x, l.z, l.rx * (1 + l.rw * 0.5), { lake: l, chest: { x: l.x, z: l.z } }));
+  // islands: a crate on each, a wreck or a wall stub on some; the first (the biggest lake's widest) is the hermit's, his shack and his stores
+  islands.forEach((s, i) => { if (!i) { const b = bld('house', s.x, s.z, R() * 6.283, { w: 5, d: 4.6, h: 2.6, mat: 'planks', ruin: 0, roof: 'gable', tint: 0x6e665c, furnish: 'home', hermit: true });
+      place('island', 'The Hermit\'s Island', s.x, s.z, s.r + 6, { b });
+      // (polish) a few trees round his yard, grown by props.js like any other (their own stream: nothing else moves)
+      const T = mulberry32(Math.round(s.x * 7 + s.z * 13));
+      for (const [type, lx, lz, h] of [['oak', -6.4, 5.4, 8], ['pine', 4.6, 6.4, 12], ['aspen', -7.6, 1.8, 9], ['bush', -7.4, -0.6, 1.8], ['bush', 2.6, 7.4, 1.5], ['bush', -2.6, 6.6, 1.3]]) {
+        const [x, z] = toW(b, lx, lz); adds.push([type, { x, z, s: h * (0.92 + T() * 0.16), ry: T() * 6.283, v: Math.floor(T() * 3) }]); }
+      return; }
+    sites.push({ x: s.x, z: s.z, r: 2 }); s.crate = { x: s.x + (R() - 0.5) * s.r * 0.6, z: s.z + (R() - 0.5) * s.r * 0.6 };
+    if (R() < 0.5) adds.push([R() < 0.5 ? 'hulk' : 'ruinwall', { x: s.x + s.r * 0.5, z: s.z - s.r * 0.3, s: 0.8, ry: R() * 6.283, v: 1 }]); });
+}
+
 
