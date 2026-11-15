@@ -69,12 +69,13 @@ export const ENEMY = {
   dust_hound:  { hp:28,  speed:118, dmg:8,  atk:1500, aggro:200, scale:0.8,  body:0xa8845a, belly:0xc8a478, loot:['food','metal'] },
   // slice 22 (#51, Jared, 2026-11-14: "there's no spiders either yet"): IW1's ruins spider (hp 40, speed 70, dmg 8; a web every
   // 8 s; drops fiber), its bite 1.4x as slice 21 did the others; the nest (the dens rule of #9) stands still and sends spiders out
-  spider:      { hp:40,  speed:70,  dmg:11, atk:1500, aggro:150, scale:1.55, body:0x2a1e15, belly:0x15100c, loot:['fiber','fiber'], spider:'wolf' },
+  spider:      { hp:65,  speed:70,  dmg:11, atk:1500, aggro:150, scale:1.55, body:0x2a1e15, belly:0x15100c, loot:['fiber','fiber'], spider:'wolf' },
   // Jared, November 14, 2026: "I want there to be maybe 3-5 varieties of spiders if possible": the pale one of the Fungal Hollow is
   // quicker and sees further; the widow is small and fragile with the worst bite; the brute is huge, slow and very tough
-  spider_pale: { hp:40,  speed:82,  dmg:10, atk:1300, aggro:175, scale:1.45, body:0xc8c0ae, belly:0x6a6254, loot:['fiber','fiber'], spider:'pale' },
-  spider_widow:{ hp:28,  speed:76,  dmg:17, atk:1700, aggro:140, scale:1.25, body:0x161214, belly:0x0a0808, loot:['fiber','food'], spider:'widow' },
-  spider_brute:{ hp:95,  speed:52,  dmg:19, atk:2100, aggro:160, scale:2.1,  body:0x3a2618, belly:0x160e08, loot:['fiber','fiber','fiber','food'], spider:'brute' },
+  spider_pale: { hp:65,  speed:82,  dmg:10, atk:1300, aggro:175, scale:1.45, body:0xc8c0ae, belly:0x6a6254, loot:['fiber','fiber'], spider:'pale' },
+  spider_widow:{ hp:45,  speed:76,  dmg:17, atk:1700, aggro:140, scale:1.25, body:0x161214, belly:0x0a0808, loot:['fiber','food'], spider:'widow', poison:{ dps:2, secs:5 } },
+  spider_brute:{ hp:150, speed:52,  dmg:19, atk:2100, aggro:160, scale:2.1,  body:0x3a2618, belly:0x160e08, loot:['fiber','fiber','fiber','food'], spider:'brute' },
+  // (Jared's play on Dev, November 14, 2026: "too easy to kill. maybe poison bites?": every kind about 1.6x its health; the widow's bite poisons: poison.js)
   spider_nest: { hp:150, speed:0,   dmg:0,  atk:1e9,  aggro:0,   scale:1.0,  body:0xd9d6cc, belly:0xd9d6cc, loot:['fiber','fiber','fiber','fiber'], nest:'spider' },
   // raiders (IW1 RAIDER_STATS; shoot is the firing range in px): they hold their camps, shooters and heavies fire from range
   brawler:     { hp:130, speed:110, dmg:20, atk:1100, aggro:230, scale:1.0, loot:['metal','food','ammo'], raider:true },

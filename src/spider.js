@@ -153,9 +153,12 @@ export function buildSpider({ eye, perMeshFlash, palette = 'wolf' }) {
         root.updateMatrixWorld(true); for (const L of legs) if (L.i < 2) L.over = (L.ov ||= V()).copy(L.cur).lerp(toW(L, L.hx + L.sx * (0.25 - L.i * 0.08), 0.5 - L.i * 0.15, -0.75 + L.i * 0.12), up);
         if (atk >= 1) atk = 0; }
       if (hit > 0) { hit = Math.max(0, hit - dt / 0.3); const k = Math.sin(hit * Math.PI); body.rotation.z += hitS * 0.2 * k; body.position.y += 0.06 * k; body.rotation.y += hitS * 0.12 * k; }
-      if (die > 0) { die = Math.min(2, die + dt / 0.9); const d = ease(die / 0.6); body.rotation.set(0, 0, d * Math.PI * 0.96); body.position.y = BY + Math.sin(Math.min(1, die / 0.6) * Math.PI) * 0.4 - d * 0.2;
-        root.updateMatrixWorld(true); const curl = ease((die - 0.3) / 0.8);
-        for (const L of legs) L.over = (L.ov ||= V()).copy(L.cur).lerp(toW(L, L.sx * 0.14, -0.3, L.hz * 0.7 + 0.05), Math.max(d, curl)); } // (body space: the belly side, which is up once it has flipped)
+      // dying, in seconds (Jared, November 14, 2026: "too fast so it looks bad. can they shrivle up slower?"): it flips over in about 1 s, then the
+      // legs draw in over about 2.8 s with a few twitches that weaken as they go; done by 3.6 s, before the loot drops (game.js: 3.8 s) and it sinks (4 s)
+      if (die > 0) { die = Math.min(4.5, die + dt); const d = ease(die), c = ease((die - 0.8) / 2.8); body.rotation.set(0, 0, d * Math.PI * 0.96); body.position.y = BY + Math.sin(Math.min(1, die) * Math.PI) * 0.4 - d * 0.2 - c * 0.05;
+        root.updateMatrixWorld(true);
+        for (const L of legs) { const tw = die > 0.8 ? Math.max(0, Math.sin(die * 5.5 + L.i * 2.3 + L.sx * 1.1)) ** 6 * (1 - c) * 0.5 : 0;
+          L.over = (L.ov ||= V()).copy(L.cur).lerp(toW(L, L.sx * 0.14, -0.3, L.hz * 0.7 + 0.05), Math.max(0, Math.max(d * 0.3, c) - tw)); } } // (body space: the belly side, which is up once it has flipped)
       gait.solve(); } };
   // at night its eyes catch the light: a soft cold glow over the eye cluster (critic 1: two small dots did not read in the dark)
   const glow = new THREE.Sprite(glowMat(eye)); glow.position.set(0, 0.12, -0.24); glow.scale.setScalar(0.3); ceph.add(glow);

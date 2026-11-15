@@ -30,6 +30,7 @@ import { building, buildKey, buildPad, placeNow, endBuild, rotateBuild, tickBuil
 import { built } from './craft.js';
 import { attachGear, eatPose } from './characters.js';
 import { startSpiders, tickSpiders, webSlow } from './spiders.js';
+import { poison, tickPoison, clearPoison } from './poison.js';
 import { ammo, resetSupplies, tickSupplies, fought, useRound, useFlower, reload, addRounds, clipSize, foodCount, fireNear, HEAL, MAX_ROUNDS } from './supplies.js';
 
 let scene, camera, renderer, env, viewModel;
@@ -204,7 +205,7 @@ export function startGame(i) {
   // each raider camp's crew, round its fire; they keep to the camp until they see you
   raiderCamps.forEach((c, i) => c.raiders.forEach((type, k) => { const a = c.a0 + 0.4 + k * 1.9; spawnEnemy(c.x + Math.cos(a) * 3, c.z + Math.sin(a) * 3, type, 9000 + i, k, c.raiders.length); enemies.at(-1).home = c; })); }
   startPlaces({ spawnEnemy, enemies, joining, log, logEvent, sfx, send, player, hurt: (d, by) => hurtPlayer(d, by) }); // slice 23: the places' guards, and what this game knows of them
-  startSpiders(scene, !joining(), spawnEnemy); // slice 22: the webs go; the spider nests are set down (a joined game gets them from the host)
+  clearPoison(); startSpiders(scene, !joining(), spawnEnemy); // slice 22: the webs go; the spider nests are set down (a joined game gets them from the host)
   document.getElementById('menu').classList.add('hidden'); for (const id of ['hud-tl', 'hud-tr', 'hud-b']) document.getElementById(id).classList.remove('hidden'); running = true; log(`${ch.player} walks out as ${ch.title}. (F9 saves a play log.)`); if (net.role) log(`Game: ${modeName()}.`); setCam(camMode); logEvent('start', { ch: ch.id, cam: camMode, mode: modeKey(), lvl: rules.lvl }); watchStart(); startVideo(renderer.domElement);
 }
 // dry, flat ground at the centre of the safe valley, a few steps from the camp (where a game starts, and where a player knocked
@@ -447,7 +448,7 @@ function tickSlashes(dt) { for (let i = slashes.length - 1; i >= 0; i--) { const
 // hunting animals run down a walking player (IW1's speeds are a wander; at them the player outran every wolf)
 const CHASE = { wolf: 2.0, dust_hound: 1.4, bear: 2.2 };
 const PUFFK = { spider: 'rat', spider_pale: 'dust', spider_widow: 'rat', spider_brute: 'bear', spider_nest: 'silk', wolf: 'fur', dust_hound: 'hound', bear: 'bear', rat: 'rat', ice_crawler: 'ice', bog_lurker: 'mud', brawler: 'dust', shooter: 'dust', heavy: 'dust' };
-const LABEL = { spider: 'Giant spider', spider_pale: 'Pale hollow spider', spider_widow: 'Widow spider', spider_brute: 'Brute spider', spider_nest: 'Spider nest', wolf: 'Wolf', dust_hound: 'Dust hound', bear: 'Bear', rat: 'Rat', ice_crawler: 'Ice crawler', bog_lurker: 'Bog lurker', brawler: 'Raider', shooter: 'Raider shooter', heavy: 'Raider heavy', 'Thing in the deep': 'the lake serpent', fall: 'Long drop' };
+const LABEL = { poison: 'widow poison', spider: 'Giant spider', spider_pale: 'Pale hollow spider', spider_widow: 'Widow spider', spider_brute: 'Brute spider', spider_nest: 'Spider nest', wolf: 'Wolf', dust_hound: 'Dust hound', bear: 'Bear', rat: 'Rat', ice_crawler: 'Ice crawler', bog_lurker: 'Bog lurker', brawler: 'Raider', shooter: 'Raider shooter', heavy: 'Raider heavy', 'Thing in the deep': 'the lake serpent', fall: 'Long drop' };
 function enemyCentre(e) { return new THREE.Vector3(e.x, e.mesh.position.y + e.mesh.userData.height * e.mesh.scale.x * 0.6, e.z); } // (the mesh's own scale: a spider rolls its own size, slice 22)
 export function hitEnemy(e, dmg, nx, nz, at, by = null) {
   if (e.dead) return; const st = ENEMY[e.type], heavy = e.type === 'bear';
@@ -507,19 +508,19 @@ function interact(quiet) {
   else near.salvaged = true; return true; }
 // (who: the game whose player struck the blow, slice 33; a player's blow lands only where the rules let it, and not in the
 // 3 s grace just after a knockout: review)
-export function hurtPlayer(d, by, from = null, who = null) { if (player.dead || (by === 'player' && (!(pvp() > 0) || player.graceT > 0))) return; if (player.sleep) wake('Something is attacking you in your sleep!');
+export function hurtPlayer(d, by, from = null, who = null) { if (player.dead || (by === 'player' && (!(pvp() > 0) || player.graceT > 0))) return; if (player.sleep && by !== 'poison') wake('Something is attacking you in your sleep!'); /* (review: poison works on quietly while you sleep, no false alarm) */
   // slice 12: the Knight's upgraded shield takes 60% of a blow from the front (within 70 degrees of where he faces), while it is on his arm
   if (from && upgraded('knight') && player.mesh.userData.offhand?.visible !== false) { const dx = from.x - player.x, dz = from.z - player.z, L = Math.hypot(dx, dz) || 1;
     if ((-Math.sin(player.faceYaw) * dx - Math.cos(player.faceYaw) * dz) / L > 0.34) { const was = d; d = Math.max(1, Math.round(d * 0.4)); const at = new THREE.Vector3(player.x + dx / L * 0.5, player.y + 1.25, player.z + dz / L * 0.5);
       hitBurst(at, new THREE.Vector3(dx / L, 0.4, dz / L), 'stone', 10); floatText(at.clone().setY(at.y + 0.7), 'BLOCK', '#9ad0ff', true); sfx('chitin', null, 0.8); logEvent('block', { from: was, to: d }); } }
-  player.hp -= d; fought(true); logEvent('hurt', { dmg: d, by, hp: Math.max(0, Math.round(player.hp)) }); player.hurtT = 0.35; player.shake = 0.25; sfx('hurt');
+  player.hp -= d; if (by !== 'poison') { fought(true); logEvent('hurt', { dmg: d, by, hp: Math.max(0, Math.round(player.hp)) }); player.hurtT = 0.35; player.shake = 0.25; sfx('hurt'); } poison(by); /* (review: a poison tick is no new blow: it does not stop a meal or log a bite) */ /* (a widow's bite poisons: poison.js) */
   if (player.hp <= 0) { player.hp = 0; player.killedBy = by; logEvent('died', { by, x: +player.x.toFixed(1), z: +player.z.toFixed(1), coop: coop(), ...(who && { who: others.get(who)?.name }), mode: modeKey() }); player.mesh.userData.anim.die();
     if (who) send(who, { t: 'ko', n: player.ch.player }); // (slice 33: the player whose blow it was scores it)
     // (slice 33: in free-for-all nobody revives a rival: knocked out for a few seconds, then back at your bed or the camp)
     player.ko = coop() && rules.ffa; // (a knockout comes back at the bed or the camp even if the host changes the mode meanwhile, review)
     if (player.ko) { player.dead = 1e9; player.down = KO_S; player.revT = 0; log(`Knocked out${who ? ' by ' + (others.get(who)?.name || 'a rival') : ''}! Back in ${KO_S} s at your bed, or the camp.`); }
     else if (coop()) { player.dead = 1e9; player.down = 15; player.revT = 0; log(`${player.ch.player} is down! A friend can revive you: they stand close and hold E.`); } else { player.dead = 3; log(`${player.ch.player} went down…`); } }
-  else player.mesh.userData.anim.hit(); }
+  else if (by !== 'poison') player.mesh.userData.anim.hit(); }
 // fall damage (the owner, 2026-11-04: "we need fall damage"): a drop of up to 4 m is free (a jump on flat ground is 1.3 m,
 // off the ladder's top 7 m), then 10 HP a metre, so 16 m kills the Gunslinger and the Ranger and 24 m the Knight; water breaks any fall
 const FALL_SAFE = 4, FALL_HP = 10, KO_S = 6;
@@ -527,7 +528,7 @@ function fallHurt(h, gy) { const d = Math.round((h - FALL_SAFE) * FALL_HP); if (
   if (WATER_Y - groundY(player.x, player.z) > 0.4 && gy < WATER_Y) { logEvent('fall', { h: +h.toFixed(1), dmg: 0, water: true }); return; }
   logEvent('fall', { h: +h.toFixed(1), dmg: d }); floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `-${d}`, '#ff8a6a', d >= 20); hurtPlayer(d, 'fall'); }
 // no bed, no respawn (the owner's ruling, 2026-11-03; IW1 respawns you only at a bed you built): death ends the game
-export function gameOver(why = null) { toggleCraft(false); running = false; paused = false; syncCursor(); net.host = null; clearOthers(); nameTags([]); const t = Math.round((performance.now() - player.startT) / 1000), by = LABEL[player.killedBy] || 'the wasteland';
+export function gameOver(why = null) { clearPoison(); toggleCraft(false); running = false; paused = false; syncCursor(); net.host = null; clearOthers(); nameTags([]); const t = Math.round((performance.now() - player.startT) / 1000), by = LABEL[player.killedBy] || 'the wasteland';
   logEvent('game-over', { by: player.killedBy, secs: t, kills: player.kills, ...player.inv });
   if (document.pointerLockElement) document.exitPointerLock(); for (const id of ['hud-tl', 'hud-tr', 'hud-b', 'cross', 'pause', 'breath', 'prompt']) document.getElementById(id).classList.add('hidden');
   document.querySelector('#menu .sub').textContent = why || `${player.ch.player} fell to ${/^[AEIOU]/.test(by) ? 'an' : 'a'} ${by.toLowerCase()} after ${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}, with ${player.kills} kills. No bed to wake in: next time build a craftbench, then a bed, and sleep in it (Tab crafts, E sleeps). Pick who walks out next.`;
@@ -659,6 +660,7 @@ export function update(dt, t) {
     if (player.blow) vm.rotation.set(0, 0, 0); else if (chop) vm.rotation.set(-sw * 0.9, sw * 0.25, sw * 0.7); else vm.rotation.set(player.swing * 0.22, 0, 0);
     vm.position.set(Math.cos(player.walk * 2.2) * 0.012 * bob, Math.abs(Math.sin(player.walk * 2.2)) * 0.02 * bob - (chop ? 0 : player.swing * 0.03), player.blow ? -sw * 0.08 : chop ? 0 : player.swing * 0.06); }
   player.hurtT = Math.max(0, player.hurtT - dt); tickSlashes(dt);
+  { const n = player.dead || player.down > 0 ? (clearPoison(), 0) : tickPoison(dt); if (n) hurtPlayer(n, 'poison'); } // (a widow's poison, working on: poison.js)
   // enemies (dormant beyond the wake radius, as in IW1)
   // turns: one enemy winds up at a time, and the next waits a moment after it (his first play: four raiders struck inside a second)
   const NK = nightK(), fires = [campfire, ...fireSpots(), ...HEATERS()], warm = (q) => fires.some(f => Math.hypot(q.x - f.x, q.z - f.z) < f.r + 1.5);
