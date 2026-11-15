@@ -91,7 +91,6 @@ function buildBeast(type) {
   if (b.shape) { const eff = new Map(), want = (n) => { const s = b.shape[n]; return s === undefined ? null : Array.isArray(s) ? new THREE.Vector3(...s) : new THREE.Vector3(s, s, s); };
     src.traverse(o => { if (!o.isBone) return; const pe = eff.get(o.parent) || new THREE.Vector3(1, 1, 1), w = want(o.name) || (o.name.startsWith('Tail') || o.name.startsWith('Ear') ? pe.clone() : new THREE.Vector3(1, 1, 1));
       o.scale.copy(w).divide(pe); eff.set(o, w); }); }
-  if (b.lean) for (const n of ['Torso', 'Torso2']) bones[n]?.scale.set(0.88, 1, 1);
   src.updateMatrixWorld(true);
   let skinned = []; src.traverse(o => { if (o.isSkinnedMesh) skinned.push(o); });
   const box = new THREE.Box3(); for (const s of skinned) { s.computeBoundingBox(); box.union(s.boundingBox.clone().applyMatrix4(s.matrixWorld)); }
@@ -108,11 +107,21 @@ function buildBeast(type) {
     f.shells.forEach((m, i) => { const sm = new THREE.SkinnedMesh(s.geometry, m); sm.bind(s.skeleton, s.bindMatrix); sm.frustumCulled = false; sm.castShadow = false;
       m.userData.u.uLen.value = b.fur * perM; s.parent.add(sm); shells.push(sm); mats.push(m); });
   }
+  if (b.lean) for (const s of skinned) leanGeo(s, 0.88);
   const anim = new BeastAnimator(src, beastClips(doc), b);
   anim.speeds = { Walk: clipSpeed(type, doc, k, 'Walk'), Gallop: clipSpeed(type, doc, k, 'Gallop') }; anim.root = root; anim.yaw = 0; anim.neck = bones.Neck2 || bones.Neck1; anim.head = bones.Head;
   root.userData = { anim, mats, height: b.height, setDetail(near) { for (const s of shells) s.visible = near; }, flash: flasher(mats), paws: pawTips(src) };
   return root;
 }
+// the hound's lean: its body narrower side to side, as the Torso and Torso2 bones scaled 0.88 across once did (so 0.88 at the
+// torso, 0.88 x 0.88 from Torso2 on: chest, neck, head, front legs). Done in the shared geometry, once, in the model's rest space
+// (x is across the body there, the spine on x 0), weighted by each vertex's bones. (slice 25, #54: a bone scaled unevenly shears
+// every bone below it as they turn: the hound's head stretched up to a quarter as its neck moved, and the head turn, reading its
+// rotation back from that sheared neck, resized the head a little every frame, without end: the giant fox head)
+function leanGeo(s, k) { const g = s.geometry; if (g.userData.lean) return; const f = s.skeleton.bones.map(bn => { let n = 0; for (let o = bn; o; o = o.parent) if (o.name === 'Torso' || o.name === 'Torso2') n++; return k ** n; });
+  const p = g.attributes.position, si = g.attributes.skinIndex, sw = g.attributes.skinWeight;
+  for (let i = 0; i < p.count; i++) { let m = 0; for (let j = 0; j < 4; j++) m += sw.getComponent(i, j) * f[si.getComponent(i, j)]; p.setX(i, p.getX(i) * m); }
+  p.needsUpdate = true; g.computeVertexNormals(); g.computeBoundingBox(); g.computeBoundingSphere(); g.userData.lean = true; }
 // a hit flash: all of a type's creatures share materials, so the flash is per creature through onBeforeRender
 function flasher(mats) { return (k) => { for (const m of mats) m.userData.u ? (m.userData.u.uFlash.value = k) : (m.emissive?.setScalar(k * 0.6)); }; }
 
@@ -141,14 +150,21 @@ class BeastAnimator {
       if (s > v.Walk * (cur === 'Gallop' ? 1.5 : 1.9)) { n = 'Gallop'; ts = s / v.Gallop; } else if (s > (moving ? 0.12 : 0.4)) { n = 'Walk'; ts = s / v.Walk; }
       if (moving && n === idle) { this.base.timeScale = 0; this.setBase(n, 0.18); } else this.setBase(n, 0.25);
       this.base.timeScale = Math.min(2.2, Math.max(0.35, ts)); }
+    // (slice 25, #54: the mixer writes a bone only when the clip's value changed since its last write, so where a clip holds the neck
+    // or head still (the gallop does) last frame's turn stayed on and the next one piled on top: the head spun round and round. The
+    // clip's own pose is put back before the mixer runs, so each frame's turn starts from it)
+    if (this.rest) for (const [bone, q] of this.rest) bone.quaternion.copy(q);
     this.mixer.update(dt);
-    if (this.root && this.neck) { let yaw = 0; if (look && !this.dead) { const q = this.root.worldToLocal(_lk.copy(look)); yaw = Math.max(-0.65, Math.min(0.65, Math.atan2(-q.x, -q.z))); }
+    if (this.root && this.neck) { this.rest ||= [this.neck, this.head].map(b => [b, new THREE.Quaternion()]); for (const [bone, q] of this.rest) q.copy(bone.quaternion);
+      let yaw = 0; if (look && !this.dead) { const q = this.root.worldToLocal(_lk.copy(look)); yaw = Math.max(-0.65, Math.min(0.65, Math.atan2(-q.x, -q.z))); }
       this.yaw += (yaw - this.yaw) * Math.min(1, dt * 5);
       if (Math.abs(this.yaw) > 1e-3) { this.root.updateMatrixWorld(true); for (const [bone, k] of [[this.neck, 0.4], [this.head, 0.6]]) turnWorldY(bone, this.yaw * k); } } }
 }
 const _lk = new THREE.Vector3(), _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _q3 = new THREE.Quaternion(), _up = new THREE.Vector3(0, 1, 0);
 // turn a bone about the world's up axis, whatever its own axes are (the Quaternius bones point along their own +Y)
-function turnWorldY(bone, a) { const pq = bone.parent.getWorldQuaternion(_q1); bone.quaternion.premultiply(_q2.copy(pq).invert().multiply(_q3.setFromAxisAngle(_up, a)).multiply(pq)); bone.updateMatrixWorld(true); }
+// (slice 25, #54: under a bone scaled unevenly, as the hound's torso bones were, the parent's matrix is sheared and the rotation read
+// back from it is a little longer or shorter than a true one, so each turn also resized the head; normalised, the turn only turns)
+function turnWorldY(bone, a) { const pq = bone.parent.getWorldQuaternion(_q1).normalize(); bone.quaternion.premultiply(_q2.copy(pq).invert().multiply(_q3.setFromAxisAngle(_up, a)).multiply(pq)); bone.updateMatrixWorld(true); }
 // how fast a clip's feet travel along the ground while planted (model units a second, after the model's scale k): the
 // rate that makes it play without sliding; measured once per animal and clip
 const SPEEDS = {};
