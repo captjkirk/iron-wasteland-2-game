@@ -12,7 +12,7 @@ export const R = mulberry32(SEED ^ 0x8b1d5); // its own stream: the props' layou
 export const clearOf = (x, z, pad = 0) => sites.every(s => Math.hypot(x - s.x, z - s.z) > s.r + pad);
 // inside a building's walls (the gas station: its forecourt too), where no grass grows
 export function indoors(x, z) { for (const b of buildings) { if (Math.abs(x - b.x) + Math.abs(z - b.z) > b.w + b.d) continue;
-  const [lx, lz] = toL(b, x, z); if (Math.abs(lx) < b.w / 2 && Math.abs(lz) < b.d / 2) return true; } return false; }
+  const [lx, lz] = toL(b, x, z); if (Math.abs(lx - (b.cx || 0)) < b.w / 2 && Math.abs(lz - (b.cz || 0)) < b.d / 2) return true; } return false; } // (cx, cz: a house kind's footprint, porch and all, off its frame's middle)
 
 // ── Planning: where things go (data only, before the props) ─────────────────────────────────────────────────────
 // level, dry, open ground of radius r around (x, z)
@@ -34,6 +34,24 @@ function bld(kind, x, z, a, o) { const b = { kind, x, z, a, ca: Math.cos(a), sa:
 export const toW = (b, lx, lz) => [b.x + lx * b.ca - lz * b.sa, b.z + lx * b.sa + lz * b.ca];
 export const toL = (b, x, z) => { const dx = x - b.x, dz = z - b.z; return [dx * b.ca + dz * b.sa, -dx * b.sa + dz * b.ca]; };
 
+// ── House kinds (slice 36, #68 and #71). Jared, November 14, 2026: "I feel like there needs to start with like 10 different kinds
+// of houses, whether they are multiple stories or by levels or split levels or different layouts or whatever". Random worlds
+// only: the classic world (seed 20261103) keeps its houses. Each kind's footprint in its frame (x0..x1, z0..z1, its front at -z:
+// porch, steps and carport included); houses.js builds them. The town takes the town kinds in turn, the biggest first, each where
+// it fits; the Greenbelt, Frostline, Glass Desert and Bog landmarks are the farmhouse, the A-frame, the courtyard house and the
+// stilt house
+export const KINDS = { farmhouse: [-5.8, 5.6, -8.0, 4.8], splitlevel: [-5.6, 5.6, -6.1, 4.3], ranch: [-5.8, 5.25, -4.7, 6.8], aframe: [-3.9, 3.9, -7.3, 4.9], rowhouses: [-7.1, 7.1, -5.4, 5.3],
+  shop: [-4.7, 6.35, -6.2, 6.0], stilt: [-3.95, 3.95, -7.8, 3.5], courtyard: [-6.6, 6.6, -7.0, 6.6], townhouse: [-3.5, 3.5, -5.5, 5.4], trailer: [-7.3, 8.1, -4.5, 2.0] };
+const TOWN_KINDS = ['ranch', 'rowhouses', 'splitlevel', 'shop', 'townhouse', 'trailer', 'farmhouse'];
+const reach = (k) => { const [x0, x1, z0, z1] = KINDS[k]; return Math.hypot(x1 - x0, z1 - z0) / 2; }; // half its footprint's diagonal
+// a kind at (x, z) heading a: its floor level is the highest ground under its footprint (the stilt house's 1.9 m above it), its
+// record carries its footprint (w, d, cx, cz) and keeps the site clear to its farthest corner
+function kindAt(style, x, z, a, o = {}) { const [x0, x1, z0, z1] = KINDS[style], cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, ca = Math.cos(a), sa = Math.sin(a); // (its frame set back so the footprint's middle is on (x, z))
+  x -= cx * ca - cz * sa; z -= cx * sa + cz * ca; const b = bld('house', x, z, a, { style, w: x1 - x0, d: z1 - z0, cx: (x0 + x1) / 2, cz: (z0 + z1) / 2, h: 3, mat: 'wall', ruin: 0, roof: 'kind', ...o });
+  Object.assign(sites.at(-1), { x: x + cx * ca - cz * sa, z: z + cx * sa + cz * ca, r: reach(style) + 1.6 }); let g = -1e9;
+  for (let u = 0; u <= 1; u += 0.25) for (let v = 0; v <= 1; v += 0.25) { const [wx, wz] = toW(b, x0 + 0.6 + (x1 - x0 - 1.2) * u, z0 + 0.6 + (z1 - z0 - 1.2) * v); g = Math.max(g, groundY(wx, wz)); }
+  b.ground = g; b.y = g + (style === 'stilt' ? 1.9 : 0.15); return b; }
+
 export function planBuildings() { const adds = []; // props for props.js to place: [type, item]
   // the town: lots on the ruins' street grid (u along (0.92, 0.39)), each house facing its nearer street
   const T = findSite('ruins', 250, 30);
@@ -42,14 +60,16 @@ export function planBuildings() { const adds = []; // props for props.js to plac
       const u = (Math.floor(U / 34) + bu) * 34 + ou, v = (Math.floor(V / 34) + bv) * 34 + ov, x = u * 0.92 - v * 0.39, z = u * 0.39 + v * 0.92;
       if (Math.hypot(x - T.x, z - T.z) < 62) lots.push({ x, z, u, v, d: Math.hypot(x - T.x, z - T.z) }); }
     lots.sort((p, q) => p.d - q.d);
-    let roofed = 0, n = 0;
+    let roofed = 0, n = 0, tk = 0;
     for (const L of lots) { if (biomeAt(L.x, L.z) !== 'ruins' || !level(L.x, L.z, 5, WATER_Y + 1, 0.25) || !clearOf(L.x, L.z, 4)) continue;
       // the door faces the nearer street line (a tie, as every lot has, goes either way)
       const alongU = R() < 0.5, line = alongU ? Math.round(L.u / 34) * 34 - L.u : Math.round(L.v / 34) * 34 - L.v, s = Math.sign(line) || 1;
       const D = alongU ? [0.92 * s, 0.39 * s] : [-0.39 * s, 0.92 * s], a = Math.atan2(D[0], -D[1]);
       if (n === 0) bld('tower', L.x, L.z, a, { w: 6, d: 6, h: 11.5, t: 0.7, mat: 'brick', ruin: 0.3 });
       else if (n > 15) break;
-      else if (R() < 0.2) { for (let k = 0; k < 4; k++) adds.push(['ruinwall', { x: L.x + (R() - 0.5) * 9, z: L.z + (R() - 0.5) * 9, s: 0.9 + R() * 0.3, ry: a + (k % 2) * Math.PI / 2, v: k % 2 }]); continue; } // a lot gone to bare wall stubs
+      else if (R() < 0.2) { for (let k = 0; k < 4; k++) adds.push(['ruinwall', { x: L.x + (R() - 0.5) * 9, z: L.z + (R() - 0.5) * 9, s: 0.9 + R() * 0.3, ry: a + (k % 2) * Math.PI / 2, v: k % 2 }]); if (!CLASSIC) sites.push({ x: L.x, z: L.z, r: 7 }); continue; } // a lot gone to bare wall stubs (slice 36: kept clear of, in a random world, so no house's door opens onto them)
+      else if (!CLASSIC && (() => { for (let j = 0; j < TOWN_KINDS.length; j++) { const k = TOWN_KINDS[(tk + j) % TOWN_KINDS.length], r = reach(k);
+        if (!level(L.x, L.z, r - 1.5, WATER_Y + 1, 0.25) || !clearOf(L.x, L.z, r + 2.0)) continue; /* (room between neighbours: no window looks onto a wall a hand's width away) */ kindAt(k, L.x, L.z, a); tk += j + 1; return true; } return false; })()) {} // (slice 36: a kind, the next in turn that fits the lot)
       else { const intact = roofed < 2 || (roofed < 3 && R() < 0.3); if (intact) roofed++;
         bld('house', L.x, L.z, a, { w: 6.5 + R() * 2, d: 5.5 + R() * 1.6, h: 3 + R() * 0.6, mat: R() < 0.3 ? 'plaster' : 'wall', ruin: intact ? 0 : 0.35 + R() * 0.55, roof: intact ? 'gable' : 'fallen', furnish: intact ? 'home' : 'rubble' }); }
       n++; }
@@ -67,7 +87,9 @@ export function planBuildings() { const adds = []; // props for props.js to plac
     ['grass', { w: 8, d: 6, h: 3, mat: 'wall', ruin: 0, roof: 'gable', furnish: 'home' }],
     ['fungal', { w: 6.5, d: 6, h: 3.2, mat: 'wall', ruin: 0.6, roof: 'fallen', moss: true, furnish: 'rubble' }],
   ];
-  for (const [bio, o] of LANDMARKS) { const s = findSite(bio, 250, 7, o.minY); if (s) bld('house', s.x, s.z, R() * 6.283, { ...o, biome: bio }); }
+  const LAND_KINDS = { grass: 'farmhouse', tundra: 'aframe', desert: 'courtyard', swamp: 'stilt' }; // (slice 36, random worlds; where a kind finds no room, the old house)
+  for (const [bio, o] of LANDMARKS) { const k = !CLASSIC && LAND_KINDS[bio], ks = k && findSite(bio, 250, reach(k), o.minY), s = ks || findSite(bio, 250, 7, o.minY);
+    if (ks) kindAt(k, s.x, s.z, R() * 6.283, { biome: bio }); else if (s) bld('house', s.x, s.z, R() * 6.283, { ...o, biome: bio }); }
   // raider camps (IW1: brawlers, shooters and heavies round a fire, the cache locked while any of them lives)
   for (const [bio, crew] of [['waste', ['brawler', 'brawler', 'shooter']], ['ruins', ['brawler', 'shooter', 'heavy']], ['desert', ['shooter', 'brawler', 'heavy', 'shooter']]]) {
     // (slice 13c: if a generated world's own biome has no room left, even at a second look, one of the other dry lands)

@@ -14,7 +14,8 @@ import { groundY, biomeAt } from './world.js';
 import { buildings, raiderCamps, places, R, toW, toL } from './plan.js';
 import { islands } from './world.js';
 import { mushroomParts } from './landmarks.js';
-import { addCollider, surfaces } from './props.js';
+import { addCollider, surfaces, colliders } from './props.js';
+import { buildKind, dressDoor, dressWindow, porchOn } from './houses.js';
 import { pbr, boxUV, loadMesh, canvasTex, rockMat, glowcapParts } from './propmodels.js';
 import { buildFire, buildTent } from './camp.js';
 
@@ -23,8 +24,8 @@ export { buildings, raiderCamps, clearOf, indoors, planBuildings } from './plan.
 
 // ── Building: meshes, colliders, crates ────────────────────────────────────────────────────────────────────────
 let MAT = null, CRATE = null;
-const TILE = { hull: 2.4, snow: 3, wall: 2.2, brick: 2, plaster: 1.6, planks: 2, roof: 2.4, ceil: 2, concrete: 3, floor: 2, paint: 1.5, iron: 2, beam: 2, moss: 2.2, seat: 0.6, carpet: 1.6, earth: 4 }; // (the last three: the plane's, made with it)
-function mats() { if (MAT) return MAT; const base = {}; // one load per texture: variants are clones, which share the maps
+const TILE = { hull: 2.4, snow: 3, wall: 2.2, brick: 2, plaster: 1.6, planks: 2, roof: 2.4, ceil: 2, concrete: 3, floor: 2, paint: 1.5, iron: 2, beam: 2, moss: 2.2, seat: 0.6, carpet: 1.6, earth: 4, inwall: 1.8, adobe: 2.0 }; // (inwall, slice 36: a kind's painted plaster inside) // (the last three: the plane's, made with it)
+export function mats() { if (MAT) return MAT; const base = {}; // one load per texture: variants are clones, which share the maps
   const t = (n, o = {}) => { const m = (base[n] ||= pbr('props/' + n)).clone(); m.roughness = o.rough ?? 0.92; m.metalness = o.metal ?? 0; m.color.set(o.color ?? 0xffffff); m.side = o.side ?? THREE.FrontSide; return m; };
   MAT = { wall: t('wall'), brick: t('brick'), plaster: t('plaster', { color: 0xe6c8a0 }), planks: t('planks', { rough: 0.85, color: 0xd8a878 }), roof: t('rooftile'),
     ceil: t('planks', { color: 0xc89870, side: THREE.DoubleSide }), beam: t('planks', { color: 0xa07850 }), concrete: t('concrete'), floor: pbr('terrain/paving', { rough: 0.95, color: 0xd0b898 }),
@@ -32,55 +33,67 @@ function mats() { if (MAT) return MAT; const base = {}; // one load per texture:
       x.fillStyle = 'rgba(40,38,32,0.55)'; for (let i = 0; i <= 2; i++) { x.fillRect(0, i * h / 2 - 1, w, 3); x.fillRect(i * w / 2 - 1, 0, 3, h); }
       x.fillStyle = 'rgba(30,28,24,0.6)'; for (let i = 0; i < 2; i++) for (let k = 4; k < w; k += 10) { x.fillRect(k, i * h / 2 + 6, 2, 2); x.fillRect(i * w / 2 + 6, k, 2, 2); }
       for (let i = 0; i < 70; i++) { x.fillStyle = `rgba(${60 + Math.random() * 50},${50 + Math.random() * 30},30,${0.06 + Math.random() * 0.12})`; x.fillRect(Math.random() * w, Math.random() * h, 2 + Math.random() * 6, 20 + Math.random() * 90); } }, '#8a8c84') }),
-    glass: new THREE.MeshStandardMaterial({ color: 0x24323c, metalness: 0.6, roughness: 0.18 }), snow: new THREE.MeshStandardMaterial({ color: 0xf4f7fa, roughness: 0.95 }), /* (slice 23: a plane's bare aluminium, the outpost's snowed roof) */ iron: t('iron', { metal: 0.35, rough: 0.75, side: THREE.DoubleSide }), moss: t('wall', { color: 0x7a8a6a }),
+    glass: new THREE.MeshStandardMaterial({ color: 0x24323c, metalness: 0.6, roughness: 0.18 }), pane: new THREE.MeshStandardMaterial({ color: 0x9fb2bb, metalness: 0.2, roughness: 0.06, transparent: true, opacity: 0.3, depthWrite: false }), /* (slice 36: a window's glass) */ snow: new THREE.MeshStandardMaterial({ color: 0xf4f7fa, roughness: 0.95 }), /* (slice 23: a plane's bare aluminium, the outpost's snowed roof) */ iron: t('iron', { metal: 0.35, rough: 0.75, side: THREE.DoubleSide }), moss: t('wall', { color: 0x7a8a6a }),
     cloth: new THREE.MeshStandardMaterial({ color: 0x7a3426, roughness: 0.95 }), glow: new THREE.MeshBasicMaterial({ color: 0xffb050 }), ring: new THREE.MeshBasicMaterial({ color: 0xffc860, transparent: true, opacity: 0.6, depthWrite: false, blending: THREE.AdditiveBlending }),
     sign: new THREE.MeshStandardMaterial({ roughness: 0.7, map: canvasTex(256, 128, (x, w, h) => { x.fillStyle = '#e8dcc0'; x.font = 'bold 74px sans-serif'; x.textAlign = 'center'; x.fillText('FUEL', w / 2, 92);
       x.fillStyle = 'rgba(70,40,20,0.5)'; for (let i = 0; i < 300; i++) x.fillRect(Math.random() * w, Math.random() * h, 3, 2); }, '#8a2a1e') }) };
   // indoors seen from a third-person camera, every building is cut away above the player's waist (and its roof lifted)
   MAT.plaster.normalScale.set(2.2, 2.2); // the clay plaster reads flat at its own relief
+  MAT.inwall = new THREE.MeshStandardMaterial({ color: 0xb3a487, roughness: 0.95, normalMap: MAT.plaster.normalMap, normalScale: new THREE.Vector2(0.3, 0.3) }); MAT.adobe = new THREE.MeshStandardMaterial({ color: 0xdcc39c, roughness: 0.97, normalMap: MAT.plaster.normalMap, normalScale: new THREE.Vector2(0.9, 0.9) }); // (the courtyard house's lime-washed adobe) // (slice 36: the house kinds' rooms, a pale painted plaster)
   for (const m of Object.values(MAT)) m.clippingPlanes = [CUT];
   return MAT; }
 const CUT = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1e6);
 function tinted(hex) { return MAT['roof' + hex] ||= (() => { const m = MAT.roof.clone(); m.color.set(hex); m.clippingPlanes = [CUT]; return m; })(); } // snow on the hut, a dark Bog roof
-const box = (P, k, sx, sy, sz, x, y, z, ry = 0, rx = 0, rz = 0) => P[k].push(new THREE.BoxGeometry(sx, sy, sz).rotateZ(rz).rotateX(rx).rotateY(ry).translate(x, y, z));
+export const box = (P, k, sx, sy, sz, x, y, z, ry = 0, rx = 0, rz = 0) => P[k].push(new THREE.BoxGeometry(sx, sy, sz).rotateZ(rz).rotateX(rx).rotateY(ry).translate(x, y, z));
 // ground height under a point of the building's frame, as an offset from its base
-const gAt = (b, lx, lz) => { const [x, z] = toW(b, lx, lz); return groundY(x, z); };
+export const gAt = (b, lx, lz) => { const [x, z] = toW(b, lx, lz); return groundY(x, z); };
 
 // collision along a solid run of wall: circles of 0.3 m every 0.45 m, inset so a doorway keeps its full width
 // topAt(lx, lz) is the solid's top there (shots pass over lower walls)
-function collideRun(b, lx0, lz0, lx1, lz1, r = 0.3, topAt = () => b.y + 3) { const L = Math.hypot(lx1 - lx0, lz1 - lz0); if (L < 0.05) { const [x, z] = toW(b, lx0, lz0); Object.assign(addCollider(x, z, r, b), { vr: 0, top: topAt(lx0, lz0), stand: r > 0.2 ? topAt(lx0, lz0) : null }); return; }
+export function collideRun(b, lx0, lz0, lx1, lz1, r = 0.3, topAt = () => b.y + 3) { const L = Math.hypot(lx1 - lx0, lz1 - lz0); if (L < 0.05) { const [x, z] = toW(b, lx0, lz0); Object.assign(addCollider(x, z, r, b), { vr: 0, top: topAt(lx0, lz0), stand: r > 0.2 ? topAt(lx0, lz0) : null }); return; }
   const n = Math.max(1, Math.ceil((L - 2 * r) / 0.45));
   for (let k = 0; k <= n; k++) { const s = L <= 2 * r ? L / 2 : r + (L - 2 * r) * k / n, lx = lx0 + (lx1 - lx0) * s / L, lz = lz0 + (lz1 - lz0) * s / L, [x, z] = toW(b, lx, lz); Object.assign(addCollider(x, z, r, b), { vr: 0, top: topAt(lx, lz), stand: r > 0.2 ? topAt(lx, lz) : null }); } }
 // a roof or floor a foot can stand on: at(lx, lz) gives its height in the building's frame, or null off its edge
-function surface(b, at) { surfaces.push({ x: b.x, z: b.z, r: Math.max(b.w, b.d) / 2 + 1.5, at: (x, z) => { const [lx, lz] = toL(b, x, z); return at(lx, lz); } }); }
+export function surface(b, at, o = {}) { surfaces.push({ ...o, x: b.x, z: b.z, r: Math.max(Math.abs(b.cx || 0) + b.w / 2, Math.abs(b.cz || 0) + b.d / 2) + 1.5, at: (x, z) => { const [lx, lz] = toL(b, x, z); return at(lx, lz); } }); }
 export const ladders = []; // the tower's: y0 to y1, at(y) is where the climber's feet are at that height, off the step-off point at the top
 export function ladderAt(x, z, y) { for (const l of ladders) { if (y < l.y0 - 0.3 || y > l.y1 + 0.1) continue; const [lx, lz] = l.at(Math.min(l.y1, Math.max(l.y0, y))); if (Math.hypot(lx - x, lz - z) < 0.7) return l; } return null; }
 // a straight wall along the frame's x or z axis, from (x0, z0) to (x1, z1): solid runs between the openings (a door is a
 // gap with a lintel, a window a gap between sill and head); a ruined wall breaks into blocks that lose their tops
-function wall(b, P, k, x0, z0, x1, z1, h, holes = []) {
-  const L = Math.hypot(x1 - x0, z1 - z0), ux = (x1 - x0) / L, uz = (z1 - z0) / L, along = Math.abs(ux) > 0.5, t = b.t || 0.45, ruin = b.ruin || 0;
+// (slice 36, the house kinds: o.lv raises its base that far above the floor, b.y (an upper storey's wall stands on its floor
+// and has a bottom its colliders keep, bot, so the floor below walks on under it); o.ext marks an outside wall, the ones the
+// walk test walks into; o.line lines its inner side, the -normal side, with that material; a door's y0 lifts its sill (a
+// doorway at a half-landing). A house kind (b.dress) gets frames, sills, glass and doors in its openings)
+export function wall(b, P, k, x0, z0, x1, z1, h, holes = [], o = {}) {
+  const L = Math.hypot(x1 - x0, z1 - z0), ux = (x1 - x0) / L, uz = (z1 - z0) / L, along = Math.abs(ux) > 0.5, t = b.t || 0.45, ruin = b.ruin || 0, lv = o.lv || 0, base = b.y + lv;
+  const bot = lv > 0.05 ? base : o.bot, kind = !!b.style;
   const hs = holes.map(o => ({ ...o, s0: L / 2 + o.at - o.w / 2, s1: L / 2 + o.at + o.w / 2 })).sort((p, q) => p.s0 - q.s0);
   const piece = (s0, s1, y0, y1) => { if (s1 - s0 < 0.02 || y1 - y0 < 0.02) return; const c = (s0 + s1) / 2;
-    box(P, k, along ? s1 - s0 : t, y1 - y0, along ? t : s1 - s0, x0 + ux * c, (y0 + y1) / 2, z0 + uz * c); };
-  const foot = (s) => Math.min(gAt(b, x0 + ux * s, z0 + uz * s), b.y) - 0.8; // walls run on down into the ground
-  const top = (s) => { if (!ruin) return b.y + h; const e = Math.min(1, Math.min(s, L - s) / 1.4), v = vnoise((x0 + ux * s) * 0.7 + b.seed, (z0 + uz * s) * 0.7); // corners stand tallest
-    return b.y + h * Math.max(b.minTop ?? 0.18, 1 - ruin * Math.min(1, v * 1.5) * (0.35 + 0.65 * e)); };
+    box(P, k, along ? s1 - s0 : t, y1 - y0, along ? t : s1 - s0, x0 + ux * c, (y0 + y1) / 2, z0 + uz * c);
+    if (o.line) { const ly0 = Math.max(y0, base), d = t / 2 + 0.012; if (y1 - ly0 > 0.02) box(P, o.line, along ? s1 - s0 : 0.02, y1 - ly0, along ? 0.02 : s1 - s0, x0 + ux * c - uz * d, (ly0 + y1) / 2, z0 + uz * c + ux * d); } };
+  const foot = (s) => kind ? (lv > 0.05 ? base : o.foot ?? Math.min(gAt(b, x0 + ux * s, z0 + uz * s), b.y) - 0.8) : Math.min(gAt(b, x0 + ux * s, z0 + uz * s), b.y) - 0.8; // walls run on down into the ground
+  const top = (s) => { if (!ruin) return base + h; const e = Math.min(1, Math.min(s, L - s) / 1.4), v = vnoise((x0 + ux * s) * 0.7 + b.seed, (z0 + uz * s) * 0.7); // corners stand tallest
+    return base + h * Math.max(b.minTop ?? 0.18, 1 - ruin * Math.min(1, v * 1.5) * (0.35 + 0.65 * e)); };
   const topAt = (lx, lz) => top((lx - x0) * ux + (lz - z0) * uz);
+  const run = (s0, s1, tp = topAt, bt = bot) => { const n0 = colliders.length; collideRun(b, x0 + ux * s0, z0 + uz * s0, x0 + ux * s1, z0 + uz * s1, 0.3, tp); if (bt != null) for (let i = n0; i < colliders.length; i++) colliders[i].bot = bt; };
   let s = 0; const runs = []; for (const o of hs) { runs.push([s, o.s0]); s = o.s1; } runs.push([s, L]);
   for (const [s0, s1] of runs) { const n = ruin ? Math.max(1, Math.round((s1 - s0) / 0.7)) : 1;
     for (let i = 0; i < n; i++) { const a = s0 + (s1 - s0) * i / n, c = s0 + (s1 - s0) * (i + 1) / n; piece(a, c, Math.min(foot(a), foot(c)), top((a + c) / 2)); }
-    collideRun(b, x0 + ux * s0, z0 + uz * s0, x0 + ux * s1, z0 + uz * s1, 0.3, topAt); }
-  for (const o of hs) { const tp = top((o.s0 + o.s1) / 2), mid = (o.s0 + o.s1) / 2;
-    if (o.type === 'door') { if (tp > b.y + o.hgt + 0.2) piece(o.s0, o.s1, b.y + o.hgt, tp);
-      b.doors.push({ lx: x0 + ux * mid, lz: z0 + uz * mid, nx: uz, nz: -ux }); }  // the outward normal (walls run so that it is)
-    else { const ys = [Math.min(foot(o.s0), foot(o.s1)), ...o.gaps.flat().map(v => b.y + v), tp]; // stone between and around the openings
-      for (let i = 0; i < ys.length; i += 2) piece(o.s0, o.s1, ys[i], Math.min(ys[i + 1], tp));
-      collideRun(b, x0 + ux * o.s0, z0 + uz * o.s0, x0 + ux * o.s1, z0 + uz * o.s1, 0.3, topAt); } }
+    run(s0, s1); }
+  for (const q of hs) { const tp = top((q.s0 + q.s1) / 2), mid = (q.s0 + q.s1) / 2;
+    if (q.type === 'door') { const y0 = q.y0 || 0; if (tp > base + y0 + q.hgt + 0.2) { const ys = [base + y0 + q.hgt, ...(q.gaps || []).flat().map(v => base + v), tp]; // (q.gaps, a kind's: windows over the door)
+        for (let i = 0; i < ys.length; i += 2) piece(q.s0, q.s1, ys[i], Math.min(ys[i + 1], tp)); if (kind) run(q.s0, q.s1, () => tp, base + y0 + q.hgt); // (a kind's lintel stops shots and a climber's head)
+        if (kind) for (const [g0, g1] of q.gaps || []) dressWindow(b, P, x0 + ux * mid, z0 + uz * mid, ux, uz, base + g0, base + g1, q.w, o); }
+      if (y0 > 0) { piece(q.s0, q.s1, Math.min(foot(q.s0), foot(q.s1)), base + y0); run(q.s0, q.s1, () => base + y0 - 0.55); } // (its solid sill: 55 cm under the doorway, so the stair's last steps up to it are not blocked; still too high to step up onto from the floor below)
+      const d = { lx: x0 + ux * mid, lz: z0 + uz * mid, nx: uz, nz: -ux, lv: lv + y0, w: q.w }; if (!kind || (o.ext && !q.int && lv + y0 < 1.5)) b.doors.push(d); else if (kind) (b.inner ||= []).push(d);
+      if (kind) dressDoor(b, P, x0 + ux * mid, z0 + uz * mid, ux, uz, base + y0, q, o); }
+    else { const ys = [Math.min(foot(q.s0), foot(q.s1)), ...q.gaps.flat().map(v => base + v), tp]; // stone between and around the openings
+      for (let i = 0; i < ys.length; i += 2) piece(q.s0, q.s1, ys[i], Math.min(ys[i + 1], tp));
+      run(q.s0, q.s1); if (kind) for (const [g0, g1] of q.gaps) dressWindow(b, P, x0 + ux * mid, z0 + uz * mid, ux, uz, base + g0, base + g1, q.w, o); } }
   // a solid spot on this wall for the walk test: the longest run's middle, if the wall still stands above 1.2 m there
   const [r0, r1] = runs.reduce((p, q) => (q[1] - q[0] > p[1] - p[0] ? q : p)); const m = (r0 + r1) / 2;
-  if (r1 - r0 > 1.2 && top(m) > b.y + 1.2) b.walls.push({ lx: x0 + ux * m, lz: z0 + uz * m, nx: uz, nz: -ux });
+  if ((!kind || (o.ext && lv < 1.5)) && r1 - r0 > (kind ? 2.0 : 1.2) && top(m) > b.y + 1.2) b.walls.push({ lx: x0 + ux * m, lz: z0 + uz * m, nx: uz, nz: -ux }); // (a kind's: a stretch over 2 m, its middle a metre from any opening or corner, where the walker cannot slide round into one)
 }
-const door = (at = 0, w = 1.6, hgt = 2.2) => ({ type: 'door', at, w, hgt }), win = (at, w = 0.9, gaps = [[0.95, 1.9]]) => ({ type: 'window', at, w, gaps });
+export const door = (at = 0, w = 1.6, hgt = 2.2, y0 = 0) => ({ type: 'door', at, w, hgt, y0 }), win = (at, w = 0.9, gaps = [[0.95, 1.9]]) => ({ type: 'window', at, w, gaps });
 // four walls round a w x d room, wound so every wall's outward normal is (uz, -ux); the front (-z) holds the door
 function room(b, P, k, w, d, h, front, back = [], left = [], right = []) { const t = b.t || 0.45, hw = w / 2, hd = d / 2;
   wall(b, P, k, -hw - t / 2, -hd, hw + t / 2, -hd, h, front); wall(b, P, k, hw + t / 2, hd, -hw - t / 2, hd, h, back);
@@ -104,7 +117,7 @@ function table(b, P, x, z, ry) { const y = gAt(b, x, z); box(P, 'planks', 1.4, 0
   for (const [a, c] of [[0.62, 0.32], [-0.62, 0.32], [0.62, -0.32], [-0.62, -0.32]]) box(P, 'beam', 0.07, 0.74, 0.07, x + a * Math.cos(ry) + c * Math.sin(ry), y + 0.37, z - a * Math.sin(ry) + c * Math.cos(ry)); }
 function stool(b, P, x, z) { const y = gAt(b, x, z); box(P, 'planks', 0.38, 0.05, 0.38, x, y + 0.45, z, R()); for (const [a, c] of [[0.13, 0.13], [-0.13, 0.13], [0.13, -0.13], [-0.13, -0.13]]) box(P, 'beam', 0.05, 0.44, 0.05, x + a, y + 0.22, z + c); }
 // a supply crate to search: a Poly Haven crate with a soft gold ring on the ground while it is still full
-function cache(b, g, lx, lz, camp = null, o = {}) { const [x, z] = toW(b, lx, lz), m = new THREE.Mesh(CRATE.geo, CRATE.mat), y = o.y ?? groundY(x, z); // (o, slice 23: a place's crate: its loot k, rounds, a deck or cap it stands on)
+export function cache(b, g, lx, lz, camp = null, o = {}) { const [x, z] = toW(b, lx, lz), m = new THREE.Mesh(CRATE.geo, CRATE.mat), y = o.y ?? groundY(x, z); // (o, slice 23: a place's crate: its loot k, rounds, a deck or cap it stands on)
   m.scale.setScalar(1.25); m.position.set(x, y, z); m.rotation.y = -b.a + R() * 0.6; m.castShadow = m.receiveShadow = true; g.add(m);
   const ring = new THREE.Mesh(new THREE.RingGeometry(0.75, 0.95, 32).rotateX(-Math.PI / 2), mats().ring); ring.position.set(x, y + 0.05, z); g.add(ring);
   const col = Object.assign(addCollider(x, z, 0.6, b), { vr: 0, top: y + 0.8, stand: y + CRATE.h });
@@ -152,9 +165,7 @@ function buildHouse(b, P, g) { const { w, d, h } = b, k = b.moss ? 'moss' : b.ma
   // a porch (issue #17): a deck, two posts and a lean-to roof in front of the door of about a third of the intact gable houses; it is
   // picked from the house's place, never from the world's random stream (nothing else moves), and never in the classic world
   if (b.roof === 'gable' && SEED !== DEFAULT_SEED && ((Math.round(b.x * 10) * 73856093 ^ Math.round(b.z * 10) * 19349663) >>> 0) % 3 === 0 && (() => { const pz = -d / 2 - 1.1, ys = [-1.6, 1.6].flatMap(x => [pz - 0.9, pz + 0.9].map(z => gAt(b, x, z))); return Math.max(...ys) - Math.min(...ys) < 0.3; })()) { b.porch = true; // (only on level ground: on a slope the deck would hover or sink)
-    const pz = -d / 2 - 0.225 - 0.9, py = b.y - 0.1; // no colliders: it is a low deck you walk over, the posts are thin
-    box(P, 'planks', 3.2, 0.22, 1.8, 0, py, pz); for (const x of [-1.5, 1.5]) box(P, 'beam', 0.14, 2.3, 0.14, x, py + 1.2, pz - 0.7);
-    box(P, 'roof', 3.6, 0.1, 2.2, 0, py + 2.45, pz - 0.15, 0, 0.14); }
+    porchOn(b, P, g); } // (slice 36, Jared, November 14, 2026: "the porches don't look like they are actually touching structurally": now a ledger on the wall, posts on piers, the deck at the sill)
   furnish(b, P, g, w, d); }
 
 // IW1's watchtower: a square brick tower with arrow slits, crenellations and a broken crown, a ladder inside
@@ -196,11 +207,11 @@ function buildGas(b, P, g) { floor(b, P, 'concrete', 16, 11, 0, -3, 0.06);
 
 export async function buildBuildings(scene) {
   if (!CRATE) { CRATE = { geo: await loadMesh('wooden_crate_01'), mat: pbr('props/wooden_crate_01', { rough: 0.85 }) }; CRATE.geo.computeBoundingBox(); CRATE.h = CRATE.geo.boundingBox.max.y * 1.25; }
-  if (!KIT && places.length) KIT = await loadKit(); // (slice 23 polish: the interiors' scanned props, only for a world with places)
+  if (!KIT && (places.length || buildings.some(b => b.style))) KIT = await loadKit(); // (and for the house kinds, slice 36) // (slice 23 polish: the interiors' scanned props, only for a world with places)
   const M = mats(), root = new THREE.Group(); root.name = 'buildings'; scene.add(root);
   for (const b of buildings) { const g = new THREE.Group(); g.position.set(b.x, 0, b.z); g.rotation.y = -b.a; root.add(b.group = g);
-    const P = Object.fromEntries(Object.keys(TILE).concat('cloth', 'glow', 'glass', ...PLANE_KEYS).map(k => [k, []])); b.place = places.find(q => q.b === b || q.shack === b) || null; b.PR = Object.fromEntries(Object.keys(TILE).map(k => [k, []]));
-    if (b.kind === 'house') buildHouse(b, P, root); else if (b.kind === 'tower') buildTower(b, P, root); else if (PLACE_BUILD[b.kind]) PLACE_BUILD[b.kind](b, P, root); else buildGas(b, P, root);
+    const P = Object.fromEntries(Object.keys(TILE).concat('cloth', 'glow', 'glass', 'pane', ...PLANE_KEYS).map(k => [k, []])); b.place = places.find(q => q.b === b || q.shack === b) || null; b.PR = Object.fromEntries(Object.keys(TILE).map(k => [k, []]));
+    if (b.style) buildKind(b, P, root); else if (b.kind === 'house') buildHouse(b, P, root); else if (b.kind === 'tower') buildTower(b, P, root); else if (PLACE_BUILD[b.kind]) PLACE_BUILD[b.kind](b, P, root); else buildGas(b, P, root);
     const roof = new THREE.Group(); g.add(roof); b.roofGroup = roof;
     for (const [parts, into] of [[P, g], [b.PR, roof]]) for (const k in parts) { if (!parts[k].length) continue;
       const geo = mergeGeometries(parts[k].map(q => q.index ? q.toNonIndexed() : q)); if (TILE[k]) boxUV(geo, TILE[k]);
@@ -227,7 +238,7 @@ export async function buildBuildings(scene) {
 // ── Places worth going to (slice 23, #52): the radio tower's mast, the crashed plane, the sunken barge, the mushroom ring ──
 const UP = new THREE.Vector3(0, 1, 0);
 // a straight bar between two points of the frame, t thick (a mast's legs and braces, wires)
-function bar(P, k, x0, y0, z0, x1, y1, z1, t = 0.12) { const d = new THREE.Vector3(x1 - x0, y1 - y0, z1 - z0), L = d.length();
+export function bar(P, k, x0, y0, z0, x1, y1, z1, t = 0.12) { const d = new THREE.Vector3(x1 - x0, y1 - y0, z1 - z0), L = d.length();
   P[k].push(new THREE.BoxGeometry(t, L, t).applyQuaternion(new THREE.Quaternion().setFromUnitVectors(UP, d.normalize())).translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2)); }
 // (slice 23 polish, #52, Jared: "the same sort of scale and quality/detail check" as the plane) the places' own materials, made
 // once: chain-link and grating you see through, warning signs, solar cells, a lit window, a stove's glow on the floor, equipment
@@ -696,8 +707,13 @@ const KITS = { desk: ['metal_office_desk', 0, { rough: 0.55, metal: 0.35 }], she
   radioKit: ['radio_kit', 0, { rough: 0.55, metal: 0.3 }], lamp: ['hanging_industrial_lamp', 0, { rough: 0.45, metal: 0.45, side: THREE.DoubleSide }], clip: ['clipboard'], medic: ['medical_box', 0, { rough: 0.5, metal: 0.35 }],
   pot: ['pot_enamel_01', 0, { rough: 0.3, metal: 0.1 }], bucket: ['wooden_bucket_01'], meter: ['retro_multimeter', 0, { rough: 0.5 }], jerry: ['metal_jerrycan_green', 0, { rough: 0.55, metal: 0.1 }],
   sheet: ['paper_sheet', 'office_notepads', { side: THREE.DoubleSide }], papers: ['paper_stack', 'office_notepads'], pad: ['notepad', 'office_notepads'], salt: ['salt_box', 'russian_food_cans_01'],
-  tin: ['can_cond', 'russian_food_cans_01', { rough: 0.35, metal: 0.55 }], fish: ['can_fish', 'russian_food_cans_01', { rough: 0.35, metal: 0.55 }], crate: ['wooden_crate_02'], crate1: ['wooden_crate_01'], lantern: ['wooden_lantern_01'], axe: ['wooden_axe'] };
+  tin: ['can_cond', 'russian_food_cans_01', { rough: 0.35, metal: 0.55 }], fish: ['can_fish', 'russian_food_cans_01', { rough: 0.35, metal: 0.55 }], crate: ['wooden_crate_02'], crate1: ['wooden_crate_01'], lantern: ['wooden_lantern_01'], axe: ['wooden_axe'],
+  // (slice 36, the house kinds' rooms: more scanned CC0 furniture from Poly Haven, CREDITS.md)
+  sofa: ['sofa_02', 0, { rough: 0.95 }], armchair: ['arm_chair_01', 0, { rough: 0.9 }], cabinet: ['painted_wooden_cabinet'], bookshelf: ['wooden_bookshelf_worn'],
+  bed2: ['gothic_bed_01', 0, { rough: 0.85 }], rocker: ['rockingchair_01'], nightstand: ['painted_wooden_nightstand'], stove: ['electric_stove', 0, { rough: 0.5, metal: 0.3 }], till: ['cash_register_01', 0, { rough: 0.5, metal: 0.5 }],
+  clock: ['wall_clock'], coffee: ['coffee_table_01'], dining: ['dining_table'], bench: ['painted_wooden_bench'] };
 let KIT = null;
+export const kit = () => KIT; // (slice 36: houses.js sizes its furniture from the loaded meshes)
 async function loadKit() { const K = {};
   await Promise.all(Object.entries(KITS).map(async ([k, [n, tx, o = {}]]) => { const geo = await loadMesh(n), mat = pbr('props/' + (tx || n), { rough: 0.8, ...o }); mat.clippingPlanes = [CUT]; mat.map.flipY = mat.normalMap.flipY = false; K[k] = { geo, mat }; })); // (glTF's uv start at the image's top: unflipped)
   const glowTex = canvasTex(64, 64, (x, w, h) => { const gr = x.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.25, 'rgba(255,255,255,0.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = gr; x.fillRect(0, 0, w, h); }, '#fff');
@@ -710,7 +726,7 @@ async function loadKit() { const K = {};
 // a room's props. put(kind, x, y, z, ry, o) stands one with its base at (x, y, z) in the building's frame, turned by ry (o: s its
 // scale, rx and rz tilts, c a tint); put.geo(material, geometry) adds plain geometry (a bulb, logs, a glow); put.halo(x, y, z, size,
 // colour) a soft light. put.done() merges it all, through m (a tilted hull's frame) when given, onto the building's group
-function kitRoom(b, m = null) { const L = {}, G = {}, e = new THREE.Euler(), q = new THREE.Quaternion(), V = THREE.Vector3;
+export function kitRoom(b, m = null) { const L = {}, G = {}, e = new THREE.Euler(), q = new THREE.Quaternion(), V = THREE.Vector3;
   const put = (k, x, y, z, ry = 0, o = {}) => { const s = o.s || 1, M = new THREE.Matrix4().compose(new V(x, y, z), q.setFromEuler(e.set(o.rx || 0, ry, o.rz || 0, 'YXZ')), new V(s, s, s)); (L[k + '|' + (o.c ?? '')] ||= []).push(M); };
   put.geo = (k, geo) => (G[k] ||= []).push(geo);
   put.halo = (x, y, z, s, c = 0xffc890) => { const p = new V(x, y, z); if (m) p.applyMatrix4(m); const sp = new THREE.Sprite(KIT.halo(c)); sp.position.copy(p); sp.scale.setScalar(s); sp.renderOrder = 2; b.group.add(sp); };
@@ -739,19 +755,19 @@ function note(put, x, y, z, ry, rz = 0, d = 0.006) { put.geo('note', new THREE.P
 function chart(put, x, y, z, ry, wd = 1) { const hh = wd * 0.75, c = Math.cos(ry), s = Math.sin(ry); put.geo('map', new THREE.PlaneGeometry(wd, hh).rotateZ((Math.sin(x * 7 + z * 3)) * 0.015).rotateY(ry).translate(x, y, z));
   for (const [u, v] of [[-0.47, 0.45], [0.47, 0.45], [-0.47, -0.45], [0.47, -0.45]]) put.geo('slot', new THREE.SphereGeometry(0.008, 6, 4).translate(x + u * wd * c + s * 0.004, y + v * hh, z - u * wd * s + c * 0.004)); }
 // a shelf's levels filled with stores, two rows deep: tins, fish tins and salt (some stacked), now and then a crate on the bottom
-function stock(put, S, levels, rnd, full = 0.8) { for (const lv of levels) for (const v of [0.16, 0.34]) for (let u = -0.46; u <= 0.46; u += 0.09 + rnd() * 0.05) { if (rnd() > full) continue; const k = ['tin', 'tin', 'fish', 'salt'][Math.floor(rnd() * 4)], p = S(u, lv, v + (rnd() - 0.5) * 0.04);
+export function stock(put, S, levels, rnd, full = 0.8) { for (const lv of levels) for (const v of [0.16, 0.34]) for (let u = -0.46; u <= 0.46; u += 0.09 + rnd() * 0.05) { if (rnd() > full) continue; const k = ['tin', 'tin', 'fish', 'salt'][Math.floor(rnd() * 4)], p = S(u, lv, v + (rnd() - 0.5) * 0.04);
     put(k, ...p, rnd() * 6, { s: 2 }); if (k === 'tin' && rnd() < 0.5) put('tin', p[0], p[1] + 0.076, p[2], rnd() * 6, { s: 2 }); if (k === 'fish' && rnd() < 0.6) put('fish', p[0], p[1] + 0.04, p[2], rnd() * 6, { s: 2 }); } }
 // stacked firewood along z: rows of split logs (bark, their cut ends pale), n long, r a log's radius
-function woodpile(put, x, y, z, n, rows = 3, len = 0.42, r = 0.065, rnd = Math.random) { for (let j = 0; j < rows; j++) for (let i = 0; i < n - j; i++) { const lx = x + (i - (n - j - 1) / 2) * r * 2.05, ly = y + r + j * r * 1.75, a = rnd() * 6.28;
+export function woodpile(put, x, y, z, n, rows = 3, len = 0.42, r = 0.065, rnd = Math.random) { for (let j = 0; j < rows; j++) for (let i = 0; i < n - j; i++) { const lx = x + (i - (n - j - 1) / 2) * r * 2.05, ly = y + r + j * r * 1.75, a = rnd() * 6.28;
     put.geo('bark', new THREE.CylinderGeometry(r * (0.85 + rnd() * 0.3), r, len * (0.9 + rnd() * 0.2), 7, 1, true).rotateY(a).rotateX(Math.PI / 2).translate(lx, ly, z + (rnd() - 0.5) * 0.05));
     for (const s of [-1, 1]) put.geo('cut', new THREE.CircleGeometry(r * 0.97, 7).rotateY(s > 0 ? 0 : Math.PI).rotateZ(a).translate(lx, ly, z + s * len * 0.47)); } }
 // the hanging lamp: shade and chain from the ceiling at (x, yc, z), its bulb, its light on the floor below (fy) and a soft glow
-function hangLamp(put, x, yc, z, fy) { put('lamp', x, yc, z); const yb = yc - 1.25; put.geo('bulb', new THREE.SphereGeometry(0.05, 10, 8).scale(1, 1.25, 1).translate(x, yb, z));
+export function hangLamp(put, x, yc, z, fy) { put('lamp', x, yc, z); const yb = yc - 1.25; put.geo('bulb', new THREE.SphereGeometry(0.05, 10, 8).scale(1, 1.25, 1).translate(x, yb, z));
   put.halo(x, yb - 0.05, z, 1.2, 0xffd6a0); put.geo('pool', new THREE.PlaneGeometry(3.2, 3.2).rotateX(-Math.PI / 2).translate(x, fy + 0.015, z)); }
 // a lantern standing at (x, y, z) with its flame lit
-function litLantern(put, x, y, z, ry = 0) { put('lantern', x, y, z, ry); put.geo('flame', new THREE.SphereGeometry(0.018, 8, 6).scale(1, 2, 1).translate(x, y + 0.2, z)); put.halo(x, y + 0.22, z, 0.75, 0xffb060); }
+export function litLantern(put, x, y, z, ry = 0) { put('lantern', x, y, z, ry); put.geo('flame', new THREE.SphereGeometry(0.018, 8, 6).scale(1, 2, 1).translate(x, y + 0.2, z)); put.halo(x, y + 0.22, z, 0.75, 0xffb060); }
 // a shelf unit's spots: (u along it from its middle, level 0..4 from the floor up, v from its back) to the room's frame
-const shelfAt = (sx, sy, sz, ry) => (u, lv, v = 0.25) => { const c = Math.cos(ry), s = Math.sin(ry), lz = v - 0.25; return [sx + u * c + lz * s, sy + [0.13, 0.64, 1.14, 1.65, 2.14][lv], sz - u * s + lz * c]; };
+export const shelfAt = (sx, sy, sz, ry) => (u, lv, v = 0.25) => { const c = Math.cos(ry), s = Math.sin(ry), lz = v - 0.25; return [sx + u * c + lz * s, sy + [0.13, 0.64, 1.14, 1.65, 2.14][lv], sz - u * s + lz * c]; };
 
 // the radio shack (4.4 x 3.6 m inside the walls): the operator's steel desk along the back wall, the set on it (its microphone,
 // morse key and speaker), a second receiver, the logbook and papers, a chair; a steel rack of spare sets and stores on the left
@@ -1151,7 +1167,7 @@ function buildBarge(b, P, g) { const L = 28, W = 7.6, D = 2.7, cw = 2.25, hs = -
 // drying on frames, a rain barrel under the eave's gutter, a woodpile under a lean-to with the chopping block, lanterns by his
 // door and at the jetty's end, and his rowboat tied alongside the jetty (the trees round the yard are props: src/plan.js)
 let PUFF = null;
-function smoke(b, x, y, z) { PUFF ||= canvasTex(64, 64, (c) => { const gr = c.createRadialGradient(32, 32, 2, 32, 32, 31); gr.addColorStop(0, 'rgba(255,255,255,0.9)'); gr.addColorStop(0.5, 'rgba(255,255,255,0.35)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = gr; c.fillRect(0, 0, 64, 64); }, '#ffffff');
+export function smoke(b, x, y, z) { PUFF ||= canvasTex(64, 64, (c) => { const gr = c.createRadialGradient(32, 32, 2, 32, 32, 31); gr.addColorStop(0, 'rgba(255,255,255,0.9)'); gr.addColorStop(0.5, 'rgba(255,255,255,0.35)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = gr; c.fillRect(0, 0, 64, 64); }, '#ffffff');
   const n = 12, ps = [], drift = R() * 6.283; for (let i = 0; i < n; i++) { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: PUFF, color: 0x8e8b86, transparent: true, depthWrite: false, opacity: 0 })); s.position.set(x, y, z); b.group.add(s); ps.push(s); }
   ps[0].onBeforeRender = () => { const t = performance.now() / 1000; ps.forEach((s, i) => { const f = (t * 0.1 + i / n) % 1; // (each puff rises, swells and fades, the wind leaning it over)
     s.position.set(x + Math.cos(drift) * f * f * 3.5 + Math.sin(t * 0.7 + i) * 0.12, y + f * 5, z + Math.sin(drift) * f * f * 3.5); s.scale.setScalar(0.6 + f * 3.2); s.material.opacity = 0.6 * Math.min(1, f * 6) * (1 - f); }); }; }
@@ -1384,6 +1400,7 @@ const PLACE_BUILD = { radio: buildRadio, plane: buildPlane, barge: buildBarge, s
 // the roof comes off the building the player stands in (not in first person: there it is the ceiling); far ones hide
 export function tickBuildings(cam, x, z, y, firstPerson) { CUT.constant = 1e6;
   for (const b of buildings) { b.group.visible = Math.hypot(cam.x - b.x, cam.z - b.z) < Q.drawDist * 0.8;
-    const [lx, lz] = toL(b, x, z), r = b.roofBox || { cz: 0, w: b.w, d: b.d }; const inside = Math.abs(lx) < r.w / 2 + 0.5 && Math.abs(lz - r.cz) < r.d / 2 + 0.5 && !(y > b.y + (b.h ?? 99) - 0.2); // on the roof is not inside
+    const [lx, lz] = toL(b, x, z), r = b.roofBox || { cz: 0, w: b.w, d: b.d }; const inside = Math.abs(lx - (r.cx || 0)) < r.w / 2 + 0.5 && Math.abs(lz - r.cz) < r.d / 2 + 0.5 && !(y > b.y + (b.h ?? 99) - 0.2); // on the roof is not inside
     if (b.kind === 'radio' || b.kind === 'shrooms') continue; // (slice 23: a mast and a mushroom ring are not rooms: never cut away)
+    if (b.inside) { const [mx, mz] = toW(b, b.cx, b.cz); b.inside.visible = b.group.visible && Math.hypot(cam.x - mx, cam.z - mz) < 24; } // (slice 36: a house kind's furniture, only up close)
     b.roofGroup.visible = firstPerson || !inside; if (inside && !firstPerson) CUT.constant = Math.max(groundY(x, z), y) + 1.3; } }

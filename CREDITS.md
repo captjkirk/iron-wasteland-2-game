@@ -32,6 +32,19 @@ Every third-party asset or library used by Iron Wasteland 2: what it is, where i
 | Interiors (slice 23): Metal Jerrycan Green (mesh + diffuse/normal) | https://polyhaven.com/a/metal_jerrycan_green | CC0 |
 | Interiors (slice 23): Office Notepads, a sheet, a stack and a pad (mesh + diffuse/normal, as paper_sheet, paper_stack and notepad) | https://polyhaven.com/a/office_notepads | CC0 |
 | Interiors (slice 23): Russian Food Cans 01, a tin, a fish tin and a salt box (mesh + diffuse/normal, as can_cond, can_fish and salt_box) | https://polyhaven.com/a/russian_food_cans_01 | CC0 |
+| House kinds' rooms (slice 36): Sofa 02 (mesh + diffuse/normal, as sofa_02) | https://polyhaven.com/a/sofa_02 | CC0 |
+| House kinds' rooms (slice 36): Arm Chair 01 (mesh + diffuse/normal, as arm_chair_01) | https://polyhaven.com/a/ArmChair_01 | CC0 |
+| House kinds' rooms (slice 36): Painted Wooden Cabinet (mesh + diffuse/normal, as painted_wooden_cabinet) | https://polyhaven.com/a/painted_wooden_cabinet | CC0 |
+| House kinds' rooms (slice 36): Wooden Bookshelf Worn (mesh + diffuse/normal, as wooden_bookshelf_worn) | https://polyhaven.com/a/wooden_bookshelf_worn | CC0 |
+| House kinds' rooms (slice 36): Rocking Chair 01 (mesh + diffuse/normal, as rockingchair_01) | https://polyhaven.com/a/Rockingchair_01 | CC0 |
+| House kinds' rooms (slice 36): Painted Wooden Nightstand (mesh + diffuse/normal, as painted_wooden_nightstand) | https://polyhaven.com/a/painted_wooden_nightstand | CC0 |
+| House kinds' rooms (slice 36): Electric Stove (mesh + diffuse/normal, as electric_stove) | https://polyhaven.com/a/electric_stove | CC0 |
+| House kinds' rooms (slice 36): Cash Register 01 (mesh + diffuse/normal, as cash_register_01) | https://polyhaven.com/a/CashRegister_01 | CC0 |
+| House kinds' rooms (slice 36): Wall Clock (mesh + diffuse/normal, as wall_clock) | https://polyhaven.com/a/wall_clock | CC0 |
+| House kinds' rooms (slice 36): Coffee Table 01 (mesh + diffuse/normal, as coffee_table_01) | https://polyhaven.com/a/CoffeeTable_01 | CC0 |
+| House kinds' rooms (slice 36): Dining Table (mesh + diffuse/normal, as dining_table) | https://polyhaven.com/a/dining_table | CC0 |
+| House kinds' rooms (slice 36): Painted Wooden Bench (mesh + diffuse/normal, as painted_wooden_bench) | https://polyhaven.com/a/painted_wooden_bench | CC0 |
+| House kinds' rooms (slice 36): Gothic Bed 01 (mesh + diffuse/normal, as gothic_bed_01) | https://polyhaven.com/a/GothicBed_01 | CC0 |
 | Camp chopping stump and axe: Tree Stump 01, Wooden Axe (mesh + diffuse/normal) | https://polyhaven.com/a/tree_stump_01, https://polyhaven.com/a/wooden_axe | CC0 |
 | Camp tent canvas, bedroll and sack: Rough Linen, diffuse + normal (GL), 512 px | https://polyhaven.com/a/rough_linen | CC0 |
 | Building floors, doors, furniture and the Bog cabin's walls: Brown Planks 05, diffuse + normal (GL), 1k | https://polyhaven.com/a/brown_planks_05 | CC0 |

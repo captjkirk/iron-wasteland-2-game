@@ -403,7 +403,7 @@ function tickShield(s, dt) { s.t = (s.t || 0) + dt; const p = s.mesh.position, o
   if (s.back) { if (!own) return true; const to = new THREE.Vector3(own.x, own.y + 1.25, own.z).sub(p), L = to.length();
     if (L < 0.9 || s.t > 4) { if (own === player && player.mesh.userData.offhand) player.mesh.userData.offhand.visible = true; if (L < 0.9) sfx('chitin', own, 0.5); return true; } s.v.copy(to.multiplyScalar(20 / L)); }
   p.addScaledVector(s.v, dt);
-  if (!s.back && (p.y < groundY(p.x, p.z) + 0.15 || nearColliders(p.x, p.z).some(c => c.r && !c.gate && Math.hypot(c.x - p.x, c.z - p.z) < colR(c, p.x, p.z) && p.y < (c.top ?? 99)))) { s.back = true; hitBurst(p.clone(), s.v.clone().negate().normalize(), 'stone', 8); sfx('chitin', p, 0.6); }
+  if (!s.back && (p.y < groundY(p.x, p.z) + 0.15 || nearColliders(p.x, p.z).some(c => c.r && !c.gate && Math.hypot(c.x - p.x, c.z - p.z) < colR(c, p.x, p.z) && p.y < (c.top ?? 99) && !(p.y < c.bot)))) { s.back = true; hitBurst(p.clone(), s.v.clone().negate().normalize(), 'stone', 8); sfx('chitin', p, 0.6); }
   for (const e of enemies) { if (e.dead || e.state === 'lurk' || s.hitE?.has(e)) continue; const sc = e.mesh.scale.x, y0 = e.mesh.position.y;
     if (Math.hypot(e.x - p.x, e.z - p.z) < 0.55 * sc + 0.45 && p.y > y0 - 0.2 && p.y < y0 + e.mesh.userData.height * sc + 0.4) { (s.hitE ||= new Set()).add(e); const v = s.v.clone().setY(0).normalize();
       if (!s.ghost) hitEnemy(e, s.dmg, v.x * 0.8, v.z * 0.8, p.clone()); else hitBurst(p.clone(), v, 'stone', 8); s.back = true; } }
@@ -535,7 +535,8 @@ export function gameOver(why = null) { clearPoison(); toggleCraft(false); runnin
   document.getElementById('go').textContent = 'WALK OUT AGAIN'; document.getElementById('menu').classList.remove('hidden'); }
 // a few passes: pushing out of one circle can push into its neighbour; feet at or above a solid's top pass over it
 // (slice 12: a gate lets players through; enemies only while it is held open. Only the player's own move passes feet.)
-function collide(o, radius, feet) { for (let pass = 0; pass < 3; pass++) for (const c of nearColliders(o.x, o.z)) { if (!c.r || (feet != null && c.stand != null && steps(c, feet)) || (c.gate && (feet != null || c.gate.open))) continue; const dx = o.x - c.x, dz = o.z - c.z, d = Math.hypot(dx, dz), m = (feet != null && c.bands ? rockCol(c, o.x, o.z, feet) : colR(c, o.x, o.z)) + radius;
+// (slice 36: an upper floor's wall has a bottom, bot: a head below it walks on under it; creatures, which keep to the ground, always)
+function collide(o, radius, feet) { for (let pass = 0; pass < 3; pass++) for (const c of nearColliders(o.x, o.z)) { if (!c.r || (c.bot != null && (feet ?? -1e9) + 1.7 < c.bot) || (feet != null && c.stand != null && steps(c, feet)) || (c.gate && (feet != null || c.gate.open))) continue; const dx = o.x - c.x, dz = o.z - c.z, d = Math.hypot(dx, dz), m = (feet != null && c.bands ? rockCol(c, o.x, o.z, feet) : colR(c, o.x, o.z)) + radius;
   if (d < m && d > 1e-4) { o.x = c.x + dx / d * m; o.z = c.z + dz / d * m; } }
   const lim = HALF - 6; o.x = Math.max(-lim, Math.min(lim, o.x)); o.z = Math.max(-lim, Math.min(lim, o.z)); }
 
@@ -795,7 +796,7 @@ export function update(dt, t) {
     // (a frame's path is far shorter than a grid cell, so one lookup at its middle covers it; a collider stops shots below its top)
     let hit = false, stop = null, last = prev; const n = Math.max(1, Math.ceil(prev.distanceTo(p) / 0.3)), near = nearColliders((prev.x + p.x) / 2, (prev.z + p.z) / 2);
     for (let k = 1; k <= n && !hit; k++) { const q = prev.clone().lerp(p, k / n), gq = groundY(q.x, q.z); hit = q.y < gq;
-      for (const c of near) if (c.r && !(c.gate && c.gate.open) && Math.hypot(c.x - q.x, c.z - q.z) < colR(c, q.x, q.z, q.y) && q.y < (c.top ?? gq + 4)) { hit = true; stop = c; } if (hit) p.copy(q); else last = q; }
+      for (const c of near) if (c.r && !(c.gate && c.gate.open) && Math.hypot(c.x - q.x, c.z - q.z) < colR(c, q.x, q.z, q.y) && q.y < (c.top ?? gq + 4) && !(q.y < c.bot)) { hit = true; stop = c; } if (hit) p.copy(q); else last = q; }
     if (stop) hitScenery(stop, p.clone(), s.v.clone().setY(0).normalize()); else if (hit) dustPuff(prev, 4);
     if (stop?.bp && s.hostile && !s.ghost && !joining()) damageBuilt(stop.bp, s.dmg * 0.5, s.o); // a raider's bullet chips the wall it hits (slice 12)
     if (s.hostile && s.ghost) { /* another game's shot: seen here, felt there */ }

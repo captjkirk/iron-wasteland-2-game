@@ -68,7 +68,7 @@ export function standAt(x, z, y, step = STEP) { let s = -Infinity;
   for (const c of nearColliders(x, z)) { if (c.stand == null || !c.r) continue;
     if (c.bands) { const h = topAt(c, x, z); if (h > -Infinity && (y === Infinity || steps(c, y, step, h))) s = Math.max(s, h); } // (a measured rock: its surface there, issue #44)
     else if ((y === Infinity || steps(c, y, step)) && Math.hypot(c.x - x, c.z - z) < colR(c, x, z) + 0.15) s = Math.max(s, c.stand); }
-  for (const f of surfaces) if (Math.abs(f.x - x) < f.r && Math.abs(f.z - z) < f.r) { const h = f.at(x, z); if (h != null && h <= y + step) s = Math.max(s, h); }
+  for (const f of surfaces) if (Math.abs(f.x - x) < f.r && Math.abs(f.z - z) < f.r) { const h = f.at(x, z); if (h != null && h <= y + Math.max(step, f.climb || 0)) s = Math.max(s, h); } // (climb, slice 36: a stair's, so a slow frame's long stride still goes up it)
   return s; }
 
 export const placed = {}; // type -> items (game.js salvages placed.scrap and placed.hulk)
