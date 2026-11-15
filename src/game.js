@@ -482,6 +482,47 @@ function tickSlashes(dt) { for (let i = slashes.length - 1; i >= 0; i--) { const
   if (s.t <= 0) { scene.remove(s.m); s.m.geometry.dispose(); s.m.material.dispose(); slashes.splice(i, 1); } } }
 // hunting animals run down a walking player (IW1's speeds are a wander; at them the player outran every wolf)
 export const CHASE = { wolf: 2.0, dust_hound: 1.4, bear: 2.2 };
+// spiders climb (the follow-ups to #66; Jared: spiders that climb walls, the radio tower, cliffs and trunks, but never a
+// ceiling or the underside of an overhang, and a climb a little slower than a run): a spider whose quarry stands up out
+// of reach looks for a solid within 4 m of them that rises to their height and reaches the ground, with nothing overhead
+// on the side it would climb (no floor, deck or platform above that spot below the quarry's height); it runs to the foot of
+// it, climbs straight up at CLIMB_K of its running speed, steps over the lip and walks on up there (e.y: its feet's height
+// while off the ground), and drops off an edge it walks over. A steep slope it walks up, at the same slower pace
+export const CLIMB_K = 0.6;
+const climber = (e) => ENEMY[e.type].spider && e.type !== 'spider_nest';
+const eFeet = (e) => e.y ?? groundY(e.x, e.z);
+function climbSpot(e, tg, ty) { let best = null, bd = 1e9;
+  for (const c of nearColliders(tg.x, tg.z)) { if (!c.r || c.gate || c.bp || c.top == null || c.top < ty - 0.3 || Math.hypot(c.x - tg.x, c.z - tg.z) > 4) continue;
+    for (let k = 0; k < 12; k++) { const a = k / 12 * 6.283, nx = Math.cos(a), nz = Math.sin(a); let R = colR(c, c.x + nx * c.r, c.z + nz * c.r);
+      const wx = c.x + nx * R, wz = c.z + nz * R; R = colR(c, wx, wz); const x = c.x + nx * (R + 0.05), z = c.z + nz * (R + 0.05), g0 = groundY(x, z), g = floorAt(x, z, g0); // (its floor there: the ground, or a pad or deck on it)
+      if (g0 < WATER_Y + 0.2 || (c.bot != null && c.bot > g + 0.3) || headroom(x, z, g - 1.15) < ty + 1 || Math.hypot(x - tg.x, z - tg.z) > 4.5) continue; // (anything over this spot below the top of the climb, the quarry's own floor too, is an overhang)
+      if (nearColliders(x, z).some(q => q !== c && q.r && Math.hypot(q.x - x, q.z - z) < colR(q, x, z))) continue; // (inside another solid; a wall run's next circle is 0.57 m off)
+      const dd = Math.hypot(x - e.x, z - e.z); if (dd < bd) { bd = dd; best = { x, z, g, nx, nz, top: ty, ph: 'go' }; } } }
+  return best; }
+// pinned against something on the way (a fence, a wall, a rock) while hunting: the spot on its face to climb straight over it.
+// Not the player's own pieces (the fort rules decide those), nothing over 12 m, and nowhere with a ceiling over the spot
+function overSpot(e, hx, hz, maxH = 12, ahead = 0.3) { const L = Math.hypot(hx, hz) || 1, r = 0.45 * ENEMY[e.type].scale; let best = null, bd = 1e9;
+  for (const c of nearColliders(e.x, e.z)) { if (!c.r || c.gate || c.bp || c.top == null) continue;
+    const R = colR(c, e.x, e.z), dx = e.x - c.x, dz = e.z - c.z, d = Math.hypot(dx, dz) || 1; if (d > R + r + 0.3 || (dx * hx + dz * hz) / (d * L) > -ahead) continue; // (touching it, and it is ahead)
+    const x = c.x + dx / d * (R + 0.05), z = c.z + dz / d * (R + 0.05), g = floorAt(x, z, groundY(x, z));
+    const lx = x - dx / d * (0.95 + r), lz = z - dz / d * (0.95 + r); // (where it comes down on the far side)
+    if (c.top - g < 0.6 || c.top - g > maxH || headroom(x, z, g - 1.15) < c.top + 1 || headroom(lx, lz, c.top - 0.9) < Infinity || d >= bd) continue;
+    bd = d; best = { x, z, g, nx: dx / d, nz: dz / d, top: c.top, ph: 'up', over: true }; }
+  return best; }
+// one frame of a climb; returns the way to go (on the way to its foot) or true (held by the climb itself)
+function climbStep(e, tg, ty, dt, spd) { let c = e.cl;
+  if (c && Math.abs(c.top - ty) > 1 && c.ph === 'go') c = e.cl = null; // (the quarry moved on: plan again)
+  if (!c && !(e.clT > 0)) { c = e.cl = climbSpot(e, tg, ty); if (!c) e.clT = 1 + rng() * 0.5; } // (no way up: look again in a second or so, a pack not all at once)
+  if (!c) return null;
+  if (c.ph === 'go' && (c.T = (c.T || 0) + dt) > 8) { e.cl = null; e.clT = 2; return null; } // (8 s and still not at its foot: water or something in the way; think again)
+  if (c.ph === 'go') { const r = 0.45 * ENEMY[e.type].scale + 0.15, gx = c.x + c.nx * r, gz = c.z + c.nz * r, dx = gx - e.x, dz = gz - e.z, L = Math.hypot(dx, dz);
+    if (L > 0.35) { const o = overSpot(e, dx, dz, 4, 0.7); if (o) { e.cl = o; return true; } return { mx: dx / L, mz: dz / L }; } c.ph = 'up'; e.y = c.g; } // (a fence or wall square in the way to its foot: over that first)
+  if (c.ph === 'up') { if (e.y == null) e.y = c.g; const f = Math.min(1, (e.y - c.g) / Math.max(0.5, c.top - c.g)); let ax = c.x, az = c.z; // (up a leaning mast: in toward the top as it rises, ending a metre short of its quarry)
+    if (!c.over) { const dx = tg.x - c.x, dz = tg.z - c.z, L = Math.hypot(dx, dz) || 1, k = Math.max(0, L - 1) / L * f; ax += dx * k; az += dz * k; }
+    e.x += (ax - e.x) * Math.min(1, dt * 6); e.z += (az - e.z) * Math.min(1, dt * 6); e.yaw = Math.atan2(c.nx, c.nz); // (facing the wall, its belly to it)
+    e.y += spd * CLIMB_K * dt; e.cs = spd * CLIMB_K; if (e.y >= c.top) { const dx = tg.x - e.x, dz = tg.z - e.z, L = Math.hypot(dx, dz) || 1; e.y = c.top; c.ph = 'over'; c.k = 0; c.sx = e.x; c.sz = e.z; c.ox = dx / L; c.oz = dz / L; c.oL = Math.min(1.5, Math.max(0.6, L - 1)); if (c.over) { c.ox = -c.nx; c.oz = -c.nz; c.oL = 0.9 + 0.45 * ENEMY[e.type].scale; } /* (a fence or wall: across it, then down the far side) */ } return true; }
+  c.k = Math.min(1, c.k + dt / 0.5); e.x = c.sx + c.ox * c.oL * c.k; e.z = c.sz + c.oz * c.oL * c.k; e.cs = 1; // over the lip, toward the quarry
+  if (c.k >= 1) { e.cl = null; e.cs = 0; e.fallV = 0; if (standAt(e.x, e.z, e.y + 0.35) < e.y - 0.4) e.clT = 3; } return true; } // (nothing under it at the top: it drops, and waits before trying again)
 const PUFFK = { spider: 'rat', spider_pale: 'dust', spider_widow: 'rat', spider_brute: 'bear', spider_nest: 'silk', wolf: 'fur', dust_hound: 'hound', bear: 'bear', rat: 'rat', ice_crawler: 'ice', bog_lurker: 'mud', brawler: 'dust', shooter: 'dust', heavy: 'dust' };
 const LABEL = { poison: 'widow poison', spider: 'Giant spider', spider_pale: 'Pale hollow spider', spider_widow: 'Widow spider', spider_brute: 'Brute spider', spider_nest: 'Spider nest', wolf: 'Wolf', dust_hound: 'Dust hound', bear: 'Bear', rat: 'Rat', ice_crawler: 'Ice crawler', bog_lurker: 'Bog lurker', brawler: 'Raider', shooter: 'Raider shooter', heavy: 'Raider heavy', 'Thing in the deep': 'the lake serpent', fall: 'Long drop' };
 function enemyCentre(e) { return new THREE.Vector3(e.x, e.mesh.position.y + e.mesh.userData.height * e.mesh.scale.x * 0.6, e.z); } // (the mesh's own scale: a spider rolls its own size, slice 22)
@@ -498,7 +539,7 @@ export function hitEnemy(e, dmg, nx, nz, at, by = null) {
   const side = Math.sign(Math.cos(e.yaw) * nz - Math.sin(e.yaw) * nx) || 1; e.mesh.userData.anim.hit(side);
   const p = at || enemyCentre(e); hitBurst(p, new THREE.Vector3(nx, 0, nz), PUFFK[e.type]); floatText(p, String(dmg), dmg >= 20 ? '#ffd27a' : '#fff0d8', dmg >= 20); if (!by) hitMarker();
   sfx(e.type === 'ice_crawler' ? 'chitin' : dmg >= 20 ? 'hitHard' : 'hit', e);
-  if (e.hp <= 0) { e.dead = 5; logEvent('kill', { enemy: e.type, biome: biomeAt(e.x, e.z) }); /* (slice 21: the logs had no kills by kind) */ e.mesh.userData.anim.die(); e.mesh.userData.flash(0); sfx(e.type, e, 0.8); sfx('thud', e, 0.6);
+  if (e.hp <= 0) { e.dead = 5; e.cl = null; e.cs = 0; logEvent('kill', { enemy: e.type, biome: biomeAt(e.x, e.z) }); /* (slice 21: the logs had no kills by kind) */ e.mesh.userData.anim.die(); e.mesh.userData.flash(0); sfx(e.type, e, 0.8); sfx('thud', e, 0.6);
     for (const k of st.loot) if (rng() < 0.75) dropLoot(e.x, e.z, k, 0.5 * st.scale); if (by) send(by, { t: 'kill', s: `${LABEL[e.type]} down.` }); else { player.kills++; log(`${LABEL[e.type]} down.`); } }
   logEvent('hit', { enemy: e.type, dmg, hp: Math.max(0, e.hp), killed: e.hp <= 0 }); }
 // slice 33: a blow from this game's player on another player, in free-for-all only (pvp()); the other game takes it, and
@@ -742,7 +783,7 @@ export function update(dt, t) {
   const ppl = joining() ? null : everyone();
   for (const e of enemies) {
     const st = ENEMY[e.type], u = e.mesh.userData, an = u.anim;
-    if (e.dead) { e.dead -= dt; const tr = e.mesh.getObjectByName('threat'); if (tr) tr.visible = false; an.update(dt, { speed: 0, scale: st.scale, ground: groundY }); if (e.dead < 1.2 && !e.dropped) { e.dropped = true; dropFrom(e); } /* its arrows fall beside it */ if (e.dead < 1) e.mesh.position.y -= dt * 0.6; if (e.dead <= 0) { scene.remove(e.mesh); e.mesh.userData.dispose?.(); e.gone = true; } continue; }
+    if (e.dead) { e.dead -= dt; if (e.ck) { e.ck = e.ckW = 0; e.mesh.rotation.x = 0; e.mesh.position.y = Math.max(groundY(e.x, e.z), standAt(e.x, e.z, e.mesh.position.y + 0.35)); } /* (killed on a wall: it drops to what is below) */ const tr = e.mesh.getObjectByName('threat'); if (tr) tr.visible = false; an.update(dt, { speed: 0, scale: st.scale, ground: groundY }); if (e.dead < 1.2 && !e.dropped) { e.dropped = true; dropFrom(e); } /* its arrows fall beside it */ if (e.dead < 1) e.mesh.position.y -= dt * 0.6; if (e.dead <= 0) { scene.remove(e.mesh); e.mesh.userData.dispose?.(); e.gone = true; } continue; }
     alive++; const tg = joining() ? player : nearestP(e.x, e.z) || player, tgGone = gone(tg); if (joining()) followHost(e, dt); // a joined game's enemies go where the host's are
     const dx = tg.x - e.x, dz = tg.z - e.z, d = Math.hypot(dx, dz) || 1e-3, tx = dx / d, tz = dz / d;
     if (st.nest) { e.mesh.visible = d < 200; e.flashT = Math.max(0, e.flashT - dt); e.barT = Math.max(0, e.barT - dt); u.flash(e.flashT / 0.15); an.update(dt); continue; } // slice 22: a nest stands still (spiders.js sends its spiders out)
@@ -763,7 +804,7 @@ export function update(dt, t) {
     // rise, as far as it can rear (1.2 m + its size: a bear 2.8 m, a wolf 2.2 m); anyone higher than that it cannot reach,
     // and one stood up on a rock or a roof out of its reach it backs off from and circles (a slope it climbs instead)
     const blood = SMELL.has(e.type) && tg.hp < (tg.maxHp ?? tg.mx ?? Infinity) * 0.5, notice = aggro * (e.state === 'lurk' ? 1 : blood ? 2 : 1.19);
-    const ty0 = tg.y ?? groundY(tg.x, tg.z), rise = ty0 - groundY(e.x, e.z), rear = 1.2 + st.scale, up = rise <= rear, reachUp = reach + (rise > 0.4 && up ? Math.min(1.6, rise * 0.7) : 0);
+    const ty0 = tg.y ?? groundY(tg.x, tg.z), rise = ty0 - eFeet(e), rear = 1.2 + st.scale, up = rise <= rear, reachUp = reach + (rise > 0.4 && up ? Math.min(1.6, rise * 0.7) : 0);
     const high = !up && ty0 - groundY(tg.x, tg.z) > 0.3; // (stood up on a rock or a roof out of reach: it circles; up a slope it climbs on)
     const hunting = HUNTS.includes(e.state);
     // perception: a pack wakes together; giving up only far away; rats and hounds run when badly hurt
@@ -782,6 +823,7 @@ export function update(dt, t) {
     if (!st.raider && (e.state === 'chase' || e.state === 'windup') && !(e.auraT > t)) for (const q of everyone()) if (!gone(q) && (q === player ? upgraded('charmer') : (q.u & 8) && CHARS[q.c]?.id === 'charmer') && Math.hypot(q.x - e.x, q.z - e.z) < AURA_R) { e.auraT = t + 10; charm(e); break; } }
     let mx = 0, mz = 0, spd = st.speed * PX * (1 + 0.15 * nb), face = false;
     if (e.state !== 'chase' || e.dead) e.spitW = 0; an.rear?.(e.spitW > 0); // #66: a pale spider's back end is up only while it means to spit (a joined game: from the host's world)
+    if (e.cl && e.state !== 'chase') { e.cl = null; e.cs = 0; } // (stopped hunting on the way up: it lets go)
     if (host) switch (e.state) {
       case 'lurk': break; // buried in the mud, waiting
       case 'emerge': e.emT -= dt; if (e.emT <= 0) { e.state = 'chase'; } face = true; break;
@@ -823,6 +865,7 @@ export function update(dt, t) {
           if (e.rollSiege || e.blkT > 3) { e.state = 'siege'; e.wall = blk; e.sT = 0.35; logEvent('siege', { enemy: e.type, key: blk.key }); break; } }
         // slice 26: at night an animal that fears fire will not close on someone by a torch or a fire: it circles at 4.5 m, snarling
         if (NK > 0.3 && FEARS_FIRE.has(e.type) && d < 6 && byFlame(tg)) { const k = (d - 4.5) * 0.6; mx = -tz * e.circle + tx * k; mz = tx * e.circle + tz * k; spd *= 0.55; face = true; break; }
+        if (climber(e) && !aim && (high || e.cl) && host) { if (e.clT > 0) e.clT -= dt; const w = climbStep(e, tg, ty0, dt, spd); if (w === true) break; if (w) { mx = w.mx; mz = w.mz; break; } }
         if (high && !aim && d < 7) { const k = (d - 5) * 0.5; mx = -tz * e.circle + tx * k; mz = tx * e.circle + tz * k; spd *= 0.5; face = true; break; } // out of reach above: back off to 5 m and circle, waiting
         if ((d <= reachUp && up && !blk || aim) && turn) { e.state = 'windup'; e.wT = aim ? 0.5 : e.type === 'bear' ? 0.6 : e.type === 'bog_lurker' ? 0.45 : 0.32; e.tg = tg; striking.add(tg); strikeCD.set(tg, e.wT + 0.45); an.attack(); if (rng() < 0.4) sfx(e.type, e, 0.7); face = true; break; }
         if (!turn && (d < 5.5 || aim)) { // someone else's turn: circle at a few metres (shooters sidestep) and wait for an opening
@@ -846,30 +889,36 @@ export function update(dt, t) {
     const ml = Math.hypot(mx, mz); if (ml > 1) { mx /= ml; mz /= ml; }
     const mx0 = mx, mz0 = mz; if (e.detT > 0) { e.detT -= dt; const c = Math.cos(e.det), s = Math.sin(e.det); [mx, mz] = [mx * c - mz * s, mz * c + mx * s]; } // going round
     e.vx *= Math.exp(-dt * 6); e.vz *= Math.exp(-dt * 6);
-    const ex = e.x, ez = e.z; e.x += (mx * spd + e.vx) * dt; e.z += (mz * spd + e.vz) * dt; if (host) creatureCollide(e, 0.45 * st.scale);
+    if (climber(e) && e.y == null && slopeAt(e.x, e.z) > 1.0) spd *= CLIMB_K; // (up a cliff: slower than a run)
+    const ex = e.x, ez = e.z; if (!e.cl || e.cl.ph === 'go') { e.x += (mx * spd + e.vx) * dt; e.z += (mz * spd + e.vz) * dt; } if (host && !(e.cl && e.cl.ph !== 'go')) { if (e.y == null) creatureCollide(e, 0.45 * st.scale); else collide(e, 0.45 * st.scale, e.y); } // (up on something: its own feet)
     // too steep or too deep: slide along it one axis at a time, as the player does; still pinned while meaning to move for
     // a third of a second, turn off to one side for a second or two (the other side if that pins too). His log, 2026-11-03:
     // hunting wolves and hounds held one distance for 5 to 10 s at the foot of slopes they could not climb
-    const bad = (x, z) => (slopeAt(x, z) > (hunting ? 1.4 : 1.0) && groundY(x, z) > groundY(ex, ez)) || (groundY(x, z) < WATER_Y - 0.8 && e.type !== 'bog_lurker');
-    if (host && bad(e.x, e.z)) { if (!bad(e.x, ez)) e.z = ez; else if (!bad(ex, e.z)) e.x = ex; else { e.x = ex; e.z = ez; } e.wander = 0; }
+    const bad = (x, z) => (!climber(e) && slopeAt(x, z) > (hunting ? 1.4 : 1.0) && groundY(x, z) > groundY(ex, ez)) || (groundY(x, z) < WATER_Y - 0.8 && e.type !== 'bog_lurker');
+    if (host && e.y == null && bad(e.x, e.z)) { if (!bad(e.x, ez)) e.z = ez; else if (!bad(ex, e.z)) e.x = ex; else { e.x = ex; e.z = ez; } e.wander = 0; }
     const want = Math.hypot(mx, mz) * spd * dt; e.pin = host && want > 1e-3 && Math.hypot(e.x - ex, e.z - ez) < want * 0.3 ? (e.pin || 0) + dt : 0;
     // pinned: try headings further and further off to one side, then the other, for the first whose next 1 and 2.5 m are
     // neither too steep nor too deep nor solid (a single fixed turn left a wolf in a cliff's notch for 8 s, 2026-11-04); a
     // heading that pinned it again is not tried twice in a row
+    if (e.pin > 0.35 && host && climber(e) && e.state === 'chase' && !e.cl && e.y == null) { const c = overSpot(e, mx0, mz0); if (c) { e.cl = c; e.pin = 0; } } // (a spider climbs what pins it)
     if (e.pin > 0.35) { const side = e.detT > 0 ? -Math.sign(e.det) : rng() < 0.5 ? 1 : -1, L = Math.hypot(mx0, mz0) || 1, r = 0.45 * st.scale, failed = e.detT > 0 ? e.det : null;
       const clear = (a) => { if (a === failed) return false; const c = Math.cos(a), s = Math.sin(a), hx = (mx0 * c - mz0 * s) / L, hz = (mz0 * c + mx0 * s) / L;
         return [0.3, 1, 2.5].every(k => { const x = e.x + hx * k, z = e.z + hz * k; return !bad(x, z) && !nearColliders(x, z).some(q => q.r && Math.hypot(q.x - x, q.z - z) < colR(q, x, z) + r); }); };
       e.det = side * Math.PI; for (const a of [0.8, 1.35, 1.9, 2.5]) { if (clear(a * side)) { e.det = a * side; break; } if (clear(-a * side)) { e.det = -a * side; break; } }
       e.detT = 1.2 + rng() * 1.2; e.pin = 0; }
     const ty = joining() ? e.nyaw ?? e.yaw : e.state === 'siege' && e.wfx != null ? Math.atan2(-e.wfx, -e.wfz) : face ? Math.atan2(-tx, -tz) : (mx || mz) ? Math.atan2(-mx, -mz) : e.yaw; let dd = ty - e.yaw; dd = Math.atan2(Math.sin(dd), Math.cos(dd)); e.yaw += dd * Math.min(1, dt * 8);
+    if (host && e.y != null && (!e.cl || e.cl.ph === 'go')) { const u = standAt(e.x, e.z, e.y + 0.35), g = groundY(e.x, e.z); // up on something: its feet go with what it stands on; off the edge, it drops
+      if (u >= e.y - 0.4 && u > g + 0.3) { e.y = u; e.fallV = 0; } else { e.fallV = (e.fallV || 0) + 18 * dt; e.y -= e.fallV * dt; if (e.y <= Math.max(g, u)) { e.y = null; e.fallV = 0; } } }
+    if (!e.cl && e.cs) e.cs = 0;
     const g0 = groundY(e.x, e.z), fo = floorAt(e.x, e.z, g0) - g0; e.fo = e.fo == null ? fo : e.fo + (fo - e.fo) * Math.min(1, dt * 10); // (onto a house floor or deck eased, not snapped: the quality pass)
     const gy = g0 + e.fo, sink = e.state === 'lurk' ? 0.85 : e.state === 'emerge' ? 0.85 * Math.max(0, e.emT / 0.8) : 0;
     if (e.state === 'emerge' && e.emT > 0.7) { const at = new THREE.Vector3(e.x, Math.max(gy, WATER_Y), e.z); if (gy < WATER_Y + 0.2) { splash(at); sfx('splash', e); } else dustPuff(at, 14); e.emT = 0.7; }
-    e.mesh.position.set(e.x, Math.max(gy, WATER_Y - 0.55 * st.scale) - sink * st.scale + (e.dropH || 0), e.z); e.mesh.rotation.y = e.yaw; // (dropH: a spider on its thread, slice 22)
+    e.mesh.position.set(e.x, e.y ?? Math.max(gy, WATER_Y - 0.55 * st.scale) - sink * st.scale + (e.dropH || 0), e.z); e.mesh.rotation.y = e.yaw;
+    if (climber(e)) { const want = host ? (e.cl && e.cl.ph === 'up' ? 1 : e.cl && e.cl.ph === 'over' ? 1 - e.cl.k : 0) : e.ckW || 0; e.ck = (e.ck || 0) + (want - (e.ck || 0)) * Math.min(1, dt * 8); e.mesh.rotation.order = 'YXZ'; e.mesh.rotation.x = e.ck * Math.PI / 2; } // (on a wall: tipped up, belly to it) // (dropH: a spider on its thread, slice 22)
     e.mesh.visible = e.state !== 'lurk' || d < 4;
     // slice 19: built creatures plant their feet on the ground and turn their heads to the one they hunt
     const eyes = !tgGone && ['chase', 'windup', 'recover', 'emerge', 'siege'].includes(e.state) ? (e.lookV ||= new THREE.Vector3()).set(tg.x, groundY(tg.x, tg.z) + 1.3, tg.z) : null;
-    if (d < 80) an.update(dt, { speed: joining() ? e.spd || 0 : Math.hypot(e.x - ex, e.z - ez) / Math.max(dt, 1e-3), scale: st.scale, ground: e.fo > 0.01 ? FLOOR : groundY, look: eyes }); // (on a house's floor, its feet too: the quality pass found wolves walking with only their heads above the boards)
+    if (d < 80) an.update(dt, { speed: joining() ? e.spd || 0 : Math.hypot(e.x - ex, e.z - ez) / Math.max(dt, 1e-3), scale: st.scale, ground: e.y != null ? () => e.y : e.fo > 0.01 ? FLOOR : groundY, look: eyes, climb: e.ck || 0, cs: e.cs || (e.ck > 0.5 ? 2 : 0) }); // (on a house's floor, its feet too: the quality pass found wolves walking with only their heads above the boards)
   }
   // keep awake enemies from stacking on one another
   for (let i = 0; i < awake.length; i++) for (let j = i + 1; j < awake.length; j++) { const a = awake[i], b = awake[j]; if (a.state === 'lurk' || b.state === 'lurk') continue;

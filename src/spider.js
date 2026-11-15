@@ -130,14 +130,14 @@ export function buildSpider({ eye, perMeshFlash, palette = 'wolf' }) {
       off: ((i + (sx > 0 ? 1 : 0)) % 2) * 0.5 + i * 0.04, sx, i, hz: hipAt.z, hx: hipAt.x });
   }
   const gait = new Legs(root, legs, { stride: 0.55, duty: 0.5, settle: 3.5 });
-  let t = Math.random() * 9, atk = 0, hit = 0, hitS = 1, die = 0, air = 0, rear = 0, rearOn = false; // rear: #66, the pale spider's back end up to spit
+  let t = Math.random() * 9, atk = 0, hit = 0, hitS = 1, die = 0, air = 0, rear = 0, rearOn = false, cph = 0; // rear: #66, the pale spider's back end up to spit
   const toW = (L, x, y, z) => body.localToWorld(_w.set(x, y, z)); // a body-space point in the world
   const anim = { dead: false,
     attack() { if (!this.dead) atk = 0.001; }, rear(on) { rearOn = !!on && !this.dead; }, hit(side = 1) { if (!this.dead) { hit = 1; hitS = side; } }, die() { this.dead = true; die = 0.001; atk = 0; rearOn = false; }, get rearing() { return rearOn; },
-    update(dt, { speed = 0, ground = null } = {}) {
+    update(dt, { speed = 0, ground = null, climb = 0, cs = 0 } = {}) { // climb: 0 to 1, how far it is tipped onto a wall (game.js); cs: its climbing speed
       t += dt; gait.ground = ground; gait.settle = this.dead ? 0 : 3.5;
       // in the air (dropping on its thread, or falling from it): legs spread, head down while it hangs
-      const h = ground ? (root.position.y - ground(root.position.x, root.position.z)) / root.scale.x : 0; air += ((h > 0.15 && !this.dead ? 1 : 0) - air) * Math.min(1, dt * 7);
+      const h = ground ? (root.position.y - ground(root.position.x, root.position.z)) / root.scale.x : 0; air += ((h > 0.15 && !this.dead && climb < 0.05 ? 1 : 0) - air) * Math.min(1, dt * 7); // (on a wall it is not hanging)
       gait.step(dt, this.dead || air > 0.5 ? 0 : speed, { stride: Math.min(0.95, 0.4 + speed * 0.12), duty: 0.5 });
       const ph = gait.ph * Math.PI * 2, mv = gait.moving, sl = gait.slope(-0.6, 0.6), sc = gait.sc;
       body.position.set(0, BY + ((sl.front + sl.back) / 2 - sl.mid) / sc - Math.abs(Math.sin(ph * 2)) * 0.025 * mv, 0); body.rotation.set(Math.atan2(sl.front - sl.back, 1.2 * sc) - air * 1.35, Math.sin(ph) * 0.03 * mv, 0);
@@ -147,6 +147,12 @@ export function buildSpider({ eye, perMeshFlash, palette = 'wolf' }) {
       palps.forEach((p, k) => { p.a.rotation.set(Math.sin(t * 2.6 + k * 1.7) * 0.25 + mv * 0.15, Math.sin(t * 1.9 + k) * 0.2, 0); p.b.rotation.set(Math.sin(t * 3.1 + k) * 0.2, 0, 0); });
       for (const L of legs) L.over = null;
       root.updateMatrixWorld(true);
+      // on a wall (the follow-ups to #66): the root is tipped up, belly to the wall, so the ground plane of its body is the wall.
+      // Each foot grips there and is moved by a climbing stroke: pulled back along the body while down (the body going up past
+      // it), then lifted off the wall and reached forward again, alternate legs (their walking offsets) half a stroke apart
+      if (climb > 0.02 && !this.dead) { cph = (cph + cs / 0.45 * dt) % 1;
+        for (const L of legs) { const u = (cph + L.off) % 1, down = u < 0.5, k = down ? u / 0.5 : (u - 0.5) / 0.5, z = down ? -0.18 + 0.36 * k : 0.18 - 0.36 * k, lift = down ? 0 : Math.sin(k * Math.PI) * 0.12;
+          L.over = (L.ov ||= V()).copy(L.cur).lerp(toW(L, L.home.x, -BY + 0.012 + lift, L.home.z + z), Math.min(1, climb * 1.5)); } }
       if (air > 0.02) { body.rotation.z += Math.sin(t * 1.7) * 0.16 * air; root.updateMatrixWorld(true); // hanging: swaying on its thread, the legs curled toward you as if to grab, twitching
         for (const L of legs) { const s = 1 + Math.sin(t * 9 + L.i * 1.3 + L.sx) * 0.07; L.over = (L.ov ||= V()).copy(L.cur).lerp(toW(L, L.hx + L.sx * 0.45 * s, 0.42 + (1.5 - Math.abs(L.i - 1.5)) * 0.06, L.hz * 2.6 * s - 0.1), air); } } // (critic 1: not splayed flat; body +y faces you while it hangs head down)
       if (atk > 0) { atk += dt / 0.8; const a = atk, up = ease(a / 0.4) * (1 - ease((a - 0.55) / 0.3)), snap = ease((a - 0.4) / 0.12) * (1 - ease((a - 0.65) / 0.3));

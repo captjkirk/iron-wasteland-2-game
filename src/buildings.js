@@ -753,7 +753,8 @@ function buildPlane(b, P, g) { planeMats(b); const rnd = mulberry32(Math.round(b
   { const T = part(), na = notch(5.4, 0.6, 1.5), nb = notch(0.95, 0.6, 1.6);
     section(T, -8, 6.5, [{ z: -8, side: -1, j: (f) => breakA(f) + na(f), nf: 5.4, nw: 0.6, deep: 1.5 }, { z: 6.5, side: 1, j: (f) => breakB(f) - nb(f), nf: 0.95, nw: 0.6, deep: 1.6 }]);
     cabin(T, -7.75, 6.1, { left: (z) => z < 5.4, right: () => false, exits: true, binL: (z) => (Math.round(z * 7) % 3 === 0 ? 2 : 1), binR: (z) => z < -5.5 ? 2 : 0 });
-    for (const [x, z, ry, rx, rz] of [[1.35, -4.4, 1.57, -1.5, 0], [1.4, -0.6, 1.5, 0, 0.25], [1.38, 2.2, 1.62, -1.45, 0.1]]) seatGeo(T, new THREE.Matrix4().makeTranslation(x, FLOOR + 0.35, z).multiply(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(rx, ry, rz))).multiply(new THREE.Matrix4().makeTranslation(0, -0.35, 0)));
+    // (the third row stood on end at 2.2 m, and the bin fallen at 3.3 m went through it: a critic saw a white wedge through the seats; places round 2)
+    for (const [x, z, ry, rx, rz] of [[1.35, -4.4, 1.57, -1.5, 0], [1.4, -0.6, 1.5, 0, 0.25], [1.38, 1.8, 1.62, -1.45, 0.1]]) seatGeo(T, new THREE.Matrix4().makeTranslation(x, FLOOR + 0.35, z).multiply(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(rx, ry, rz))).multiply(new THREE.Matrix4().makeTranslation(0, -0.35, 0)));
     for (const [x, z, rz] of [[1.35, -2.4, 0.4], [1.4, 3.3, -0.3], [1.3, -6.2, 0.15]]) T.plastic.push(new THREE.BoxGeometry(0.56, 0.4, 1.2).rotateY(rr(-0.3, 0.3)).rotateZ(rz).translate(x, FLOOR + 0.22, z)); // (bins fallen from the right side)
     for (let z = -6.6; z < 5; z += rr(1.4, 3.2)) for (let k = 0; k < 3; k++) { if (rnd() < 0.3) continue; const x = -1.05 + k * 0.5 + rr(-0.05, 0.05), L = rr(0.15, 0.45); T.bags.push(tint(new THREE.CylinderGeometry(0.006, 0.006, L, 3).translate(x, 0.75 - L / 2, z - 0.3), 0x8a8a84), tint(new THREE.BoxGeometry(0.1, 0.07, 0.08).translate(x, 0.75 - L - 0.03, z - 0.3), 0xf0c020)); } // (oxygen masks)
     for (let z = -6.8; z < 5.6; z += 0.9) if (rnd() < 0.7) T.glow.push(new THREE.BoxGeometry(0.03, 0.012, 0.35).translate(0.12, FLOOR + 0.006, z)); // (the emergency path lights, some still lit)
@@ -1326,7 +1327,9 @@ function buildBarge(b, P, g) { const L = 28, W = 7.6, D = 2.7, cw = 2.25, hs = -
   b.roofBox = { cz: at(0, 0, (Z0 + Z1) / 2).z, w: 2 * hw, d: Z1 - Z0 }; b.h = at(0, H, (Z0 + Z1) / 2).y - b.y;
   // overboard: a container sunk to its knees in the shallows, leaning, off the port bow, one door open and its cargo spilled; drums, crates and
   // sacks lost round the bow, planks afloat, the second crate in the shallows to starboard; her stern moored by a chain to a stake
-  { const o = at(-W / 2 - 3.2, 0, -4.4), yaw = Math.PI + 0.3, cy = gAt(b, o.x, o.z) - 0.6, C = container('contR', true);
+  { const o = at(-W / 2 - 3.2, 0, -4.4), yaw = Math.PI + 0.3, C = container('contR', true);
+    // (sunk from the lowest ground under it, not its middle: on a bank that falls to the water one end hung in the air; places round 2)
+    const cy = Math.min(...[[-1, -1], [-1, 1], [1, -1], [1, 1], [0, 0]].map(([u, v]) => gAt(b, o.x + Math.cos(yaw) * u * 1.22 + Math.sin(yaw) * v * 3.03, o.z - Math.sin(yaw) * u * 1.22 + Math.cos(yaw) * v * 3.03))) - 0.6;
     const m = new THREE.Matrix4().makeTranslation(o.x, cy, o.z).multiply(new THREE.Matrix4().makeRotationY(yaw)).multiply(new THREE.Matrix4().makeRotationX(0.07)).multiply(new THREE.Matrix4().makeRotationZ(0.13));
     for (const k in C) for (const q of C[k]) (k === 'iron' ? P : TL)[k].push(q.applyMatrix4(m));
     const ax = Math.sin(yaw), az = Math.cos(yaw); collideRun(b, o.x - ax * 2.4, o.z - az * 2.4, o.x + ax * 2.4, o.z + az * 2.4, 1.15, () => cy + 2.5);
@@ -1406,9 +1409,11 @@ function hermitYard(b, P) { const T = bag(), t = b.t || 0.45, hw = b.w / 2 + t /
   { const x = -1.15, y = b.y + 2.05; box(P, 'iron', 0.03, 0.03, 0.34, x, y, -hd - 0.17); lantern(P, x, y - 0.22, -hd - 0.32); lampAt(b, new THREE.Vector3(x, y - 0.22, -hd - 0.32), 'lantern'); }
   { const jz = -b.d / 2 - 11.4, jy = b.jy(jz), x = 0.78; rod(P, 'beam', x, jy - 0.6, jz, x, jy + 1.65, jz, 0.06, 6); box(P, 'beam', 0.05, 0.05, 0.45, x, jy + 1.6, jz - 0.2); lantern(P, x, jy + 1.32, jz - 0.38); lampAt(b, new THREE.Vector3(x, jy + 1.32, jz - 0.38), 'lantern'); collideRun(b, x, jz, x, jz, 0.1); }
   // the rowboat, tied alongside the jetty by its painter
-  { const bx = 1.95, bz = -b.d / 2 - 10.0, by = Math.max(WATER_Y + 0.32, gy(bx, bz) + 0.5), ry = Math.PI + 0.08, Bt = boatParts(), m = new THREE.Matrix4().makeTranslation(bx, by, bz).multiply(new THREE.Matrix4().makeRotationY(ry));
+  // (afloat 0.34 m deep, gunwale under the jetty's deck: at 0.14 m she rode on the ripples, keel in the air; places round 2)
+  { const bx = 1.95, bz = -b.d / 2 - 10.0, by = Math.max(WATER_Y + 0.12, gy(bx, bz) + 0.5), ry = Math.PI + 0.08, Bt = boatParts(), m = new THREE.Matrix4().makeTranslation(bx, by, bz).multiply(new THREE.Matrix4().makeRotationY(ry));
     for (const k of ['ceil', 'planks', 'beam']) for (const q of Bt[k]) P[k].push(q.applyMatrix4(m)); const bow = new THREE.Vector3(...Bt.bow).applyMatrix4(m), post = new THREE.Vector3(0.75, Math.max(gy(0.75, -b.d / 2 - 7), 0) + 0.58, -b.d / 2 - 7); // (the jetty's post ahead of her bow)
     for (let k = 0; k < 5; k++) { const f0 = k / 5, f1 = (k + 1) / 5, y = (f) => bow.y + (post.y - bow.y) * f - 0.25 * Math.sin(Math.PI * f); rod(P, 'planks', bow.x + (post.x - bow.x) * f0, y(f0), bow.z + (post.z - bow.z) * f0, bow.x + (post.x - bow.x) * f1, y(f1), bow.z + (post.z - bow.z) * f1, 0.016, 4); }
+    box(P, 'planks', 0.7, 0.03, 1.9, bx, WATER_Y + 0.03, bz, ry); // (her bottom boards, just over the water: the lake showed through her open hull)
     collideRun(b, bx + Math.sin(ry) * 1.3, bz + Math.cos(ry) * 1.3, bx - Math.sin(ry) * 1.3, bz - Math.cos(ry) * 1.3, 0.55, () => by - 0.25); }
   bake(b, [[T, null]]); }
 
