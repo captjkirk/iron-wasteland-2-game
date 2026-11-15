@@ -57,6 +57,14 @@ export function riverDist(x, z) { let best = 1e9; // (exported for the river's s
 { const g = seeds.filter(s => s.b === 'grass' && Math.hypot(s.x, s.z) > 170 && (CLASSIC ? Math.abs(s.x - riverRaw(s.z) - RIVER_SHIFT) > 120 : riverDist(s.x, s.z) > 120));
   if (g.length) lakes.push({ x: g[0].x, z: g[0].z, rx: 58, rz: 44, a: 0 }); }
 export { lakes };
+// a random world's lake bank: how high the ground may stand at (x, z), rising 0.45 from the lake's bowl (heightAt caps the ground
+// with it, so every lake has a walkable way out). It reaches far out: a pad on high ground near a lake had its top shaved off
+// by it (thorn-beacon-32's Frostline pad, 7 m, so no landmark found level ground), so a pond keeps away from every pad
+const bankCap = (l, x, z) => { const dx = x - l.x, dz = z - l.z, ca = Math.cos(l.a), sa = Math.sin(l.a);
+  return WATER_Y - 5 + Math.max(0, Math.hypot((dx * ca + dz * sa) / l.rx, (dz * ca - dx * sa) / l.rz) - 0.55) * Math.min(l.rx, l.rz) * 0.45; };
+// the highest a pad of this inner radius at (x, z) may stand and stay whole under these lakes' banks (a metre to spare)
+const underBanks = (x, z, inner, ls) => { let m = Infinity; for (const l of ls) if (!l.crater) for (let k = 0; k < 16; k++) { const a = k * Math.PI / 8;
+  m = Math.min(m, bankCap(l, x + Math.cos(a) * inner, z + Math.sin(a) * inner) - 1); } return m; };
 export const islands = []; // (slice 23: planned below, once the lakes are)
 
 // ── The passes: three saddles through the valley's ring, each toward a different land (not where the river cuts) ──
@@ -107,7 +115,7 @@ const padK = (x, z) => { let k = 0; for (const p of PADS) { const d = Math.abs(x
 for (let k = 0, tries = 0; k < SHAPE.ponds && tries < 60; tries++) { const a = V() * Math.PI * 2, r = 280 + V() * 170, x = Math.cos(a) * r, z = Math.sin(a) * r;
   const rx = 26 + V() * 30, rz = rx * (0.55 + V() * 0.4), turnA = V() * Math.PI, b = biomeWeights(x, z).best, oasis = V() < 0.3;
   if (Math.abs(x) > HALF - 70 || Math.abs(z) > HALF - 70 || b === 'swamp' || (b === 'desert' && !oasis) || riverDist(x, z) < rx + 50) continue;
-  if (lakes.some(l => Math.hypot(l.x - x, l.z - z) < Math.max(l.rx, l.rz) + rx + 60) || PADS.some(p => Math.hypot(p.x - x, p.z - z) < rx + p.outer + 30)) continue;
+  if (lakes.some(l => Math.hypot(l.x - x, l.z - z) < Math.max(l.rx, l.rz) + rx + 60) || PADS.some(p => Math.hypot(p.x - x, p.z - z) < rx + p.outer + 30 || underBanks(p.x, p.z, p.inner, [{ x, z, rx, rz, a: turnA }]) < p.h)) continue;
   lakes.push({ x, z, rx, rz, a: turnA, pond: b }); k++; }
 // ── Crater lakes and islands (slice 23, #52; random worlds only, so the classic world stands as it was). Jared, November 14,
 // 2026: a lake "that looked like it was a crater, and it was awesome!", and "some lakes that were larger had something like
@@ -170,6 +178,9 @@ function heightAt(x, z, w, bare = false) { // bare: without the town's shelf (to
   let tk = 0; if (!bare && PADS.length) for (const p of PADS) { const d = Math.abs(x - p.x) + Math.abs(z - p.z); if (d > p.outer * 1.5) continue;
     const k = smooth(p.outer, p.inner, Math.hypot(x - p.x, z - p.z)); if (k > 0) { h += (p.h + (fbm(x * 0.05, z * 0.05, 2) - 0.5) * 0.8 - h) * k; tk = Math.max(tk, k); } }
   // the river channel, then the lakes
+  // (a random world's lake banks first too: the river's gorge walls inside its own lake are cut from the bank, not from the full
+  // height of the land above it, which met the waterline steeper than a player climbs: grey-raven-62 and five more, 1.05 to 1.45)
+  if (!CLASSIC) for (const l of lakes) if (!l.crater) h = Math.min(h, bankCap(l, x, z));
   const rd = riverDist(x, z), halfW = 7 + fbm(z * 0.01, 9.1, 2) * 6, bed = WATER_Y - 2.4;
   if (rd < halfW + 40 && h > bed) h = bed + (h - bed) * smooth(halfW * 0.35, halfW + 30 + Math.min(40, Math.max(0, h - 10)) * 0.4, rd);
   for (const l of lakes) { const dx = x - l.x, dz = z - l.z, ca = Math.cos(l.a), sa = Math.sin(l.a); // (along the lake's own axes)
@@ -179,11 +190,10 @@ function heightAt(x, z, w, bare = false) { // bare: without the town's shelf (to
     const e = Math.hypot((dx * ca + dz * sa) / l.rx, (dz * ca - dx * sa) / l.rz) + (vnoise(x * 0.03, z * 0.03) - 0.5) * 0.25;
     if (CLASSIC && e < 1.5 && h > WATER_Y - 5) h = (WATER_Y - 5) + (h - (WATER_Y - 5)) * smooth(0.55, 1.35, e); // (a random world's bowl is the bank's cap below alone)
     // a walkable way out on every side: the bank rises no steeper than 0.6 (the owner was trapped in a pit lake, 2026-11-03)
-    // (a random world's: on the lake's own ellipse, no wobble, rising 0.45, so that with the shoreline's drop below, which
-    // steepens it about 1.42 times through its last 1.6 m, it stays well under the 1.05 a player climbs: 4242's river lake
-    // held the walk test at its rim on a 1.04 step, slice 13c. The classic world's lakes stay as they were)
-    const e0 = Math.hypot((dx * ca + dz * sa) / l.rx, (dz * ca - dx * sa) / l.rz);
-    h = CLASSIC ? Math.min(h, WATER_Y - 5 + Math.max(0, e - 0.55) * Math.min(l.rx, l.rz) * 0.6) : Math.min(h, WATER_Y - 5 + Math.max(0, e0 - 0.55) * Math.min(l.rx, l.rz) * 0.45); }
+    // (a random world's is bankCap, applied before the river: on the lake's own ellipse, no wobble, rising 0.45, so that with the
+    // shoreline's drop below, which steepens it about 1.42 times through its last 1.6 m, it stays well under the 1.05 a player
+    // climbs: 4242's river lake held the walk test at its rim on a 1.04 step, slice 13c. The classic world's lakes stay as they were)
+    if (CLASSIC) h = Math.min(h, WATER_Y - 5 + Math.max(0, e - 0.55) * Math.min(l.rx, l.rz) * 0.6); } // (a random world's: bankCap, before the river)
   for (const s of islands) { const d = Math.hypot(x - s.x, z - s.z); if (d < s.r + 16) h = Math.max(h, WATER_Y + 1.8 - Math.min(1, (d / s.r) ** 2) * 0.6 - Math.max(0, d - s.r) * 0.42 + (vnoise(x * 0.15, z * 0.15) - 0.5) * 0.3); } // (slice 23)
   // a clean shoreline: land just above the water stays up, land just below drops away, so nothing hugs the surface
   // (a random world's is 0.45 m over twice the height, which steepens a bank through it about 1.42 times, not 2.1: lakes' banks
@@ -228,6 +238,20 @@ for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const x = -HALF + i * 
     const r = Math.hypot(x, z), pass = CLASSIC ? 0 : passK(x, z, r, 14) * smooth(100, 130, r) * smooth(300, 265, r);
     const mask = smooth(95, 125, r) * smooth(-2, 10, RD[k]) * (1 - CAN[k]) * smooth(1.5, 6, Math.min(H[k], E[k])) * (1 - padK(x, z)) * (1 - pass);
     H[k] += (E[k] - H[k]) * mask; } }
+// A beach under the river's lake's steep banks (random worlds): the river and the land round its lake (a gorge wall, a Waste mesa's
+// edge) can meet its water steeper than a player climbs out (tawny-pike-74: a mesa edge, 1.09 at the waterline; the lake's bank cap
+// only holds ground down, it cannot soften what lies under it). So round that lake, ground below 2.5 m is filled up to a slope of 0.6
+// at the foot of anything steeper, a beach a few metres wide; filled only, never cut, so no way a player could walk is lost. Out from
+// 1.4 to 1.9 of the lake's radius the fill fades away (the slope it allows grows), so the river's own banks upstream are as they were
+if (!CLASSIC) { const lk = lakes[0], ca = Math.cos(lk.a), sa = Math.sin(lk.a), S = new Float32Array(N * N), TOP = WATER_Y + 2.5;
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const dx = -HALF + i * CELL - lk.x, dz = -HALF + j * CELL - lk.z, e = Math.hypot((dx * ca + dz * sa) / lk.rx, (dz * ca - dx * sa) / lk.rz);
+    if (e < 1.9) S[j * N + i] = 0.6 + Math.max(0, e - 1.4) * 40; }
+  const NB8 = [[-1, 0], [0, -1], [-1, -1], [1, -1]], D = [CELL, CELL, CELL * Math.SQRT2, CELL * Math.SQRT2];
+  for (let pass = 0, moved = 1; pass < 12 && moved; pass++) { moved = 0;
+    for (const dir of [1, -1]) for (let jj = 1; jj < SEG; jj++) for (let ii = 1; ii < SEG; ii++) { const i = dir > 0 ? ii : SEG - ii, j = dir > 0 ? jj : SEG - jj, k = j * N + i;
+      if (!S[k] || H[k] >= TOP) continue; let v = H[k];
+      for (let q = 0; q < 4; q++) v = Math.max(v, H[(j + NB8[q][1] * dir) * N + i + NB8[q][0] * dir] - S[k] * D[q]); // (the neighbours this sweep has already passed)
+      v = Math.min(v, TOP); if (v > H[k] + 1e-4) { H[k] = v; moved++; } } } }
 
 const hAt = (i, j) => H[Math.min(SEG, Math.max(0, j)) * N + Math.min(SEG, Math.max(0, i))];
 export const NORMAL = new Float32Array(N * N * 3), SLOPE = new Float32Array(N * N);

@@ -2,9 +2,9 @@
 // plans every seed's town, landmarks and raider camps in Node and checks them). planBuildings() runs before the props are
 // placed (they keep out of every footprint, and it adds the camps' scrap and the station's wrecks); buildings.js builds
 // the meshes, colliders and crates from these records.
-import { HALF, WATER_Y, SEED, CLASSIC, ENEMY } from './config.js';
+import { HALF, WATER_Y, SEED, CLASSIC, ENEMY, CAMP } from './config.js';
 import { mulberry32 } from './noise.js';
-import { groundY, biomeAt, slopeAt, isWet, canyonAt, street, reachable, lakes, islands } from './world.js';
+import { groundY, biomeAt, slopeAt, isWet, canyonAt, street, reachable, lakes, islands, PASSES } from './world.js';
 
 export const buildings = [], raiderCamps = [], places = [];
 const sites = [];
@@ -88,7 +88,10 @@ export function planBuildings() { const adds = []; // props for props.js to plac
     ['fungal', { w: 6.5, d: 6, h: 3.2, mat: 'wall', ruin: 0.6, roof: 'fallen', moss: true, furnish: 'rubble' }],
   ];
   const LAND_KINDS = { grass: 'farmhouse', tundra: 'aframe', desert: 'courtyard', swamp: 'stilt' }; // (slice 36, random worlds; where a kind finds no room, the old house)
-  for (const [bio, o] of LANDMARKS) { const k = !CLASSIC && LAND_KINDS[bio], ks = k && findSite(bio, 250, reach(k), o.minY), s = ks || findSite(bio, 250, 7, o.minY);
+  // (a random world whose land has no level site at all, even at findSite's second look, gets the old house on the gentlest reachable ground
+  // well inside it, as the frozen outpost does: jade-ember-89's Frostline pad sat on a mountain no one could climb, November 15, 2026)
+  for (const [bio, o] of LANDMARKS) { const k = !CLASSIC && LAND_KINDS[bio], ks = k && findSite(bio, 250, reach(k), o.minY),
+    s = ks || findSite(bio, 250, 7, o.minY) || (!CLASSIC && spot((x, z) => groundY(x, z) > (o.minY ?? WATER_Y + 1) && slopeAt(x, z) < 0.25 && deep(x, z, bio, 8), 220, 16));
     if (ks) kindAt(k, s.x, s.z, R() * 6.283, { biome: bio }); else if (s) bld('house', s.x, s.z, R() * 6.283, { ...o, biome: bio }); }
   // raider camps (IW1: brawlers, shooters and heavies round a fire, the cache locked while any of them lives)
   for (const [bio, crew] of [['waste', ['brawler', 'brawler', 'shooter']], ['ruins', ['brawler', 'shooter', 'heavy']], ['desert', ['shooter', 'brawler', 'heavy', 'shooter']]]) {
@@ -113,10 +116,12 @@ export function planBuildings() { const adds = []; // props for props.js to plac
 // and the moment it is (any creature whose name says spider), they are spiders, with no change here
 const SPIDER = Object.keys(ENEMY).find(k => /spider/.test(k));
 // the nearest spot beyond minR that suits, clear of everything planned by gap, that a player can reach (a place whose ground
-// findSite's level test is too strict for: the barge on its shore, a second building in a land that already has one)
+// findSite's level test is too strict for: the barge on its shore, a second building in a land that already has one), and out of
+// every pass's way out, as world.js's pads are (4242's barge lay across its swamp pass and the walk out stopped at it, November 15, 2026)
+const inPass = (x, z, w) => PASSES.some(q => { const along = x * Math.cos(q.a) + z * Math.sin(q.a); return along > 120 && along < 330 && Math.abs(z * Math.cos(q.a) - x * Math.sin(q.a)) < w; });
 function spot(ok, minR, gap) { let best = null, bd = 1e9;
   for (let z = -HALF + 70; z < HALF - 70; z += 6) for (let x = -HALF + 70; x < HALF - 70; x += 6) { const d = Math.hypot(x, z);
-    if (d < minR || d >= bd || !clearOf(x, z, gap) || !reachable(x, z) || !ok(x, z)) continue; best = { x, z }; bd = d; } return best; }
+    if (d < minR || d >= bd || !clearOf(x, z, gap) || inPass(x, z, gap) || !reachable(x, z) || !ok(x, z)) continue; best = { x, z }; bd = d; } return best; }
 function planPlaces(adds) {
   const CLEAR = { radio: 20, plane: 27, shrooms: 13, outpost: 13, barge: 18, island: 11 }; // (props keep this far off the middle: no hoodoo hides the mast)
   const place = (kind, name, x, z, r, o = {}) => { const p = { kind, name, x, z, r, guards: [], seen: false, reached: false, heard: false, ...o }; places.push(p); if (CLEAR[kind]) sites.push({ x, z, r: CLEAR[kind] }); return p; };
@@ -167,6 +172,9 @@ function planPlaces(adds) {
       return; }
     sites.push({ x: s.x, z: s.z, r: 2 }); s.crate = { x: s.x + (R() - 0.5) * s.r * 0.6, z: s.z + (R() - 0.5) * s.r * 0.6 };
     if (R() < 0.5) adds.push([R() < 0.5 ? 'hulk' : 'ruinwall', { x: s.x + s.r * 0.5, z: s.z - s.r * 0.3, s: 0.8, ry: R() * 6.283, v: 1 }]); });
+  // a clear way into every place from the camp's side, 30 m long: no tree, rock or wall stub stands across it (props.js drops what lands on a
+  // site, so nothing else moves; added last, so nothing planned above moves either). salt-tor-85's terrain moved a little and a wall stub fell on it
+  for (const p of places) { const a = Math.atan2(CAMP.z - p.z, CAMP.x - p.x); for (let t = p.r - 6; t <= p.r + 30; t += 3) sites.push({ x: p.x + Math.cos(a) * t, z: p.z + Math.sin(a) * t, r: 2.5 }); }
 }
 
 
