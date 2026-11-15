@@ -134,7 +134,8 @@ requestAnimationFrame(frame);
 let bgClock = null; try { bgClock = new Worker(URL.createObjectURL(new Blob(['setInterval(() => postMessage(0), 50)'], { type: 'text/javascript' }))); } catch { /* no workers here: a hidden host's world waits, as before */ }
 if (bgClock) bgClock.onmessage = () => { const now = performance.now(); if (!document.hidden || !coop() || joining() || !isRunning() || now - last < 40) return;
   const dt = Math.max(0, Math.min(0.05, (now - last) / 1000)); last = now; clock += dt; update(dt, clock); };
-addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+const fit = () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); };
+addEventListener('resize', fit); fit(); // (and once now: a window resized while the world was building drew in a corner until the next resize, Jared, 2026-11-15)
 
 // Test hooks for the headless check (scripts/shots.js): not used by play.
 window.__iw = { selected, portraits: portraitStats, get rules() { return rules; }, /* the start menu (menu.js) */ fireflies: fireflyStats, explored: exploredStats, others, net, built, deliver, /* the gate of slice 12 */ logEvent, playlogState, tickWatch, checkCrates, checkMsg, solidAt, pickups, HALF, /* slice 13d */
