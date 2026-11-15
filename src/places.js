@@ -50,11 +50,10 @@ export function tickPlaces(dt, holding) { if (!G) return; const P = G.player; t 
   if (titleT > 0 && (titleT -= dt) <= 0) titleEl.style.opacity = 0;
   if (dirty || (t % 1 < dt)) list(); } // (once a second: the distances and bearings follow the player)
 
-// the name, large and fading, across the top of the screen (built here so index.html stays as it is)
+// the name, large and fading, across the top of the screen (its look: #place-title in index.html, with the other screens)
 function title(s) { if (!titleEl) { titleEl = document.createElement('div'); titleEl.id = 'place-title';
-    titleEl.style.cssText = 'position:fixed;left:0;right:0;top:22%;text-align:center;pointer-events:none;z-index:20;color:var(--accent,#e0a040);font-size:clamp(26px,5vw,48px);letter-spacing:.14em;text-transform:uppercase;text-shadow:0 2px 10px #000c;opacity:0;transition:opacity 1.2s';
     document.body.appendChild(titleEl); }
-  titleEl.innerHTML = '<div style="font-size:.32em;letter-spacing:.4em;color:var(--ink,#f3e6cc);opacity:.8">Discovered</div>'; titleEl.append(s); titleEl.style.opacity = 1; titleT = 5; }
+  titleEl.innerHTML = '<small>Discovered</small>'; titleEl.append(s); titleEl.style.opacity = 1; titleT = 5; }
 // the pause screen's list: found, seen, heard on the radio, or still to find
 function list() { dirty = false; const pw = document.getElementById('pauseworld'); if (!pw || !places.length) return;
   if (!listEl) { listEl = document.createElement('div'); listEl.id = 'pauseplaces'; listEl.className = 'sub'; listEl.style.cssText = 'margin-top:8px;line-height:1.5'; pw.after(listEl); }

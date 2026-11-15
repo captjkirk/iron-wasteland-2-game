@@ -22,7 +22,7 @@ const BIOME_WIND = { tundra: 0.03, waste: 0.025, desert: 0.02 };
 import { buildCharacter, buildViewModel } from './characters.js';
 import { logEvent, tickLog, savePlayLog, startVideo, recording } from './playlog.js';
 import { tickWatch, watchStart, solidAt } from './watch.js';
-import { buildMenu, menuKey, showStep } from './menu.js';
+import { buildMenu, menuKey, showStep, moveFocus, padIn } from './menu.js';
 import { others, coop, joining, gone, nearestP, everyone, hurt, salvagedProp, requestJoin, tickCoop, followHost, net, send, clearOthers, rules, pvp, modeKey, modeName, RIVAL, level } from './coop.js';
 import { craftOpen, toggleCraft, craftKey, craftPad, renderMenu, bedNear, sleep, wake, tickSleep, bedRespawn, fireSpots, benchNear } from './craft.js';
 import { tickHarvest, harvestTarget, harvestName, harvestDoing, prepHarvest } from './harvest.js';
@@ -228,13 +228,14 @@ export function setCam(m) { camMode = m; snapCam = true; if (running) logEvent('
 // ── Input: keyboard and mouse, plus the Gamepad API (Xbox and PlayStation pads on a Mac) ──
 function bindInput() {
 addEventListener('pointerdown', unlockAudio);
-addEventListener('keydown', e => { if (e.code === 'Tab' && running) { e.preventDefault(); if (e.repeat) return; } if (running && !paused && (craftKey(e) || buildKey(e))) { relock(); return; } // (off play Tab moves focus: the menu screens, How to play, Settings); the craft menu's keys (slice 11), build mode's (slice 12)
+addEventListener('keydown', e => { if (e.code === 'Tab' && running && !paused) { e.preventDefault(); if (e.repeat) return; } if (running && !paused && (craftKey(e) || buildKey(e))) { relock(); return; } // (off play Tab moves focus: the menu screens, How to play, Settings); the craft menu's keys (slice 11), build mode's (slice 12)
   if (!paused || e.code === 'KeyP' || e.code === 'Escape') keys.add(e.code); unlockAudio(); if (!running) { menuKey(e); return; } // (the start menu's keys: menu.js)
   if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
   if (e.code === 'F9') { logEvent('mark', { x: +player.x.toFixed(1), z: +player.z.toFixed(1), y: +player.y.toFixed(1), biome: biomeAt(player.x, player.z) });
     // (slice 13d: a game that records sends the mark with a picture, and the findings report lists it; a download only where nothing records)
     if (recording()) log('Spot marked: it goes in the play log with a picture, for Claude to look at.'); else { savePlayLog(); log('Spot marked and play log saved (a JSON file in your downloads).'); } }
   if (e.code === 'KeyM') { log(toggleMute() ? 'Sound off (M).' : 'Sound on (M).'); document.getElementById('snd').checked = !isMuted(); }
+  if (paused && /^Arrow(Up|Down)$/.test(e.code)) { e.preventDefault(); moveFocus(e.code === 'ArrowDown' ? 1 : -1, pauseBox); } // (the pause screen by keyboard: Tab and the arrows move, Enter presses; 2026-11-15)
   if (paused) return; // (in co-op the world runs on behind the pause screen: no war cry or turret from it)
   if (e.code === 'KeyV') setCam(CAMS[(CAMS.indexOf(camMode) + 1) % 3]);
   if (e.code === 'KeyF' && !e.repeat) secondary();
@@ -261,10 +262,14 @@ export function readPad() { const p = [...(navigator.getGamepads?.() || [])].fin
   const dz = v => Math.abs(v) < 0.15 ? 0 : v, b = i => p.buttons[i]?.pressed, edge = i => b(i) && !padPrev[i];
   const out = { mx: dz(p.axes[0]), mz: dz(p.axes[1]), lx: dz(p.axes[2]), ly: dz(p.axes[3]), atk: b(7) || b(2), jump: edge(0), jumpHeld: b(0), dive: b(10), use: edge(1), useHeld: b(1), sec: edge(4) || edge(6), cam: edge(3), pause: edge(9), left: edge(14), right: edge(15), menu: edge(8), up: edge(12), down: edge(13), downHeld: b(13), rb: edge(5), tearHeld: b(5), fixHeld: b(15), close: edge(11) };
   padPrev = p.buttons.map(x => x.pressed); return out; }
-export function togglePause(on = !paused, tent = false) { if (!running) return; paused = on; if (on) pauseChars(tent); setMusicPaused(on); if (on) { keys.clear(); mouseDown = false; } logEvent(on ? 'pause' : 'resume'); document.getElementById('pause').classList.toggle('hidden', !paused); syncCursor();
-  document.getElementById(paused ? 'pause-settings' : 'menu-settings').appendChild(document.getElementById('settings'));
-  document.getElementById(paused ? 'pause-modes' : 'menu-modes').appendChild(document.getElementById('modes')); // (slice 33: the host's rules)
-  if (paused && document.pointerLockElement) document.exitPointerLock?.(); }
+export function togglePause(on = !paused, tent = false) { if (!running) return; paused = on; windLevel(windNow() * hush()); riverLevel(riverNow() * hush()); if (on) pauseChars(tent); setMusicPaused(on); if (on) { keys.clear(); mouseDown = false; } logEvent(on ? 'pause' : 'resume'); document.getElementById('pause').classList.toggle('hidden', !paused); syncCursor();
+  homePanels();
+  if (paused && document.pointerLockElement) document.exitPointerLock?.();
+  if (paused) document.getElementById('resume').focus(); else if (pauseBox.contains(document.activeElement)) document.activeElement.blur(); } // (a keyboard or a pad starts on Resume)
+const pauseBox = document.getElementById('pause');
+// Settings and the host's rules (slice 33) live on the pause screen while paused, on the start menu otherwise
+function homePanels() { document.getElementById(paused ? 'pause-settings' : 'menu-settings').appendChild(document.getElementById('settings'));
+  document.getElementById(paused ? 'pause-modes' : 'menu-modes').appendChild(document.getElementById('modes')); }
 // Settings (menu and pause screen share one panel): mouse/stick look sensitivity, invert up/down, sound. Quality is in main.js.
 export const settings = { sens: 1, invertY: false, music: 0.5 };
 try { const s = JSON.parse(localStorage.getItem('iw2.settings') || '{}'); if (s.sens > 0) settings.sens = s.sens; settings.invertY = !!s.invertY; if (s.music >= 0 && s.music <= 1) settings.music = s.music; } catch { /* storage blocked */ }
@@ -279,7 +284,7 @@ function bindSettings() {
   document.getElementById('resume').onclick = () => togglePause(false);
   document.getElementById('tomenu').onclick = () => location.reload();
   // #60: the pause screen's row of characters to switch to in place (switchChar)
-  const row = document.getElementById('pause-chars'); CHARS.forEach((c, i) => { const b = document.createElement('button'); b.className = 'q';
+  const row = document.getElementById('pause-chars'); CHARS.forEach((c, i) => { const b = document.createElement('button'); b.className = 'q'; b.type = 'button';
     b.innerHTML = `<i style="background:#${c.color.toString(16).padStart(6, '0')}"></i>${c.title}`; b.title = `${c.player}, ${c.maxHp} HP`; b.onclick = () => switchChar(i); row.appendChild(b); });
   // losing the mouse lock mid-game (Esc) opens the pause screen
   // (in build mode, Esc lets the mouse go and ends building instead: slice 12)
@@ -294,7 +299,7 @@ function bindSettings() {
 const atTent = (x = player.x, z = player.z) => Math.hypot(x - campTent.x, z - campTent.z) < 2.8;
 let tentOpen = false;
 function pauseChars(tent = tentOpen) { tentOpen = tent; document.getElementById('pause-switch').classList.toggle('hidden', !tent); document.querySelector('#pause h1').textContent = tent ? 'THE CAMP TENT' : 'PAUSED';
-  const off = player.dead || player.down > 0 || player.out; [...document.getElementById('pause-chars').children].forEach((b, i) => { b.disabled = !!off || CHARS[i] === player.ch; b.classList.toggle('on', CHARS[i] === player.ch); }); }
+  const off = player.dead || player.down > 0 || player.out; [...document.getElementById('pause-chars').children].forEach((b, i) => { b.disabled = !!off || CHARS[i] === player.ch; b.classList.toggle('on', CHARS[i] === player.ch); b.setAttribute('aria-pressed', String(CHARS[i] === player.ch)); }); }
 export function switchChar(i) { const ch = CHARS[i]; if (!running || !tentOpen || !atTent() || !ch || ch === player.ch || player.dead || player.down > 0 || player.out) return false;
   const share = player.hp / player.maxHp, from = player.ch.id; player.ch = ch; player.maxHp = ch.maxHp; player.hp = Math.max(1, Math.round(ch.maxHp * share));
   scene.remove(player.mesh); player.mesh = buildCharacter(ch); scene.add(player.mesh); applyUp(player.mesh, ch.id, upgraded(ch.id)); // (an upgrade bought for this one earlier comes back with it)
@@ -531,10 +536,11 @@ function fallHurt(h, gy) { const d = Math.round((h - FALL_SAFE) * FALL_HP); if (
   if (WATER_Y - groundY(player.x, player.z) > 0.4 && gy < WATER_Y) { logEvent('fall', { h: +h.toFixed(1), dmg: 0, water: true }); return; }
   logEvent('fall', { h: +h.toFixed(1), dmg: d }); floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `-${d}`, '#ff8a6a', d >= 20); hurtPlayer(d, 'fall'); }
 // no bed, no respawn (the owner's ruling, 2026-11-03; IW1 respawns you only at a bed you built): death ends the game
-export function gameOver(why = null) { clearPoison(); riverLevel(0); /* (the quality pass: the rush played on under the start menu) */ toggleCraft(false); running = false; paused = false; syncCursor(); net.host = null; clearOthers(); nameTags([]); const t = Math.round((performance.now() - player.startT) / 1000), by = LABEL[player.killedBy] || 'the wasteland';
+export function gameOver(why = null) { clearPoison(); riverLevel(0); /* (the quality pass: the rush played on under the start menu) */ toggleCraft(false); running = false; paused = false; homePanels(); syncCursor(); /* (Settings and the game rows go back to the menu even when the game ends paused, the quality pass) */ net.host = null; clearOthers(); nameTags([]); const t = Math.round((performance.now() - player.startT) / 1000), by = LABEL[player.killedBy] || 'the wasteland';
   logEvent('game-over', { by: player.killedBy, secs: t, kills: player.kills, ...player.inv });
-  if (document.pointerLockElement) document.exitPointerLock(); for (const id of ['hud-tl', 'hud-tr', 'hud-b', 'cross', 'pause', 'breath', 'prompt']) document.getElementById(id).classList.add('hidden');
-  document.querySelector('#menu .sub').textContent = why || `${player.ch.player} fell to ${/^[AEIOU]/.test(by) ? 'an' : 'a'} ${by.toLowerCase()} after ${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}, with ${player.kills} kills. No bed to wake in: next time build a craftbench, then a bed, and sleep in it (Tab crafts, E sleeps). Pick who walks out next.`;
+  if (document.pointerLockElement) document.exitPointerLock(); for (const id of ['hud-tl', 'hud-tr', 'hud-b', 'cross', 'pause', 'breath', 'prompt', 'downed']) document.getElementById(id).classList.add('hidden');
+  const fallen = document.getElementById('fallen'); fallen.classList.remove('hidden'); fallen.querySelector('h2').textContent = why ? 'GAME OVER' : 'FALLEN'; // (a plate on the title; the tagline stays)
+  fallen.querySelector('p').textContent = why || `${player.ch.player} fell to ${/^[AEIOU]/.test(by) ? 'an' : 'a'} ${by.toLowerCase()} after ${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}, with ${player.kills} kill${player.kills === 1 ? '' : 's'}. Next time: build a craftbench, then a bed, and sleep in it to wake there.`;
   document.getElementById('menu').classList.remove('hidden'); showStep('title'); }
 // a few passes: pushing out of one circle can push into its neighbour; feet at or above a solid's top pass over it
 // (slice 12: a gate lets players through; enemies only while it is held open. Only the player's own move passes feet.)
@@ -550,12 +556,13 @@ let MEAT = null; function meat() { if (MEAT) return MEAT; MEAT = new THREE.Group
   const n1 = new THREE.Mesh(new THREE.SphereGeometry(0.024, 8, 6), bone), n2 = n1.clone(); n1.position.set(0.016, 0, 0.25); n2.position.set(-0.016, 0, 0.25); MEAT.add(a, b, n1, n2); MEAT.rotation.set(0.5, 0.6, 0); MEAT.visible = false; camera.add(MEAT); return MEAT; }
 let padActive = false; const breathEl = document.getElementById('breath');
 export function update(dt, t) {
-  const rawPad = readPad(); if (rawPad?.pause) togglePause(); if (paused && !coop()) return; // in co-op the world goes on behind the pause screen
+  const rawPad = readPad(), was = paused; if (rawPad?.pause) togglePause(); if (was && paused && rawPad) { if (rawPad.use) togglePause(false); else padIn(pauseBox, { ...rawPad, pause: false }); } // (the pause screen by pad: the d-pad moves, A presses, B resumes)
+  if (paused && !coop()) return; // in co-op the world goes on behind the pause screen
   // the craft menu (slice 11): View on a pad opens and closes it; while it is open the pad drives it, and alone the world waits
-  if (rawPad?.menu && !paused && !player.dead && !(player.down > 0)) toggleCraft(); const inMenu = craftOpen(); if (inMenu) { craftPad(rawPad); renderMenu(); if (!coop()) return; }
+  if (rawPad?.menu && !paused && !player.dead && !(player.down > 0)) toggleCraft(); const inMenu = craftOpen(); if (inMenu) { craftPad(paused || was ? null : rawPad); /* (a press on the pause screen does not also craft behind it in co-op, review) */ renderMenu(); if (!coop()) return; }
   // (the press that closed the menu does nothing else; that comment used to sit mid-line here and swallowed the padActive
   // line after it, so the prompts never showed pad buttons: found in slice 12)
-  const pad = paused || inMenu ? null : rawPad;
+  const pad = paused || was || inMenu ? null : rawPad; // (the press that closed the pause screen does nothing else: B there, at the tent, used to open it again)
   if (pad && (pad.mx || pad.mz || pad.lx || pad.ly || pad.atk)) padActive = true; if (keys.size || mouseDown) padActive = false;
   // build mode (slice 12): A places, B ends it, RB and the d-pad turn the piece; those presses do nothing else
   if (pad && building()) { buildPad(pad); pad.jump = pad.use = pad.atk = pad.sec = pad.rb = pad.left = pad.right = false; pad.useHeld = pad.tearHeld = pad.fixHeld = false; }
@@ -859,10 +866,13 @@ export function update(dt, t) {
   else { campT = 0; warmLogged = false; }
   tickLog(dt, { player, cam: camMode, biome: biomeAt(player.x, player.z), fps: lastFps, enemies }, il > 0.1 && !player.dead); tickWatch(dt); // slice 13d
   tickCoop(dt); tickEffects(dt); tickFireflies(dt, camera.position, true); setListener(player.x, player.z, camMode === 'top' ? topYaw : player.yaw);
-  windLevel(0.03 + Math.min(0.06, Math.max(0, player.y - 20) / 600) + W.wind + (BIOME_WIND[biomeAt(player.x, player.z)] || 0)); setMusicMode(isNight() ? 'night' : 'day', dt); // (the 'boss' track is ready in audio.js for when IW2 has bosses)
+  windLevel(windNow() * hush()); setMusicMode(isNight() ? 'night' : 'day', dt); // (the 'boss' track is ready in audio.js for when IW2 has bosses)
   ambient(dt, biomeAt(player.x, player.z), nightK(), Math.hypot(player.x, player.z) < SAFE_R); // (slice 13: storms, the open biomes' wind, the night's sounds)
-  riverLevel(running ? 0.1 * Math.max(0, 1 - riverDist(player.x, player.z) / 45) ** 2 : 0); /* (0: a game over earlier in this frame; the quality pass) */ // (slice 31: the river rushes as you near it)
+  riverLevel(riverNow() * hush()); // (slice 31: the river rushes as you near it)
 }
+// the wind and the river: on the pause screen a quarter as loud, like the music pausing (the quality pass, 2026-11-15: they kept their volume)
+const hush = () => paused ? 0.25 : 1, windNow = () => 0.03 + Math.min(0.06, Math.max(0, player.y - 20) / 600) + W.wind + (BIOME_WIND[biomeAt(player.x, player.z)] || 0);
+const riverNow = () => running ? 0.1 * Math.max(0, 1 - riverDist(player.x, player.z) / 45) ** 2 : 0; // (0: a game over earlier in this frame; the quality pass)
 const FLOOR = (x, z) => floorAt(x, z, groundY(x, z)); // (a creature's feet on a house floor)
 const HUNTS = ['chase', 'windup', 'recover', 'emerge', 'siege'], SMELL = new Set(['wolf', 'dust_hound', 'bear']);
 const HEATERS = () => places.filter(q => q.heater).map(q => ({ ...q.heater, heater: true })); // slice 23
@@ -900,7 +910,12 @@ function perfHint(fps, dt) { if (slowHinted || navigator.webdriver || paused || 
   slowT = fps > 0 && fps < 24 ? slowT + dt : 0; if (slowT > 12) { slowHinted = true; log('Running slowly here: try Quality → Low (P opens settings).'); } }
 export function hud(fps, dt = 0) { perfHint(fps, dt); lastFps = fps; if (paused) pauseChars(); // (the world runs on in co-op: down or up again while paused, review)
   const watch = player.out && [...others.values()].find(o => !o.out); // co-op: down, or out and watching a friend
-  document.getElementById('name').textContent = `${player.ch.player.toUpperCase()} · ${player.ch.title}   ` + (player.out ? `OUT${watch ? ' · watching ' + watch.name : ''}` : player.down > 0 && rules.ffa ? `KNOCKED OUT · back in ${Math.ceil(player.down)} s` : player.down > 0 ? `DOWN ${Math.ceil(player.down)} s · ${player.revT > 0 ? `${watch?.name || 'a friend'} is reviving you ${Math.round(player.revT / 2.5 * 100)}%` : 'a friend can revive you (they hold E beside you)'}` : '').trimEnd(); // health moved onto the bar (#37)
+  document.getElementById('name').textContent = `${player.ch.player.toUpperCase()} · ${player.ch.title}`; // health moved onto the bar (#37)
+  // a fall says so in the middle of the screen, large (2026-11-15; it used to be a line after the name): down and how to get up, knocked out, out
+  const dn = player.out ? ['OUT', watch ? `Watching ${watch.name} until everyone is out` : 'Watching the others'] : player.down > 0 && rules.ffa ? ['KNOCKED OUT', `Back in ${Math.ceil(player.down)} s at your bed or the camp`]
+    : player.down > 0 ? [`DOWN · ${Math.ceil(player.down)} s`, player.revT > 0 ? `${watch?.name || 'A friend'} is reviving you: ${Math.round(player.revT / 2.5 * 100)}%` : 'A friend can revive you: they stand beside you and hold E']
+    : player.dead > 0 ? ['DOWN', `${player.ch.player} went down…`] : null;
+  const dEl = document.getElementById('downed'); dEl.classList.toggle('hidden', !dn); if (dn) { if (!dEl.firstChild) dEl.innerHTML = '<b></b><span></span>'; dEl.firstChild.textContent = dn[0]; dEl.lastChild.textContent = dn[1]; }
   document.getElementById('hpfill').style.width = Math.max(0, player.hp / player.maxHp * 100) + '%';
   document.getElementById('hpnum').textContent = `${Math.max(0, Math.ceil(player.hp))} / ${player.maxHp}`;
   document.getElementById('biome').textContent = `${BIOME[biomeAt(player.x, player.z)].label} · Day ${day.n} · ${phase()}`; // (slice 13: the time of day)

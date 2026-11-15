@@ -16,11 +16,6 @@ export function tickPoison(dt) { let left = 0;
   for (let i = doses.length - 1; i >= 0; i--) { const d = doses[i]; acc += d.dps * Math.min(dt, d.t); d.t -= dt; if (d.t <= 0) doses.splice(i, 1); else left = Math.max(left, d.t); }
   show(left); const n = Math.floor(acc); acc -= n; return n; }
 function show(secs) {
-  if (!label) { if (!secs) return; const st = document.createElement('style');
-    st.textContent = `#poison { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); z-index: 20; pointer-events: none; font: 700 18px/1.2 system-ui, sans-serif;
-        color: #f4ffd8; background: rgba(24, 32, 12, .82); border: 2px dashed #c8ec5a; border-radius: 8px; padding: 6px 14px; letter-spacing: .04em; }
-      #poison-edge { position: fixed; inset: 0; pointer-events: none; z-index: 19; box-shadow: inset 0 0 70px 24px rgba(170, 225, 70, .5); animation: poisonPulse 1.1s ease-in-out infinite alternate; }
-      @keyframes poisonPulse { from { opacity: .3 } to { opacity: 1 } }
-      @media (prefers-reduced-motion: reduce) { #poison-edge { animation: none; opacity: .7 } }`;
-    label = Object.assign(document.createElement('div'), { id: 'poison' }); edge = Object.assign(document.createElement('div'), { id: 'poison-edge' }); document.head.append(st); document.body.append(edge, label); }
+  if (!label) { if (!secs) return; // (its look is in index.html with the other screens, 2026-11-15)
+    label = Object.assign(document.createElement('div'), { id: 'poison' }); edge = Object.assign(document.createElement('div'), { id: 'poison-edge' }); document.body.append(edge, label); }
   label.hidden = edge.hidden = !secs; if (secs) { const t = `☠ Poisoned · ${Math.ceil(secs)} s`; if (label.textContent !== t) label.textContent = t; } }

@@ -46,10 +46,11 @@ export function buildMenu() {
 
 const nightNow = () => NIGHTS.find(n => n.ffa === rules.ffa && n.lvl === rules.lvl && (!n.together || net.role === 'host'));
 function showNights() { const on = custom ? null : nightNow();
-  for (const b of $('nights').children) { const n = NIGHTS.find(q => q.id === b.dataset.id); b.classList.toggle('on', on ? b.dataset.id === on.id : b.dataset.id === 'own'); b.classList.toggle('hidden', !!n?.together && net.role !== 'host'); }
+  for (const b of $('nights').children) { const n = NIGHTS.find(q => q.id === b.dataset.id); const is = on ? b.dataset.id === on.id : b.dataset.id === 'own'; b.classList.toggle('on', is); b.setAttribute('aria-pressed', String(is)); b.classList.toggle('hidden', !!n?.together && net.role !== 'host'); }
   $('modes-wrap').classList.toggle('hidden', !!on); $('setup-next').querySelector('span').textContent = modeName(); }
 
 export function showStep(s) { if (s === 'setup' && joiner()) s = 'chars'; step = s; menu.dataset.step = s;
+  (s === 'chars' ? $('go') : s === 'setup' ? $('setup-next').parentElement : $('title-go')).after($('loading')); // (the status line goes with the screen: a joiner waits on the characters, the quality pass)
   for (const k of STEPS) $('step-' + k).classList.toggle('hidden', k !== s);
   if (s === 'setup') { if (!nightNow()) custom = true; showNights(); }
   if (s === 'chars') { place(); $('chars-summary').textContent = joiner() ? 'Joining the host\'s game: the host chose what you play' : `${modeName()} · World ${SEED_TEXT}`; }
@@ -79,14 +80,20 @@ export function menuKey(e) { if (isRunning()) return; const dlg = openDialog();
   if (step === 'setup' && (e.code === 'ArrowDown' || e.code === 'ArrowUp')) { e.preventDefault(); moveFocus(e.code === 'ArrowDown' ? 1 : -1); }
   // the title: the arrows move between Press Enter, How to play and Settings (a keyboard alone reaches them)
   if (step === 'title' && /^Arrow(Up|Down|Left|Right)$/.test(e.code)) { e.preventDefault(); moveFocus(e.code === 'ArrowDown' || e.code === 'ArrowRight' ? 1 : -1); } }
-function moveFocus(d, box = $('step-' + step)) { const list = [...box.querySelectorAll('button:not([disabled]), input')].filter(b => b.offsetParent);
+export function moveFocus(d, box = $('step-' + step)) { const list = [...box.querySelectorAll('button:not([disabled]), input')].filter(b => b.offsetParent);
   const i = list.indexOf(document.activeElement); (list[i < 0 ? 0 : (i + d + list.length) % list.length])?.focus(); }
+// a pad inside a box of controls (How to play, Settings, the pause screen): A presses the focused button or ticks the focused box,
+// the d-pad moves up and down, and left and right slide a focused slider (or move, elsewhere)
+export function padIn(box, p) { const f = box.contains(document.activeElement) ? document.activeElement : null;
+  if (p.jump || p.pause) { if (f?.tagName === 'BUTTON' || f?.type === 'checkbox') f.click(); return; }
+  if ((p.left || p.right) && f?.type === 'range') { p.right ? f.stepUp() : f.stepDown(); f.dispatchEvent(new Event('input', { bubbles: true })); return; }
+  if (p.up || p.down || p.left || p.right) moveFocus(p.down || p.right ? 1 : -1, box); }
 // the world-name box (main.js) hands these back to the menu: Esc leaves it for the chosen game night, Up and Down move on
 export function leaveSeedBox(e) { e.preventDefault(); if (e.code === 'Escape') { e.stopPropagation(); ($('nights').querySelector('.on') || $('setup-next')).focus(); } }
 // a pad: A presses the focused button (or goes on), B goes back, the d-pad moves
 export function menuPad() { const p = readPad(); if (!p) return; const dlg = openDialog();
   // How to play or Settings open: B closes it, A presses the focused button (Close among them), the d-pad moves
-  if (dlg) { if (p.use) dlg.close(); else if (p.jump || p.pause) { const f = document.activeElement; if (f?.tagName === 'BUTTON' && dlg.contains(f)) f.click(); } else if (p.up || p.down) moveFocus(p.down ? 1 : -1, dlg); return; }
+  if (dlg) { if (p.use) dlg.close(); else padIn(dlg, p); return; }
   if (p.use) return back();
   if (p.jump || p.pause) { const f = document.activeElement; if (f?.tagName === 'BUTTON' && $('step-' + step).contains(f) && !f.closest('.card')) { f.click(); if (f.closest('.night:not(.own)')) next(); } else next(); return; }
   if (step === 'chars') { if (p.left) selectCard((sel + CHARS.length - 1) % CHARS.length); if (p.right) selectCard((sel + 1) % CHARS.length); }

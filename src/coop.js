@@ -66,8 +66,9 @@ export function setRules(r) { if (joining()) return; Object.assign(rules, r); tr
 const NOTE = { ffa: 'Every player for themselves: weapons hurt everyone, nobody revives a rival, and a knocked-out player is back at their bed or the camp. A creature scores 1, knocking out a rival 3.',
   coop: 'A team against the wasteland: you cannot hurt each other, and you revive a friend who is down.' };
 function showRules() { const $ = (id) => document.getElementById(id);
-  for (const k in LEVELS) $('mode-' + k).classList.toggle('on', rules.lvl === k);
-  $('mode-coop').classList.toggle('on', !rules.ffa); $('mode-ffa').classList.toggle('on', rules.ffa);
+  const on = (id, v) => { $(id).classList.toggle('on', v); $(id).setAttribute('aria-pressed', String(v)); }; // (the chosen one says so without colour: a check mark and aria-pressed, index.html)
+  for (const k in LEVELS) on('mode-' + k, rules.lvl === k);
+  on('mode-coop', !rules.ffa); on('mode-ffa', rules.ffa);
   $('modenote').textContent = NOTE[modeKey()];
   $('pausemode').innerHTML = `Game: <b>${modeName()}</b>${joining() ? ' · the host\'s choice' : ''}`; $('pausemode').title = NOTE[modeKey()]; $('pausemode').classList.toggle('hidden', !net.role); }
 document.getElementById('mode-coop').onclick = () => setRules({ ffa: false });

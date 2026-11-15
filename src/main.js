@@ -46,8 +46,8 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, Q.drawDist); scene.add(camera);
 
 // quality picker on the menu (a change reloads the page, since antialiasing is fixed at start)
-const qrow = document.getElementById('quality');
-for (const [k, v] of Object.entries(QUALITY)) { const b = document.createElement('button'); b.textContent = v.label; b.className = 'q' + (k === QUALITY_KEY ? ' on' : '');
+const qrow = document.getElementById('quality'); document.documentElement.dataset.q = QUALITY_KEY; // (Low draws the panels without blur: index.html)
+for (const [k, v] of Object.entries(QUALITY)) { const b = document.createElement('button'); b.textContent = v.label; b.type = 'button'; b.className = 'q' + (k === QUALITY_KEY ? ' on' : ''); b.setAttribute('aria-pressed', String(k === QUALITY_KEY));
   b.onclick = () => { if (k !== QUALITY_KEY) { logEvent('quality', { from: QUALITY_KEY, to: k }); setQuality(k); } }; qrow.appendChild(b); }
 
 // the world's seed (slice 13c): its name on the menu and the pause screen; New world rolls another, a typed name plays that one
