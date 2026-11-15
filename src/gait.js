@@ -47,10 +47,10 @@ export class Legs {
       if (swing && !L.swing) { L.swing = true; L.from.copy(L.plant); }
       // touchdown, or a slow frame that jumped over a whole swing: the foot lands where its swing was aiming, less the
       // stance time already gone, so footfalls do not depend on the frame rate (a half-finished swing outreaches the leg)
-      if ((!swing && L.swing) || (!swing && rate > 0 && u < pu - 0.5)) { L.swing = false; this.homeW(L, L.plant, lead ? Math.max(0, duty * cyc * 0.5 - u * cyc) : 0);
+      if ((!swing && L.swing) || (!swing && rate > 0 && u < pu - 0.5)) { L.swing = false; this.homeW(L, L.plant, lead ? Math.max(0, duty * cyc * 0.5 - u * cyc) : 0); this.reachable(L, L.plant);
         L.cur.copy(L.plant); L.liftT = 0.12; }
       if (L.swing) { const s = (u - duty) / (1 - duty), e = s * s * (3 - 2 * s), left = (1 - s) * (1 - duty) * cyc;
-        this.homeW(L, _d, rate > this.settle * 1.01 || speed > 0.05 * this.sc ? left + duty * cyc * 0.5 : 0); // land ahead by half a stance, so the foot passes under the hip mid-stance
+        this.homeW(L, _d, rate > this.settle * 1.01 || speed > 0.05 * this.sc ? left + duty * cyc * 0.5 : 0); this.reachable(L, _d); // (the swing aims where it will land: no jump on touchdown) // land ahead by half a stance, so the foot passes under the hip mid-stance
         L.cur.lerpVectors(L.from, _d, e); L.cur.y += Math.sin(Math.PI * s) * (L.lift * this.sc) * Math.min(1, 0.4 + speed / Math.max(0.3, stride));
         L.pitch = Math.sin(Math.PI * Math.min(1, s * 1.3)) * 0.7; L.contact = 0; }
       else { L.cur.copy(L.plant); L.pitch *= Math.exp(-dt * 12); L.liftT = Math.max(0, L.liftT - dt); L.contact = 1;
@@ -58,6 +58,11 @@ export class Legs {
     }
   }
   // a foot's target can be overridden (an attack swipe, a death sprawl): set L.over = world Vector3 (or null)
+  // a foothold the leg can reach: a fast short stride (the ice crawler's ten a second) put the landing half a stance ahead,
+  // past the leg's reach, so the foot landed short and snapped 7 cm onto its foothold a frame later; pulled back toward the hip,
+  // only when it truly is out of reach (99%: the bear's and lurker's ordinary landings, near 95%, keep their stride)
+  reachable(L, P) { const H = L.upper.getWorldPosition(_h), R = 0.99 * (L.a + L.b) * L.upper.parent.getWorldScale(_a).x, dy = P.y - H.y, dx = P.x - H.x, dz = P.z - H.z;
+    const h = Math.hypot(dx, dz), m = Math.sqrt(Math.max(0, R * R - dy * dy)); if (h > m && h > 0) { const g0 = this.gy(P.x, P.z, P.y); P.x = H.x + dx * m / h; P.z = H.z + dz * m / h; P.y += this.gy(P.x, P.z, g0) - g0; } return P; }
   solve() {
     this.root.updateMatrixWorld(true);
     for (const L of this.legs) {
