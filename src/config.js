@@ -63,7 +63,7 @@ export const CHARS = [
 export const ENEMY = {
   wolf:        { hp:60,  speed:75,  dmg:9,  atk:1600, aggro:190, scale:1.0,  body:0x77777f, belly:0x9a9aa0, loot:['food','fiber'] },
   rat:         { hp:30,  speed:105, dmg:6,  atk:1200, aggro:110, scale:0.55, body:0x6a5040, belly:0x8a6a55, loot:['metal'] },
-  bear:        { hp:160, speed:50,  dmg:22, atk:2400, aggro:290, scale:1.6,  body:0x5a3a24, belly:0x6e4a30, loot:['food','fiber','fiber'] },
+  bear:        { hp:160, speed:50,  dmg:22, atk:2400, aggro:290, scale:1.6,  body:0x5a3a24, belly:0x6e4a30, loot:['food','fiber','fiber'], danger:true },
   ice_crawler: { hp:45,  speed:130, dmg:10,  atk:1400, aggro:160, scale:0.9,  body:0x9cc4dc, belly:0xd8eef8, loot:['metal'] },
   bog_lurker:  { hp:65,  speed:55,  dmg:17, atk:2000, aggro:80,  scale:1.1,  body:0x3e5232, belly:0x5f7048, loot:['fiber','food'] },
   dust_hound:  { hp:28,  speed:118, dmg:8,  atk:1500, aggro:200, scale:0.8,  body:0xa8845a, belly:0xc8a478, loot:['food','metal'] },
@@ -72,9 +72,13 @@ export const ENEMY = {
   spider:      { hp:65,  speed:70,  dmg:11, atk:1500, aggro:150, scale:1.55, body:0x2a1e15, belly:0x15100c, loot:['fiber','fiber'], spider:'wolf' },
   // Jared, November 14, 2026: "I want there to be maybe 3-5 varieties of spiders if possible": the pale one of the Fungal Hollow is
   // quicker and sees further; the widow is small and fragile with the worst bite; the brute is huge, slow and very tough
-  spider_pale: { hp:65,  speed:82,  dmg:10, atk:1300, aggro:175, scale:1.45, body:0xc8c0ae, belly:0x6a6254, loot:['fiber','fiber'], spider:'pale' },
+  // the pale one spits web (#66, Jared, November 15, 2026: "rear its back end and shoot webbing at you to slow you down/temporarily
+  // trap you (can't be unavoidable and can't mean death every time)"): from near to far m it stands tele s with its back end up,
+  // hissing, then spits a glob at speed m/s (step aside); a hit holds the feet hold s, then slows for slow s (on Easy only
+  // slows); one spider spits at most every `every` s, and nobody is spat at again within SPIT_GAP s (longer than a hold and its slow)
+  spider_pale: { hp:65,  speed:82,  dmg:10, atk:1300, aggro:175, scale:1.45, body:0xc8c0ae, belly:0x6a6254, loot:['fiber','fiber'], spider:'pale', spit:{ near:5, far:16, tele:0.9, speed:10, hold:1, slow:2, every:7 } },
   spider_widow:{ hp:45,  speed:76,  dmg:17, atk:1700, aggro:140, scale:1.25, body:0x161214, belly:0x0a0808, loot:['fiber','food'], spider:'widow', poison:{ dps:2, secs:5 } },
-  spider_brute:{ hp:150, speed:52,  dmg:19, atk:2100, aggro:160, scale:2.1,  body:0x3a2618, belly:0x160e08, loot:['fiber','fiber','fiber','food'], spider:'brute' },
+  spider_brute:{ hp:150, speed:52,  dmg:19, atk:2100, aggro:160, scale:2.1,  body:0x3a2618, belly:0x160e08, loot:['fiber','fiber','fiber','food'], spider:'brute', danger:true },
   // (Jared's play on Dev, November 14, 2026: "too easy to kill. maybe poison bites?": every kind about 1.6x its health; the widow's bite poisons: poison.js)
   spider_nest: { hp:150, speed:0,   dmg:0,  atk:1e9,  aggro:0,   scale:1.0,  body:0xd9d6cc, belly:0xd9d6cc, loot:['fiber','fiber','fiber','fiber'], nest:'spider' },
   // raiders (IW1 RAIDER_STATS; shoot is the firing range in px): they hold their camps, shooters and heavies fire from range
@@ -82,6 +86,16 @@ export const ENEMY = {
   shooter:     { hp:80,  speed:90,  dmg:16, atk:1200, aggro:280, scale:1.0, loot:['metal','food','ammo'], raider:true, shoot:280 },
   heavy:       { hp:200, speed:75,  dmg:28, atk:1400, aggro:230, scale:1.0, loot:['metal','metal','food','ammo'], raider:true, shoot:200 },
 };
+// Dangers (#66, Jared, November 15, 2026: "Some enemies you do not want to mess with early"; "An exploding arrow takes them out
+// too fast"): the bear and the brute spider. Their hide takes half of a blow from anyone without their bench upgrade; no blow
+// stops their bite once it starts; on first sight they rear and roar, then charge; their threat ring is toothed, not round;
+// on Easy one only warns: it leaves you be unless you hit it or come close (game.js; Jared turned down boss music for them).
+// docs/decisions/2026-11-15-fear-early.md has the measurements
+export const SPIT_GAP = 5;
+// (EASY_CALM: how long an Easy danger that warned you off lets you be; on Easy its warning also shakes no camera: the stranger's review)
+export const HIDE = 0.5, WARN_T = 1.2, CHARGE = { t: 2.5, k: 1.8 }, CLOSE = 6, EASY_CALM = 20;
+// Abigail's fire arrow (her bench upgrade) needs RELIGHT s to light the next: at her full pace (0.8 s) every other arrow, and the first after a pause
+export const RELIGHT = 1.5;
 // Biomes: IW1's seven. The start is a Greenbelt valley ringed by mountains (world.js); ruins and fungal joined in run 2.
 // off/amp shape the rolling ground; mtn is how much mountain range the biome allows.
 export const BIOME = {

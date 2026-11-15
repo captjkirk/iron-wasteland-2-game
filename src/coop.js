@@ -20,8 +20,9 @@ import { day, setDay } from './daynight.js';
 import { builtMsg, addBuilt, onBuildReq, onBuilt, onNoBuild } from './craft.js';
 import { felled, applyFelled, onChop, onFell, onShake, onDig, onDug, onGrew } from './harvest.js';
 import { dropFrom } from './arrows.js';
+import { spit } from './spiders.js';
 import { onTearReq, onGateReq, onGone, onBst, onFixReq } from './build.js';
-import { player, score, enemies, spawnEnemy, hitEnemy, charm, scare, crateOpen, smashCrate, hurtPlayer, log, fireShot, deployTurret, slash, gameOver, startGame, isRunning, pickups, addPickup, scene3, gotPickup, turrets, applyUp, upBits } from './game.js';
+import { player, score, enemies, spawnEnemy, hitEnemy, charm, scare, crateOpen, smashCrate, hurtPlayer, log, fireShot, deployTurret, slash, gameOver, startGame, isRunning, dangerCue, pickups, addPickup, scene3, gotPickup, turrets, applyUp, upBits } from './game.js';
 
 export const RIVAL = '#ff5a48'; // (slice 33: a rival's name tag and score in free-for-all)
 export const others = new Map(); // id -> { id, c, name, x, y, z, f, hp, mx, down, out, rv, rt, mesh, seen }
@@ -136,6 +137,7 @@ function onMsg(m, from) {
     case 'ko': logEvent('ko', { who: m.n, mode: modeKey() }); player.pk = (player.pk || 0) + 1; log(`You knocked out ${m.n}! (+3)`); sfx('rally', null, 0.6); break; // slice 33: a rival this game knocked out
     case 'rules': if (from === net.host && joining()) { takeRules(m); showRules(); logEvent('rules', { mode: modeKey(), lvl: rules.lvl }); log(`The host changed the game: ${modeName()}.`); } break;
     case 'log': log(m.s); break;
+    case 'glob': if (running()) spit(m.o, m.v); break; // #66: a pale spider's web glob, flown on this game too (it holds only this game's player)
     case 'radio': radioOn(m.n || 'A friend'); break; // slice 23: a friend got the radio tower's radio going
     case 'gotc': crateOpen(null, null, m.got); break; // the host opened a crate for this player: its loot
     case 'got': gotPickup(m.kind); break;
@@ -184,16 +186,17 @@ function onMsg(m, from) {
 // ── The world from the host, on a joined game ──
 const ST = ['idle', 'lurk', 'emerge', 'chase', 'windup', 'recover', 'flee', 'charmed', 'siege', 'drop']; // (drop: a spider on its thread, slice 22)
 function applyWorld(m, from) { const seen = new Set(); if (m.d) setDay(...m.d); // the host's clock (slice 13)
-  for (const [id, type, x, z, yaw, s, hp, maxHp] of m.e) { seen.add(id); let e = enemies.find(q => q.id === id);
+  for (const [id, type, x, z, yaw, s, hp, maxHp, cue = 0] of m.e) { seen.add(id); let e = enemies.find(q => q.id === id);
     if (!e) { if (hp <= 0) continue; spawnEnemy(x, z, type); e = enemies.at(-1); e.id = id; e.yaw = yaw; } // a corpse this game already cleared stays gone
     const st = ST[s] || 'idle', u = e.mesh.userData;
     if (st === 'windup' && e.state !== 'windup') { u.anim.attack(); if (Math.random() < 0.4) sfx(e.type, e, 0.7); }
     if (st === 'chase' && (e.state === 'idle' || e.state === 'lurk')) sfx(e.type, e); // it has seen someone
+    if (cue & 1 && !(e.cue & 1)) dangerCue(e); if (cue & 2 && !(e.cue & 2)) sfx('hiss', e); e.cue = cue; e.spitW = cue & 2 ? 1 : 0; // #66 (the stranger's review: a joined player saw no warning)
     if (hp < e.hp && !e.dead) { e.flashT = 0.15; e.barT = 6; }
     track(e, from, m.ts ?? performance.now(), x, 0, z, yaw); Object.assign(e, { state: st, hp, maxHp });
     if (hp <= 0 && !e.dead) { e.dead = 5; u.anim.die(); u.flash(0); sfx(e.type, e, 0.8); sfx('thud', e, 0.6); } }
   for (const e of enemies) if (!seen.has(e.id) && !e.gone) { dropFrom(e); scene3().remove(e.mesh); e.gone = true; } }
-function worldMsg() { return { t: 'w', ts: Math.round(performance.now()), d: [+day.t.toFixed(5), day.n, day.speed, day.g], e: enemies.filter(e => !e.gone).map(e => [e.id, e.type, +e.x.toFixed(2), +e.z.toFixed(2), +e.yaw.toFixed(2), Math.max(0, ST.indexOf(e.state)), Math.max(0, e.hp), e.maxHp]) }; }
+function worldMsg() { return { t: 'w', ts: Math.round(performance.now()), d: [+day.t.toFixed(5), day.n, day.speed, day.g], e: enemies.filter(e => !e.gone).map(e => [e.id, e.type, +e.x.toFixed(2), +e.z.toFixed(2), +e.yaw.toFixed(2), Math.max(0, ST.indexOf(e.state)), Math.max(0, e.hp), e.maxHp, (e.warnT > 0 ? 1 : 0) | (e.spitW > 0 ? 2 : 0)]) }; } // (the last: #66's cues, a danger's warning and a pale spider about to spit)
 
 // ── Smooth playback (the gate of slice 12, from the family's LAN play of 2026-11-04, "working but a little choppy") ──
 // Each 'p' and 'w' carries its sender's clock (ms). Over Wi-Fi they arrive unevenly (two or three at once, then none), and

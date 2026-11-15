@@ -69,6 +69,7 @@ const SFX = {
   lurk: (d, t) => { growl(d, t, 1.8, 34, 1.8); growl(d, t + 0.5, 1.4, 28, 2); }, // something big, under the water
   // slice 22: a spider coming down its thread (a silk zip, then a hiss), and the sticky crackle of walking into a web
   spiderdrop: (d, t) => { noise(d, t, 0.6, { type: 'bandpass', f0: 5200, f1: 1800, q: 4, peak: 0.35, a: 0.01 }); noise(d, t + 0.55, 0.7, { type: 'highpass', f0: 4200, f1: 2400, q: 0.6, peak: 0.5, a: 0.04 }); for (let i = 0; i < 6; i++) noise(d, t + 0.6 + i * 0.03, 0.02, { f0: 2200, q: 8, peak: 0.3 }); },
+  hiss: (d, t) => { noise(d, t, 0.85, { type: 'highpass', f0: 5200, f1: 3400, q: 0.8, peak: 0.4, a: 0.12 }); noise(d, t + 0.1, 0.6, { type: 'bandpass', f0: 2600, f1: 1900, q: 3, peak: 0.15, a: 0.1 }); }, // #66: a pale spider about to spit
   web: (d, t) => { for (let i = 0; i < 7; i++) noise(d, t + i * 0.035 + Math.random() * 0.02, 0.03, { type: 'highpass', f0: 3500 + Math.random() * 2000, q: 1, peak: 0.25 }); },
   thud: (d, t) => tone(d, t, 0.3, { f0: 70, f1: 35, peak: 0.7 }),
   // slice 13: the lake serpent's jaws closing, and its bubbles rising

@@ -21,6 +21,7 @@ import { day, DAY_S, nightK } from './daynight.js';
 import { sfx } from './audio.js';
 import { dustPuff } from './effects.js';
 import { spiderGlow } from './spider.js';
+import { floatText } from './effects.js';
 
 export { biomeAt }; // (for the checks)
 const clock = () => (day.n + day.t) * DAY_S;
@@ -80,7 +81,7 @@ function findNestSites() { if (SITES) return SITES; const cand = [], s0 = SEED %
 
 // ── A new game: the webs go; the host's game sets the nests down (a joined one gets them from the host) ──
 let drops = new WeakMap(); // player -> seconds to their next drop
-export function startSpiders(sc, host, spawn) { scene = sc; clearWebs(); drops = new WeakMap(); if (host) for (const s of (nestSites = findNestSites())) spawn(s.x, s.z, 'spider_nest').home = s; }
+export function startSpiders(sc, host, spawn) { scene = sc; clearWebs(); clearGlobs(); drops = new WeakMap(); if (host) for (const s of (nestSites = findNestSites())) spawn(s.x, s.z, 'spider_nest').home = s; }
 
 // where a spider can come down by player q: under the nearest tree, giant mushroom or ruined wall within 9 m
 function anchorNear(q) { let best = null, bd = 9;
@@ -103,8 +104,33 @@ function anchorNear(q) { let best = null, bd = 9;
 // ctx: { scene, enemies, players (every player still in the game), host, spawn(x, z, type) -> enemy, log, logEvent, t, me (this game's player) }
 let webSaid = -1e9;
 const threads = new Map(); // spider -> its thread mesh
-export function tickSpiders(dt, { scene: sc, enemies, players, host, spawn, log, logEvent, t, me }) {
-  scene = sc; const C = clock(); spiderGlow();
+// ── Web globs (#66): the pale spider's spit. Every game flies each glob (the host's game launches it and tells the others),
+// and each tests it against its own player only, so a dodge counts where it was made. held: this game's player's feet ──
+export const globs = [], held = { t: 0, slow: 0 };
+const GRAV = 3; let GLOB = null;
+export function spit(o, v) { GLOB ||= new THREE.MeshStandardMaterial({ color: 0xeeeae0, roughness: 0.5, transparent: true, opacity: 0.9 });
+  const m = new THREE.Mesh(new THREE.IcosahedronGeometry(0.22, 1), GLOB); m.position.set(...o); scene.add(m);
+  globs.push({ m, v: new THREE.Vector3(...v), t: 0 }); sfx('web', { x: o[0], z: o[2] }, 1.2); }
+// walking pace while held (none) or slowed (half)
+export const holdK = () => held.t > 0 ? 0 : held.slow > 0 ? 0.5 : 1;
+const inBody = (p, q) => Math.hypot(p.x - q.x, p.z - q.z) < 0.6 && p.y > (q.y ?? groundY(q.x, q.z)) - 0.1 && p.y < (q.y ?? groundY(q.x, q.z)) + 1.9;
+function tickGlobs(dt, me, easy, log, players) {
+  if (held.t > 0) held.t -= dt; else if (held.slow > 0) held.slow -= dt;
+  if (me?.dead || me?.down > 0) held.t = held.slow = 0;
+  for (let i = globs.length - 1; i >= 0; i--) { const g = globs[i], p = g.m.position; g.t += dt; g.v.y -= GRAV * dt; p.addScaledVector(g.v, dt); g.m.rotation.x += dt * 6;
+    const hit = me && !me.dead && inBody(p, me), ground = p.y < groundY(p.x, p.z) + 0.1;
+    // (the stranger's review) another player's body stops it too, with no web (their own game holds them), and so does a trunk,
+    // a rock or a wall; over water it sinks without a web
+    const stop = players.some(q => q !== me && inBody(p, q)) || p.y < WATER_Y || nearColliders(p.x, p.z).some(c => c.r && p.y < groundY(p.x, p.z) + 3 && Math.hypot(c.x - p.x, c.z - p.z) < colR(c, p.x, p.z));
+    if (!hit && !ground && !stop && g.t < 3) continue;
+    if (hit) { const sp = ENEMY.spider_pale.spit; if (!(held.t > 0 || held.slow > 0)) { held.t = easy ? 0 : sp.hold; held.slow = sp.slow + (easy ? sp.hold : 0); }
+      sfx('web', me, 1.3); floatText(new THREE.Vector3(me.x - Math.sin(me.yaw) * 2.5, me.y + 1.5, me.z - Math.cos(me.yaw) * 2.5), easy ? /* (ahead of the eyes: seen in first person too) */ 'Webbed! Slowed' : 'Stuck in a web!', '#f4f0e6', true); log?.(easy ? 'A web glob sticks to you: you wade on.' : 'A web glob pins your feet for a moment!'); }
+    else if (ground && !stop) addWeb(p.x, p.z, { r: 1.3, life: 15 }); // a miss: a sticky patch where it lands
+    g.m.removeFromParent(); g.m.geometry.dispose(); globs.splice(i, 1); } }
+export function clearGlobs() { for (const g of globs) { g.m.removeFromParent(); g.m.geometry.dispose(); } globs.length = 0; held.t = held.slow = 0; }
+
+export function tickSpiders(dt, { scene: sc, enemies, players, host, spawn, log, logEvent, t, me, easy }) {
+  scene = sc; const C = clock(); spiderGlow(); tickGlobs(dt, me, easy, log, players);
   for (let i = webs.length - 1; i >= 0; i--) { const w = webs[i]; if (C > w.until || (w.perm && w.perm.dead) || (w.until !== Infinity && C < w.until - 1e5)) dropWeb(i); } // (a reset clock clears the roaming ones too; review: Infinity - 1e5 is Infinity, which dropped and rebuilt every nest's webs each frame)
   for (const e of enemies) {
     if (e.type === 'spider_nest') { const u = e.mesh.userData;

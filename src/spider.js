@@ -130,10 +130,10 @@ export function buildSpider({ eye, perMeshFlash, palette = 'wolf' }) {
       off: ((i + (sx > 0 ? 1 : 0)) % 2) * 0.5 + i * 0.04, sx, i, hz: hipAt.z, hx: hipAt.x });
   }
   const gait = new Legs(root, legs, { stride: 0.55, duty: 0.5, settle: 3.5 });
-  let t = Math.random() * 9, atk = 0, hit = 0, hitS = 1, die = 0, air = 0;
+  let t = Math.random() * 9, atk = 0, hit = 0, hitS = 1, die = 0, air = 0, rear = 0, rearOn = false; // rear: #66, the pale spider's back end up to spit
   const toW = (L, x, y, z) => body.localToWorld(_w.set(x, y, z)); // a body-space point in the world
   const anim = { dead: false,
-    attack() { if (!this.dead) atk = 0.001; }, hit(side = 1) { if (!this.dead) { hit = 1; hitS = side; } }, die() { this.dead = true; die = 0.001; atk = 0; },
+    attack() { if (!this.dead) atk = 0.001; }, rear(on) { rearOn = !!on && !this.dead; }, hit(side = 1) { if (!this.dead) { hit = 1; hitS = side; } }, die() { this.dead = true; die = 0.001; atk = 0; rearOn = false; }, get rearing() { return rearOn; },
     update(dt, { speed = 0, ground = null } = {}) {
       t += dt; gait.ground = ground; gait.settle = this.dead ? 0 : 3.5;
       // in the air (dropping on its thread, or falling from it): legs spread, head down while it hangs
@@ -141,7 +141,8 @@ export function buildSpider({ eye, perMeshFlash, palette = 'wolf' }) {
       gait.step(dt, this.dead || air > 0.5 ? 0 : speed, { stride: Math.min(0.95, 0.4 + speed * 0.12), duty: 0.5 });
       const ph = gait.ph * Math.PI * 2, mv = gait.moving, sl = gait.slope(-0.6, 0.6), sc = gait.sc;
       body.position.set(0, BY + ((sl.front + sl.back) / 2 - sl.mid) / sc - Math.abs(Math.sin(ph * 2)) * 0.025 * mv, 0); body.rotation.set(Math.atan2(sl.front - sl.back, 1.2 * sc) - air * 1.35, Math.sin(ph) * 0.03 * mv, 0);
-      abd.rotation.set(-0.04 + Math.sin(t * 1.6) * 0.03 + air * 0.25, -Math.sin(ph) * 0.06 * mv, Math.sin(ph) * 0.04 * mv);
+      rear += ((rearOn ? 1 : 0) - rear) * Math.min(1, dt * 7); body.rotation.x += rear * 0.22; // (its head dips as its back end rises: a pose, not a colour)
+      abd.rotation.set(-0.04 + Math.sin(t * 1.6) * 0.03 + air * 0.25 - rear * (0.75 + Math.sin(t * 20) * 0.04), -Math.sin(ph) * 0.06 * mv, Math.sin(ph) * 0.04 * mv);
       jaws.forEach((j, k) => j.rotation.set(Math.sin(t * 3 + k) * 0.05, (k ? -1 : 1) * 0.04 * Math.sin(t * 6), 0));
       palps.forEach((p, k) => { p.a.rotation.set(Math.sin(t * 2.6 + k * 1.7) * 0.25 + mv * 0.15, Math.sin(t * 1.9 + k) * 0.2, 0); p.b.rotation.set(Math.sin(t * 3.1 + k) * 0.2, 0, 0); });
       for (const L of legs) L.over = null;
