@@ -10,7 +10,7 @@ import { markExplored, fogReach, exploredStats } from './explore.js';
 import { buildDeepWater, S as deepShadow } from './water.js';
 import { buildProps, placed, nearColliders, colR, standAt } from './props.js';
 import { buildCamp, tickCamp, campTent, fireCount, hasFlame } from './camp.js';
-import { buildBuildings, tickBuildings, buildings, caches, raiderCamps, ladders } from './buildings.js';
+import { buildBuildings, tickBuildings, buildings, caches, raiderCamps, ladders, lampSpots } from './buildings.js';
 import { snapFrame, logEvent, frameTime, playlogState } from './playlog.js';
 import { tickWatch, checkCrates, checkMsg, solidAt } from './watch.js';
 import { updateScatter, scatterStats } from './scatter.js';
@@ -32,7 +32,7 @@ import { ammo, clipSize } from './supplies.js';
 import { felled, fell, harvestTarget, saplingStats } from './harvest.js';
 import { tickTorch, torchLights } from './torch.js';
 import { quiver, stuckArrows } from './arrows.js';
-import { warmCreatures, pickups, initGame, hurtPlayer, gotPickup, selected, liveShots, spreadAt, upgraded, aimGround, togglePause, startGame, setCam, update, placeCamera, hud, menuPad, isRunning, worldWaits, getCamMode, player, enemies, spawnEnemy, attack, teleport, look, hitEnemy, press, secondary, turrets, dropLoot, spawnPack } from './game.js';
+import { warmCreatures, pickups, initGame, hurtPlayer, gotPickup, selected, liveShots, spreadAt, upgraded, aimGround, togglePause, startGame, setCam, update, placeCamera, hud, menuPad, isRunning, worldWaits, getCamMode, player, enemies, spawnEnemy, attack, teleport, creatureCollide, look, hitEnemy, press, secondary, turrets, dropLoot, spawnPack } from './game.js';
 import * as spiders from './spiders.js';
 
 const status = document.getElementById('loading');
@@ -117,7 +117,7 @@ function frame(now) {
     camera.position.set(x, Math.max(groundY(x, z), WATER_Y) + 55, z); camera.lookAt(40, 8, 0); env.follow(new THREE.Vector3(40, groundY(40, 0), 0)); }
   if (freeCam) { camera.position.copy(freeCam.pos); camera.lookAt(freeCam.target); camera.fov = freeCam.fov; camera.updateProjectionMatrix(); env.follow(freeCam.target); }
   // slice 13: the hour lights the world: sky, sun or moon, fog, the far trees; fires and torches light the night
-  env.setTime(day.t); eyeShine(nightK()); tickTorch(isRunning() && !worldWaits() ? dt : 0, camera, isRunning() && getCamMode() === 'first'); env.fireLights(isRunning() ? [...torchLights(), ...lightSpots(), ...campFires()] : [], camera, nightK(), clock);
+  env.setTime(day.t); eyeShine(nightK()); tickTorch(isRunning() && !worldWaits() ? dt : 0, camera, isRunning() && getCamMode() === 'first'); env.fireLights(isRunning() ? [...torchLights(), ...lightSpots(), ...campFires(), ...lampSpots()] : [], camera, nightK(), clock);
   localFog(scene.fog, FOG_COLOR, env.fogNear, env.fogFar, camera.position.x, camera.position.z); scene.fog.color.multiply(env.fogTint);
   if (isRunning()) { markExplored(player.x, player.z); const r = fogReach(camera.position.x, camera.position.z, dt); scene.fog.near *= 0.2 + 0.8 * r; scene.fog.far *= r; } // (#19 part 1: unseen ground is foggier)
   { const nk = nightK(), f = scene.fog; f.near += (Math.min(f.near, 10) - f.near) * nk; f.far += (Math.min(f.far, 150) - f.far) * nk; } // the night closes in (the owner: "view distance = less at night")
@@ -142,7 +142,7 @@ window.__iw = { selected, portraits: portraitStats, get rules() { return rules; 
   // a build recipe opens build mode; for the checks, craft() of one places it at once where the ghost stands (slice 12)
   craft: (key) => { const r = RECIPES.find(q => q.key === key); if (r.type !== 'build') return craft(r); if (!craft(r)) return false; const ok = placeNow(); endBuild(); return ok; },
   lightSpots: () => [...torchLights(), ...lightSpots()], fireCount, hasFlame, saplingStats, setDay, /* slice 26 */ startBuild: (key) => startBuild(RECIPES.find(q => q.key === key)), placeNow, endBuild, building, rotateBuild, damageBuilt, toggleGate, tearTarget, repairTarget, pieceBars, refundOf, clearBuilt, wallAhead, PIECE, putPiece, liveShots, ammo, clipSize, gotPickup, spreadAt, upgraded, aimGround, /* slice 12 */ toggleCraft, craftOpen, placeSpot, sleep, bedNear, bedRespawn, felled, fell, harvestTarget, quiver, stuckArrows, // slice 11
-   hurtPlayer, get running() { return isRunning(); }, togglePause, renderer, scene, camera, startGame, player, setCam, attack, secondary, turrets, dropLoot, spawnEnemy, enemies, hitEnemy, seeds, river, lakes, findBiome, teleport, look, groundY, quality: QUALITY_KEY,
+   hurtPlayer, get running() { return isRunning(); }, togglePause, renderer, scene, camera, startGame, player, setCam, attack, secondary, turrets, dropLoot, spawnEnemy, enemies, hitEnemy, seeds, river, lakes, findBiome, teleport, creatureCollide, look, groundY, quality: QUALITY_KEY,
   get rendered() { return rendered; },
   get state() { return { x: +player.x.toFixed(1), z: +player.z.toFixed(1), y: +player.y.toFixed(1), hp: player.hp, cam: getCamMode(), enemies: enemies.length, fps, biome: biomeAt(player.x, player.z),
     props: Object.fromEntries(Object.entries(placed).map(([k, v]) => [k, v.length])), calls: renderer.info.render.calls, tris: renderer.info.render.triangles }; },

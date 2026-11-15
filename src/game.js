@@ -12,6 +12,7 @@ import { nearColliders, colR, placed, hideOccluders, addCollider, standAt, steps
 import { markDirty } from './scatter.js';
 import { part, box, rockG, MAT, merged } from './models.js';
 import { buildCreature } from './creatures.js';
+import { turretModel, turretMats } from './turret.js';
 import { initFireflies, tickFireflies } from './fireflies.js';
 import { resetExplored } from './explore.js';
 import { startPlaces, tickPlaces, placePrompt, radioNear, places } from './places.js'; // slice 23
@@ -37,7 +38,7 @@ import { ammo, resetSupplies, tickSupplies, fought, useRound, useFlower, reload,
 
 let scene, camera, renderer, env, viewModel;
 const muzzleFlash = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffd890, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false })); muzzleFlash.t = 0;
-export function initGame(ctx) { ({ scene, camera, renderer, env } = ctx); viewModel = new THREE.Group(); camera.add(viewModel); muzzleFlash.position.set(0.24, 0.03, -0.85); muzzleFlash.visible = false; camera.add(muzzleFlash); initEffects(scene, camera); initFireflies(scene); bindInput(); buildMenu(); bindSettings(); prepHarvest(); }
+export function initGame(ctx) { ({ scene, camera, renderer, env } = ctx); viewModel = new THREE.Group(); camera.add(viewModel); muzzleFlash.position.set(0.24, 0.03, -0.85); muzzleFlash.visible = false; camera.add(muzzleFlash); initEffects(scene, camera); initFireflies(scene); bindInput(); buildMenu(); bindSettings(); prepHarvest(); turretMats(); } // (the turret's textures load and are recoloured now, not at its first use)
 
 export const enemies = [];
 let packN = 0, enemyN = 0;
@@ -426,6 +427,7 @@ function tickSecondary(dt) {
     const dir = new THREE.Vector3(d.x * c - d.z * s, d.y + (rng() - 0.5) * 0.06, d.z * c + d.x * s).normalize(); fireShot(new THREE.Vector3(player.x, player.y + (camMode === 'first' ? 1.6 : 1.4), player.z).addScaledVector(dir, 0.6), dir, 12, 'gunslinger'); }
   for (let i = turrets.length - 1; i >= 0; i--) { const q = turrets[i]; q.life -= dt; q.fireT -= dt;
     if (q.life <= 0) { removeTurret(q); dustPuff(new THREE.Vector3(q.x, q.y + 0.5, q.z), 12); turrets.splice(i, 1); continue; }
+    q.light.visible = q.life > 5 || q.life % 0.5 > 0.2; // its last 5 s: the light blinks (a cue that is not colour alone)
     let tgt = null, bd = 12, rival = false; for (const e of enemies) { if (e.dead || e.state === 'lurk') continue; const d = Math.hypot(e.x - q.x, e.z - q.z); if (d < bd) { bd = d; tgt = e; } }
     // slice 33: in free-for-all an Architect's turret fires on rivals too (another game's copy of it aims at this player, as the real one may)
     if (rules.ffa) for (const o of q.ghost ? (running && !gone(player) ? [player] : []) : others.values()) { if (gone(o)) continue; const d = Math.hypot(o.x - q.x, o.z - q.z); if (d < bd) { bd = d; tgt = o; rival = true; } }
@@ -453,26 +455,13 @@ function pulse(color, r, T, at = player) { const m = new THREE.Mesh(new THREE.Ri
 function tickPulses(dt) { for (let i = pulses.length - 1; i >= 0; i--) { const q = pulses[i]; q.t += dt; const k = q.t / q.T; q.m.scale.setScalar(0.3 + q.r * Math.min(1, k * 1.4)); q.m.material.opacity = 0.8 * Math.max(0, 1 - k);
   if (k >= 1) { scene.remove(q.m); q.m.geometry.dispose(); q.m.material.dispose(); pulses.splice(i, 1); } } }
 // the Architect's auto-turret: a painted steel box on a tripod that turns to the nearest enemy within 12 m and fires every 0.8 s for 30 s (IW1: 18 damage)
-export const turrets = []; let TUR = null;
-// geometry and most materials are shared by every turret (built once); only the status light's material is its own
+export const turrets = [];
+// geometry and materials are shared by every turret (src/turret.js); only the status light's material is its own
 const removeTurret = (q) => { scene.remove(q.mesh); q.col.r = 0; q.light.material.dispose(); };
-const SHAPE = { leg: () => new THREE.CylinderGeometry(0.03, 0.04, 0.95, 6), foot: () => new THREE.BoxGeometry(0.1, 0.03, 0.14), post: () => new THREE.CylinderGeometry(0.08, 0.1, 0.32, 10),
-  barrel: () => new THREE.CylinderGeometry(0.04, 0.04, 0.62, 10).rotateX(Math.PI / 2), brake: () => new THREE.CylinderGeometry(0.065, 0.065, 0.12, 10).rotateX(Math.PI / 2), flash: () => new THREE.ConeGeometry(0.12, 0.35, 8).rotateX(-Math.PI / 2),
-  light: () => new THREE.SphereGeometry(0.035, 8, 6), body: () => new THREE.BoxGeometry(0.46, 0.3, 0.6), shield: () => new THREE.BoxGeometry(0.62, 0.42, 0.05), drum: () => new THREE.CylinderGeometry(0.13, 0.13, 0.12, 14).rotateZ(Math.PI / 2), sight: () => new THREE.BoxGeometry(0.06, 0.08, 0.22) };
 // ghost: another player's turret, seen here (its own game's copy does the damage)
 export function deployTurret(x, z, yaw, ghost = false) {
-  if (!TUR) TUR = { paint: new THREE.MeshStandardMaterial({ color: 0x3e5236, roughness: 0.6, metalness: 0.5 }), steel: new THREE.MeshStandardMaterial({ color: 0x5a5e62, roughness: 0.4, metalness: 0.9 }) };
-  const g = new THREE.Group(), y = groundY(x, z), head = new THREE.Group(); g.position.set(x, y, z);
-  const G = TUR.geo || (TUR.geo = {}), M = (geo, mat, p, r = [0, 0, 0]) => { const m = new THREE.Mesh(G[geo] || (G[geo] = SHAPE[geo]()), mat); m.position.set(...p); m.rotation.set(...r); return m; };
-  TUR.flash = TUR.flash || new THREE.MeshBasicMaterial({ color: 0xffd890, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
-  for (let k = 0; k < 3; k++) { const a = k * 2.094; g.add(M('leg', TUR.steel, [Math.sin(a) * 0.24, 0.42, Math.cos(a) * 0.24], [-Math.cos(a) * 0.5, 0, Math.sin(a) * 0.5]));
-    g.add(M('foot', TUR.steel, [Math.sin(a) * 0.46, 0.015, Math.cos(a) * 0.46], [0, a, 0])); } // splayed legs on feet
-  g.add(M('post', TUR.steel, [0, 0.86, 0]));
-  const barrel = M('barrel', TUR.steel, [0, 0.03, -0.5]), brake = M('brake', TUR.steel, [0, 0.03, -0.82]);
-  const flash = M('flash', TUR.flash, [0, 0.03, -1.05]); flash.visible = false;
-  const light = M('light', new THREE.MeshBasicMaterial({ color: 0x6aff8a }), [0.17, 0.2, 0.12]);
-  head.add(M('body', TUR.paint, [0, 0, 0]), M('shield', TUR.paint, [0, 0.04, -0.36], [-0.15, 0, 0]), M('drum', TUR.steel, [-0.3, -0.02, 0.05]), M('sight', TUR.steel, [0.1, 0.19, -0.05]), barrel, brake, flash, light); // body, sloped shield plate, ammo drum, sight
-  head.position.y = 1.12; head.rotation.y = yaw; g.add(head); g.scale.setScalar(1.25); g.traverse(o => { o.castShadow = o !== flash; }); scene.add(g); sfx('deploy');
+  const y = groundY(x, z), { g, head, flash, light } = turretModel(); g.position.set(x, y, z);
+  head.rotation.y = yaw; g.scale.setScalar(1.25); g.traverse(o => { o.castShadow = o !== flash; }); scene.add(g); sfx('deploy');
   const col = Object.assign(addCollider(x, z, 0.55, null), { vr: 0, top: y + 1.7 }); turrets.push({ mesh: g, head, light, muzzle: flash, x, z, y, life: 30, fireT: 0.4, col, flash: 0, ghost }); }
 // a pale arc where a melee swing passes, fading in a quarter second (shows the attack's reach from any camera)
 const slashes = [];
@@ -590,10 +579,13 @@ export function gameOver(why = null) { clearPoison(); riverLevel(0); /* (the qua
   document.getElementById('menu').classList.remove('hidden'); showStep('title'); }
 // a few passes: pushing out of one circle can push into its neighbour; feet at or above a solid's top pass over it
 // (slice 12: a gate lets players through; enemies only while it is held open. Only the player's own move passes feet.)
-// (slice 36: an upper floor's wall has a bottom, bot: a head below it walks on under it; creatures, which keep to the ground, always)
-function collide(o, radius, feet) { for (let pass = 0; pass < 3; pass++) for (const c of nearColliders(o.x, o.z)) { if (!c.r || (c.bot != null && (feet ?? -1e9) + 1.7 < c.bot) || (feet != null && c.stand != null && steps(c, feet)) || (c.gate && (feet != null || c.gate.open))) continue; const dx = o.x - c.x, dz = o.z - c.z, d = Math.hypot(dx, dz), m = (feet != null && c.bands ? rockCol(c, o.x, o.z, feet) : colR(c, o.x, o.z)) + radius;
+// (slice 36: an upper floor's wall has a bottom, bot: a head below it walks on under it; a creature by the same rule from the ground, creatureCollide)
+function collide(o, radius, feet, low = feet) { for (let pass = 0; pass < 3; pass++) for (const c of nearColliders(o.x, o.z)) { if (!c.r || (c.bot != null && (low ?? -1e9) + 1.7 < c.bot) || (feet != null && c.stand != null && steps(c, feet)) || (c.gate && (feet != null || c.gate.open))) continue; const dx = o.x - c.x, dz = o.z - c.z, d = Math.hypot(dx, dz), m = (feet != null && c.bands ? rockCol(c, o.x, o.z, feet) : colR(c, o.x, o.z)) + radius;
   if (d < m && d > 1e-4) { o.x = c.x + dx / d * m; o.z = c.z + dz / d * m; } }
   const lim = HALF - 6; o.x = Math.max(-lim, Math.min(lim, o.x)); o.z = Math.max(-lim, Math.min(lim, o.z)); }
+// a creature: its feet on the ground for walls with a bottom (a stilt house's stand on its floor: it walked through them, the review of
+// November 15, 2026), and no gates or steps
+export const creatureCollide = (e, r) => collide(e, r, undefined, groundY(e.x, e.z));
 
 // a roast leg of meat held up to the first-person camera while eating (slice 12)
 let MEAT = null; function meat() { if (MEAT) return MEAT; MEAT = new THREE.Group(); const crust = new THREE.MeshStandardMaterial({ color: 0x7a3a1c, roughness: 0.6 }), bone = new THREE.MeshStandardMaterial({ color: 0xe8dcc0, roughness: 0.7 });
@@ -833,7 +825,7 @@ export function update(dt, t) {
     const ml = Math.hypot(mx, mz); if (ml > 1) { mx /= ml; mz /= ml; }
     const mx0 = mx, mz0 = mz; if (e.detT > 0) { e.detT -= dt; const c = Math.cos(e.det), s = Math.sin(e.det); [mx, mz] = [mx * c - mz * s, mz * c + mx * s]; } // going round
     e.vx *= Math.exp(-dt * 6); e.vz *= Math.exp(-dt * 6);
-    const ex = e.x, ez = e.z; e.x += (mx * spd + e.vx) * dt; e.z += (mz * spd + e.vz) * dt; if (host) collide(e, 0.45 * st.scale);
+    const ex = e.x, ez = e.z; e.x += (mx * spd + e.vx) * dt; e.z += (mz * spd + e.vz) * dt; if (host) creatureCollide(e, 0.45 * st.scale);
     // too steep or too deep: slide along it one axis at a time, as the player does; still pinned while meaning to move for
     // a third of a second, turn off to one side for a second or two (the other side if that pins too). His log, 2026-11-03:
     // hunting wolves and hounds held one distance for 5 to 10 s at the foot of slopes they could not climb

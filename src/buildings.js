@@ -344,7 +344,14 @@ function buildGas(b, P, g) { floor(b, P, 'concrete', 16, 11, 0, -3, 0.06);
 function gasFlush(b, G) { const M = gasMats(); for (const k in G) { if (!G[k].length) continue; const geo = mergeGeometries(G[k].map(q => q.index ? q.toNonIndexed() : q)); if (['body', 'band', 'white', 'hazard', 'lens', 'steel', 'steelIn', 'whiteIn', 'bodyIn'].includes(k)) boxUV(geo, k === 'hazard' ? 0.5 : 1);
   const m = new THREE.Mesh(geo, k === 'hose' ? placeMats().cable : M[k]); m.castShadow = !['oil', 'crack', 'arrow', 'streak', 'glow'].includes(k); m.receiveShadow = true; b.group.add(m); } }
 
-export async function buildBuildings(scene) {
+// the places' lit lanterns, hanging lamps and stove fires: each a spot the few real fire lights can go to (environment.js
+// fireLights: the nearest flames in view get them), with a shorter, softer, warmer light than a torch's (Jared, 2026-11-15:
+// "lanterns in the POI don't actually put off any light?"). A marker on the building's group, its world spot worked out once
+const LAMPS = [], LAMP = { lantern: { i: 3, dist: 4, c: 0xffa040, dy: 0.1 }, lamp: { i: 7, dist: 9, c: 0xffa860, dy: -0.1 }, stove: { i: 4, dist: 6, c: 0xff6420, dy: 0.1 } };
+function lampAt(b, p, kind) { const o = new THREE.Object3D(); o.position.copy(p); o.userData.lamp = kind; b.group.add(o); LAMPS.push(o); }
+let SPOTS = null; // (made once, on the first lit frame: the buildings never move)
+export const lampSpots = () => SPOTS ||= LAMPS.map((o, k) => { const w = o.getWorldPosition(new THREE.Vector3()); return { x: w.x, y: w.y, z: w.z, key: 'lamp', who: 'lamp' + k, w: 2.5, ...LAMP[o.userData.lamp] }; });
+export async function buildBuildings(scene) { LAMPS.length = 0; SPOTS = null;
   if (!CRATE) { CRATE = { geo: await loadMesh('wooden_crate_01'), mat: pbr('props/wooden_crate_01', { rough: 0.85 }) }; CRATE.geo.computeBoundingBox(); CRATE.h = CRATE.geo.boundingBox.max.y * 1.25; }
   { const need = places.length || buildings.some(b => b.style) ? Object.keys(KITS) : buildings.some(b => b.kind === 'gas') ? GAS_KIT : []; if (need.some(k => !KIT?.[k])) KIT = await loadKit(need, KIT || {}); } // (and for the house kinds, slice 36) // (slice 23 polish: the interiors' scanned props, only for a world with places)
   const M = mats(), root = new THREE.Group(); root.name = 'buildings'; scene.add(root);
@@ -871,7 +878,7 @@ async function loadKit(keys = Object.keys(KITS), K = {}) {
 export function kitRoom(b, m = null) { const L = {}, G = {}, e = new THREE.Euler(), q = new THREE.Quaternion(), V = THREE.Vector3;
   const put = (k, x, y, z, ry = 0, o = {}) => { const s = o.s || 1, M = new THREE.Matrix4().compose(new V(x, y, z), q.setFromEuler(e.set(o.rx || 0, ry, o.rz || 0, 'YXZ')), new V(s, s, s)); (L[k + '|' + (o.c ?? '')] ||= []).push(M); };
   put.geo = (k, geo) => (G[k] ||= []).push(geo);
-  put.halo = (x, y, z, s, c = 0xffc890) => { const p = new V(x, y, z); if (m) p.applyMatrix4(m); const sp = new THREE.Sprite(KIT.halo(c)); sp.position.copy(p); sp.scale.setScalar(s); sp.renderOrder = 2; b.group.add(sp); };
+  put.halo = (x, y, z, s, c = 0xffc890) => { const p = new V(x, y, z); if (m) p.applyMatrix4(m); const sp = new THREE.Sprite(KIT.halo(c)); sp.position.copy(p); sp.scale.setScalar(s); sp.renderOrder = 2; b.group.add(sp); lampAt(b, p, c === 0xffd6a0 ? 'lamp' : c === 0xff8a40 ? 'stove' : 'lantern'); };
   put.done = () => { for (const key in L) { const [k, c] = key.split('|'), K = KIT[k], geo = mergeGeometries(L[key].map(M => K.geo.clone().applyMatrix4(m ? M.premultiply(m) : M)));
       const mat = c ? (K['c' + c] ||= (() => { const n = K.mat.clone(); n.color.set(+c); return n; })()) : K.mat, mesh = new THREE.Mesh(geo, mat); mesh.castShadow = mesh.receiveShadow = true; b.group.add(mesh); }
     for (const k in G) { const geo = mergeGeometries(G[k].map(g => { const n = g.index ? g.toNonIndexed() : g; return m ? n.applyMatrix4(m) : n; })), mesh = new THREE.Mesh(geo, KIT.extra[k]); mesh.receiveShadow = k === 'bark' || k === 'cut'; mesh.castShadow = mesh.receiveShadow; b.group.add(mesh); } };
@@ -1250,7 +1257,7 @@ function buildBarge(b, P, g) { const L = 28, W = 7.6, D = 2.7, cw = 2.25, hs = -
   box(TP, 'paint', 0.22, 0.38, 0.16, tip[0], 0.45, tip[2]); TP.iron.push(new THREE.TorusGeometry(0.1, 0.025, 5, 10, 4.2).translate(tip[0], 0.14, tip[2]));
   for (const s of [-1, 1]) { rod(TP, 'iron', 0, 7.6, mz, s * (W / 2 - 0.15), 0.36, -L / 2 + 0.6, 0.014, 4); rod(TP, 'iron', 0, 7.0, mz, s * (W / 2 - 0.15), 0.36, mz + 0.4, 0.014, 4); }
   T.green.push(new THREE.CylinderGeometry(0.2, 0.2, 0.7, 12).rotateZ(Math.PI / 2).translate(0, 0.5, mz - 0.6)); for (const s of [-1, 1]) box(T, 'green', 0.06, 0.6, 0.5, s * 0.4, 0.3, mz - 0.6);
-  colAt(0, mz - 0.7, 0, mz, 0.2); lantern(TP, 0.8, 6.25, mz); rod(TP, 'iron', 0.8, 6.55, mz, 0.8, 6.46, mz, 0.008, 4);
+  colAt(0, mz - 0.7, 0, mz, 0.2); lantern(TP, 0.8, 6.25, mz); lampAt(b, new THREE.Vector3(0.8, 6.25, mz).applyMatrix4(M), 'lantern'); rod(TP, 'iron', 0.8, 6.55, mz, 0.8, 6.46, mz, 0.008, 4);
   { const x = -1.6, z = -12.4; box(T, 'green', 1.1, 0.14, 0.7, x, 0.07, z); for (const d of [-0.45, 0.45]) box(T, 'green', 0.08, 0.7, 0.6, x + d, 0.42, z);
     T.rust.push(new THREE.CylinderGeometry(0.17, 0.17, 0.82, 12).rotateZ(Math.PI / 2).translate(x, 0.5, z)); T.rust.push(new THREE.CylinderGeometry(0.3, 0.3, 0.12, 7).rotateZ(Math.PI / 2).translate(x - 0.25, 0.5, z)); colAt(x - 0.5, z, x + 0.5, z, 0.2);
     chain(TP, 'iron', new THREE.Vector3(x - 0.25, 0.2, z - 0.3), new THREE.Vector3(-2.3, 0.08, -L / 2 + 0.3), 0); TP.iron.push(new THREE.TorusGeometry(0.2, 0.06, 6, 12).translate(-2.3, -0.12, -L / 2 - 0.05));
@@ -1270,7 +1277,7 @@ function buildBarge(b, P, g) { const L = 28, W = 7.6, D = 2.7, cw = 2.25, hs = -
   box(T, 'cream', 0.05, 2.02, 0.98, 1.9, 1.02, Z0 - 0.5, 0.1); for (const y of [0.4, 1.0, 1.6]) box(TP, 'iron', 0.03, 0.05, 0.25, 1.88, y, Z0 - 0.12); colAt(1.9, Z0 - 0.15, 1.95, Z0 - 0.95, 0.1);
   colAt(-hw, Z0, 0.85, Z0, 0.15, H); colAt(1.85, Z0, hw, Z0, 0.15, H); colAt(-hw, Z1, hw, Z1, 0.15, H); for (const s of [-1, 1]) colAt(s * hw, Z0, s * hw, Z1, 0.15, H);
   deckhouseRoom(b, M, colAt, hw, Z0, Z1, H); // (polish: its room in scanned props, with the interiors)
-  lantern(TP, 0.55, 2.0, Z0 - 0.3); box(TP, 'iron', 0.03, 0.03, 0.32, 0.55, 2.24, Z0 - 0.16); T.buoy.push(new THREE.TorusGeometry(0.3, 0.07, 8, 18).rotateY(Math.PI / 2).translate(hw + 0.1, 1.45, (Z0 + Z1) / 2));
+  lantern(TP, 0.55, 2.0, Z0 - 0.3); lampAt(b, new THREE.Vector3(0.55, 2.0, Z0 - 0.3).applyMatrix4(M), 'lantern'); box(TP, 'iron', 0.03, 0.03, 0.32, 0.55, 2.24, Z0 - 0.16); T.buoy.push(new THREE.TorusGeometry(0.3, 0.07, 8, 18).rotateY(Math.PI / 2).translate(hw + 0.1, 1.45, (Z0 + Z1) / 2));
   box(TR, 'iron', 2 * hw + 0.3, 0.1, Z1 - Z0 + 0.3, 0, H + 0.05, (Z0 + Z1) / 2); box(T, 'cream', 2 * hw + 0.34, 0.12, 0.05, 0, H - 0.02, Z0 - 0.15); // the roof (lifts off with the cutaway) and its drip edge
   for (const [x0, z0, x1, z1] of [[-hw, Z0, hw, Z0], [-hw, Z1, hw, Z1], [-hw, Z0, -hw, Z1], [hw, Z0, hw, Z1]]) { bar(TP, 'iron', x0, H + 0.9, z0, x1, H + 0.9, z1, 0.04); for (let f = 0; f <= 1.001; f += 1 / 3) bar(TP, 'iron', x0 + (x1 - x0) * f, H + 0.1, z0 + (z1 - z0) * f, x0 + (x1 - x0) * f, H + 0.9, z0 + (z1 - z0) * f, 0.04); }
   rod(TP, 'iron', 1.5, H + 0.1, Z1 - 0.6, 1.5, H + 2.3, Z1 - 0.6, 0.045, 6); box(TP, 'iron', 0.9, 0.05, 0.05, 1.5, H + 1.9, Z1 - 0.6); TP.glow.push(new THREE.SphereGeometry(0.09, 8, 6).translate(1.5, H + 2.38, Z1 - 0.6));
@@ -1367,8 +1374,8 @@ function hermitYard(b, P) { const T = bag(), t = b.t || 0.45, hw = b.w / 2 + t /
     const cx = 1.75, cz = hd + 0.95, cy = gy(cx, cz); P.beam.push(new THREE.CylinderGeometry(0.27, 0.3, 0.48, 10).translate(cx, cy + 0.2, cz)); rod(P, 'beam', cx - 0.05, cy + 0.48, cz, cx + 0.3, cy + 1.05, cz + 0.22, 0.022, 6); box(P, 'iron', 0.04, 0.12, 0.2, cx - 0.06, cy + 0.5, cz - 0.02, 0.6);
     for (let k = 0; k < 4; k++) box(P, 'beam', 0.09, 0.09, 0.5, cx + 0.5 + R() * 0.5, cy + 0.04, cz + (R() - 0.5) * 0.8, R() * 3); collideRun(b, cx, cz, cx, cz, 0.3, () => cy + 0.45); }
   // lanterns: on a bracket by the door, on a pole at the jetty's end
-  { const x = -1.15, y = b.y + 2.05; box(P, 'iron', 0.03, 0.03, 0.34, x, y, -hd - 0.17); lantern(P, x, y - 0.22, -hd - 0.32); }
-  { const jz = -b.d / 2 - 11.4, jy = b.jy(jz), x = 0.78; rod(P, 'beam', x, jy - 0.6, jz, x, jy + 1.65, jz, 0.06, 6); box(P, 'beam', 0.05, 0.05, 0.45, x, jy + 1.6, jz - 0.2); lantern(P, x, jy + 1.32, jz - 0.38); collideRun(b, x, jz, x, jz, 0.1); }
+  { const x = -1.15, y = b.y + 2.05; box(P, 'iron', 0.03, 0.03, 0.34, x, y, -hd - 0.17); lantern(P, x, y - 0.22, -hd - 0.32); lampAt(b, new THREE.Vector3(x, y - 0.22, -hd - 0.32), 'lantern'); }
+  { const jz = -b.d / 2 - 11.4, jy = b.jy(jz), x = 0.78; rod(P, 'beam', x, jy - 0.6, jz, x, jy + 1.65, jz, 0.06, 6); box(P, 'beam', 0.05, 0.05, 0.45, x, jy + 1.6, jz - 0.2); lantern(P, x, jy + 1.32, jz - 0.38); lampAt(b, new THREE.Vector3(x, jy + 1.32, jz - 0.38), 'lantern'); collideRun(b, x, jz, x, jz, 0.1); }
   // the rowboat, tied alongside the jetty by its painter
   { const bx = 1.95, bz = -b.d / 2 - 10.0, by = Math.max(WATER_Y + 0.32, gy(bx, bz) + 0.5), ry = Math.PI + 0.08, Bt = boatParts(), m = new THREE.Matrix4().makeTranslation(bx, by, bz).multiply(new THREE.Matrix4().makeRotationY(ry));
     for (const k of ['ceil', 'planks', 'beam']) for (const q of Bt[k]) P[k].push(q.applyMatrix4(m)); const bow = new THREE.Vector3(...Bt.bow).applyMatrix4(m), post = new THREE.Vector3(0.75, Math.max(gy(0.75, -b.d / 2 - 7), 0) + 0.58, -b.d / 2 - 7); // (the jetty's post ahead of her bow)

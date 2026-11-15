@@ -168,16 +168,16 @@ export function buildEnvironment(scene, renderer, camera) {
   // (slice 26 follow-up, Jared 2026-11-15: "torch light seems to stop working when you're a few steps away?") ──
   const pool = []; for (let k = 0; k < Q.fireLights; k++) { const l = new THREE.PointLight(0xff8a3a, 0, 26, 1.25); l.userData = { id: null, s: null, w: 0 }; scene.add(l); pool.push(l); }
   const _fr = new THREE.Frustum(), _pm = new THREE.Matrix4(), _sph = new THREE.Sphere(undefined, 1.5), FADE = 4; let lastT = 0;
-  const sid = (s) => s.who ?? `${s.key}${s.x.toFixed(1)},${s.z.toFixed(1)}`; // (a carried torch moves: it goes by its carrier)
+  const sid = (s) => s.who ?? `${s.key}${s.x.toFixed(1)},${s.y.toFixed(1)},${s.z.toFixed(1)}`; // (a carried torch moves: it goes by its carrier)
   function fireLights(spots, cam, nk, t) { cam.updateMatrixWorld(); const at = cam.position, dt = Math.min(0.05, Math.max(0, t - lastT)); lastT = t;
     _fr.setFromProjectionMatrix(_pm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse)); const held = new Set(pool.map(l => l.userData.id)), all = new Map(), rank = [];
     for (const s of spots) { const id = sid(s), d2 = (s.x - at.x) ** 2 + (s.z - at.z) ** 2; all.set(id, s); if (d2 > 70 * 70) continue; _sph.center.set(s.x, s.y, s.z);
-      rank.push([id, d2 * (s.key === 'torch' ? 2.5 : 1) * (_fr.intersectsSphere(_sph) ? 1 : 10) * (held.has(id) ? 0.7 : 1)]); }
+      rank.push([id, d2 * (s.w ?? (s.key === 'torch' ? 2.5 : 1)) * (_fr.intersectsSphere(_sph) ? 1 : 10) * (held.has(id) ? 0.7 : 1)]); }
     const want = new Set(rank.sort((a, b) => a[1] - b[1]).slice(0, pool.length).map(q => q[0]));
     for (const l of pool) { const u = l.userData; if (u.id && want.has(u.id) && all.has(u.id)) u.w = Math.min(1, u.w + dt * FADE); else { u.w = Math.max(0, u.w - dt * FADE); if (!u.w) u.id = null; } u.s = all.get(u.id) ?? u.s; }
     for (const id of want) if (!held.has(id)) { const l = pool.find(q => !q.userData.id); if (!l) break; Object.assign(l.userData, { id, s: all.get(id), w: 0 }); } // (a free light starts dark and fades in)
     pool.forEach((l, k) => { const u = l.userData, s = u.s; if (!s || !u.w) { l.intensity = 0; return; } const fl = 1 + Math.sin(t * 13 + k * 1.7) * 0.1 + Math.sin(t * 7.3 + k) * 0.08 + Math.sin(t * 23.1 + k * 3) * 0.05;
-      l.position.set(s.x, s.y + (s.key === 'torch' ? 0.15 : 0.5), s.z); l.distance = s.dist ?? (s.key === 'torch' ? 16 : 26); l.intensity = (s.i ?? (s.key === 'torch' ? 9 : 18)) * /* (slice 26: a carried torch is brighter) */ fl * (0.12 + 0.88 * nk) * u.w; }); } // (slice 21, Jared 2026-11-14: "fires and torches dont seem to be putting off a lot of light": the glow reached about 3 m; now about 8 to 10)
+      l.color.setHex(s.c ?? 0xff8a3a); /* (a place's lamp: its own warmth) */ l.position.set(s.x, s.y + (s.dy ?? (s.key === 'torch' ? 0.15 : 0.5)), s.z); l.distance = s.dist ?? (s.key === 'torch' ? 16 : 26); l.intensity = (s.i ?? (s.key === 'torch' ? 9 : 18)) * /* (slice 26: a carried torch is brighter) */ fl * (0.12 + 0.88 * nk) * u.w; }); } // (slice 21, Jared 2026-11-14: "fires and torches dont seem to be putting off a lot of light": the glow reached about 3 m; now about 8 to 10)
   return { sky, sun, water, follow, tick, setTime, fireLights, haze, fogTint, normals: waterNormals(), fogNear: Q.drawDist * 0.2, fogFar: Q.drawDist * 1.35 };
 }
 

@@ -13,7 +13,7 @@ import * as THREE from 'three';
 import { box, gAt, collideRun, surface, wall, cache, kitRoom, kit, ladders, bar, hangLamp, stock, shelfAt, mats } from './buildings.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { boxUV } from './propmodels.js';
-import { colliders } from './props.js';
+import { colliders, nearColliders, colR, surfaces, STEP } from './props.js';
 import { toW } from './plan.js';
 import { canvasTex } from './propmodels.js';
 
@@ -67,9 +67,9 @@ function mk(b, P, g) { const t = b.t, H = { b, P, g, wins: [], segs: [], rooms: 
   // the outside walls round a polygon (corners in order: along the front (-z) first, so every wall's outward side is its
   // (uz, -ux)); holes[i] are edge i's; o.skip lists edges another part builds; lined inside with o.line (plaster)
   H.out = (k, pts, h, holes = {}, o = {}) => { for (let i = 0; i < pts.length; i++) { if (o.skip?.includes(i)) continue; const [x0, z0] = pts[i], [x1, z1] = pts[(i + 1) % pts.length], L = Math.hypot(x1 - x0, z1 - z0), ux = (x1 - x0) / L, uz = (z1 - z0) / L;
-    H.wall(k, x0 - ux * t / 2, z0 - uz * t / 2, x1 + ux * t / 2, z1 + uz * t / 2, h, holes[i] || [], { ext: !o.inner?.includes(i), line: o.line === undefined ? 'inwall' : o.line, lv: o.lv || 0, stone: o.stone }); } }; // (o.inner: edges shared with another wing, inside walls)
+    H.wall(k, x0 - ux * t / 2, z0 - uz * t / 2, x1 + ux * t / 2, z1 + uz * t / 2, h, holes[i] || [], { ext: !o.inner?.includes(i), line: o.line === undefined ? 'inwall' : o.line, lv: o.lv || 0, stone: o.stone, foot: o.foot, bot: o.bot }); } }; // (o.inner: edges shared with another wing, inside walls; o.foot, o.bot: walls standing on a raised floor, below)
   // an inside wall between two walls' inner faces, standing on the floor at lv
-  H.part = (x0, z0, x1, z1, lv, h, holes = [], k = 'inwall') => H.wall(k, x0, z0, x1, z1, h, holes, { lv });
+  H.part = (x0, z0, x1, z1, lv, h, holes = [], k = 'inwall', o = {}) => H.wall(k, x0, z0, x1, z1, h, holes, { lv, ...o });
   const inR = (r, x, z) => x >= r[0] && x <= r[1] && z >= r[2] && z <= r[3];
   // a floor at lv over rects [x0, x1, z0, z1] less holes (stairwells): boards on a 22 cm slab you stand on; o.plinth: the
   // foundation under it, stone from below the ground up to the floor (its rects grown to the walls' outer faces)
@@ -102,7 +102,7 @@ function mk(b, P, g) { const t = b.t, H = { b, P, g, wins: [], segs: [], rooms: 
     return { run, n, r }; };
   // a railing (posts, handrail, mid rail) along a floor's edge at lv: solid to a walker on that floor, passed under from below
   H.rail = (x0, z0, x1, z1, lv, k = 'beam') => { const Y = b.y + lv, L = Math.hypot(x1 - x0, z1 - z0), n0 = colliders.length; collideRun(b, x0, z0, x1, z1, 0.1);
-    since(n0, { top: Y + 1, stand: Y + 1, bot: lv > 0.5 ? Y - 0.05 : undefined });
+    since(n0, { top: Y + 1, stand: Y + 1, bot: lv > 0.5 || H.up ? Y - 0.05 : undefined }); // (H.up: a stilt house's porch rails, which railed the ground under it in)
     for (const y of [0.95, 0.5]) bar(P, k, x0, Y + y, z0, x1, Y + y, z1, y > 0.9 ? 0.07 : 0.045);
     const m = Math.max(1, Math.round(L / 0.12)); for (let i = 0; i <= m; i++) { const f = i / m, big = i % 8 === 0 || i === m; box(P, k, big ? 0.08 : 0.035, big ? 1.0 : 0.45, big ? 0.08 : 0.035, x0 + (x1 - x0) * f, Y + (big ? 0.5 : 0.725), z0 + (z1 - z0) * f); } };
   // a gable roof: its ridge len long along axis ('x' or 'z') over the middle of a span-wide body whose walls' tops are at lv, rh
@@ -145,7 +145,7 @@ function mk(b, P, g) { const t = b.t, H = { b, P, g, wins: [], segs: [], rooms: 
     for (let x = o.x0 + 0.05; x <= o.x1; x += 0.6) bar(P, 'beam', x, yl - 0.05, o.z1 - 0.05, x, ye, ze, 0.07);
     box(P, k, W + 0.5, 0.06, Lr + 0.1, mx, (yl + ye) / 2 + 0.08, (o.z1 + ze) / 2, 0, -a); box(P, 'iron', W + 0.5, 0.03, 0.22, mx, yl + 0.12, o.z1 - 0.06, 0, -a * 0.5); // the sheet, its flashing on the wall
     box(P, 'beam', W + 0.5, 0.18, 0.04, mx, ye - 0.02, ze - 0.02);
-    surface(b, (lx, lz) => lx >= o.x0 && lx <= o.x1 && lz >= o.z0 && lz <= o.z1 + 0.05 ? Y : null); H.decks.push([o.x0, o.x1, o.z0, o.z1 + 0.3]);
+    surface(b, (lx, lz) => lx >= o.x0 && lx <= o.x1 && lz >= o.z0 && lz <= o.z1 + 0.2 ? Y : null); H.decks.push([o.x0, o.x1, o.z0, o.z1 + 0.3]); // (the deck into the doorway: it stopped 10 cm short of the floor, and a player stood still on the stilt house's doorstep dropped through, Hudson, November 15, 2026)
     const st = o.steps; let g = gAt(b, st.c, o.z0 - 0.4) - b.y, n = Math.round((o.lv - g) / RISE); for (let k = 0; k < 3; k++) { g = Math.min(g, gAt(b, st.c, o.z0 - n * TREAD - 0.3) - b.y); n = Math.round((o.lv - g) / RISE); }
     for (const [xa, xb] of [[o.x0 + 0.1, st.c - st.w / 2], [st.c + st.w / 2, o.x1 - 0.1]]) if (xb - xa > 0.3) H.rail(xa, zb, xb, zb, o.lv);
     for (const x of [o.x0 + 0.08, o.x1 - 0.08]) H.rail(x, zb, x, o.z1 - 0.2, o.lv);
@@ -164,10 +164,13 @@ function mk(b, P, g) { const t = b.t, H = { b, P, g, wins: [], segs: [], rooms: 
     if (o.flue) H.P.iron.push(new THREE.CylinderGeometry(0.085, 0.085, o.flue - hg + 0.35, 10).translate(cxm, b.y + lv + (hg + o.flue + 0.35) / 2, czm)); // (a stove's pipe from its top up through the ceiling)
     if (o.solid === false) return; if (hg < 0.4 || Math.max(W, Dp) < 0.6) return;
     const c = Math.cos(ry), sn = Math.sin(ry), lx = (bb.min.x + bb.max.x) / 2 * s, lz = (bb.min.z + bb.max.z) / 2 * s, mx = x + lx * c + lz * sn, mz = z - lx * sn + lz * c, rr = Math.max(0.21, Math.min(0.35, Math.min(W, Dp) / 2));
-    const long = W >= Dp, ex = (Math.max(W, Dp) / 2 - rr), vx = long ? c : sn, vz = long ? -sn : c, n0 = colliders.length;
-    collideRun(b, mx - vx * ex, mz - vz * ex, mx + vx * ex, mz + vz * ex, rr, () => b.y + lv + hg); since(n0, { bot: lv > 0.5 ? b.y + lv - 0.05 : undefined }); };
+    const long = W >= Dp, ex = Math.max(W, Dp) / 2, vx = long ? c : sn, vz = long ? -sn : c, n0 = colliders.length, off = Math.min(W, Dp) / 2 - rr; // (a piece wider than two
+    // circles, a bedstead 1.5 m across, gets a run down each side: one down its middle let you walk 0.4 m into it, and sealed the gap beside it.
+    // A run's end circles sit inside its ends (collideRun), so it runs end to end: it stopped rr short of each, 0.35 m into a bed's foot)
+    for (const o2 of off > 0.05 ? [-off, off] : [0]) collideRun(b, mx - vx * ex - vz * o2, mz - vz * ex + vx * o2, mx + vx * ex - vz * o2, mz + vz * ex + vx * o2, rr, () => b.y + lv + hg);
+    since(n0, { bot: lv > 0.5 || H.up ? b.y + lv - 0.05 : undefined }); };
   H.room = (type, x0, x1, z0, z1, lv, o = {}) => H.rooms.push({ type, x0, x1, z0, z1, lv, o });
-  H.cache = (x, z, lv) => { const n0 = colliders.length; cache(b, g, x, z, null, { y: b.y + lv }); since(n0, { bot: lv > 0.5 ? b.y + lv - 0.05 : undefined }); /* (upstairs: the floor below walks on under it) */ H.occ.push([x - 0.8, x + 0.8, z - 0.8, z + 0.8, lv, lv]); };
+  H.cache = (x, z, lv) => { const n0 = colliders.length; cache(b, g, x, z, null, { y: b.y + lv }); since(n0, { bot: lv > 0.5 || H.up ? b.y + lv - 0.05 : undefined }); /* (upstairs, or a floor on posts: the ground below walks on under it) */ H.occ.push([x - 0.8, x + 0.8, z - 0.8, z + 0.8, lv, lv]); (H.crates ||= []).push([x, z, lv]); };
   H.done = () => { H.stoops(); const n0 = b.group.children.length; furnish(H); H.put.done(); b.inside = new THREE.Group(); b.group.add(b.inside); b.inside.add(...b.group.children.slice(n0, -1)); // (its furniture in a group of its own: drawn only up close, buildings.js tickBuildings)
     b.rooms = H.rooms.map(r => ({ type: r.type, x0: r.x0, x1: r.x1, z0: r.z0, z1: r.z1, lv: r.lv })); }; // (rooms: the checks' pictures stand in them)
   return H; }
@@ -185,10 +188,45 @@ const box3 = (k) => { const g = kit()[k].geo; if (!g.boundingBox) g.computeBound
 const SETS = { living: ['sofa', 'coffee', 'armchair', 'bookshelf', 'rocker', 'clock', 'lamp'], bedroom: ['bed', 'nightstand', 'cabinet', 'chair', 'crate'],
   kitchen: ['counter', 'cabinet', 'shelves', 'table'], dining: ['dining', 'cabinet', 'clock', 'lamp'], den: ['sofa', 'coffee', 'bookshelf', 'armchair'],
   store: ['shelves', 'crate', 'crate1', 'bench', 'jerry'], garage: ['shelves', 'table', 'jerry', 'jerry', 'crate'], study: ['desk', 'chair', 'bookshelf', 'armchair', 'clock'] };
-function furnish(H) { const { b } = H, doors = [...b.doors, ...b.inner];
+function furnish(H) { const { b } = H, doors = [...b.doors, ...b.inner], lvls = new Map();
+  // (Jared, November 15, 2026: "there's a bed we cant go past": the stilt house's bed stood across its 2.1 m bedroom, its crate
+  // behind it.) A floor's standing room (on that floor, 0.4 m clear of the game's colliders, as the walk test judges it, on a 10 cm
+  // grid over the footprint), walked from its ways in (the outside doors, stair ends and the ladder's top on that floor): a piece
+  // may not leave more of its rooms out of reach (in patches of 0.1 m2 or more) than before, nor shut a way in, nor leave a crate
+  // with nowhere to stand within reach (1.4 m, the game's). What was built is judged by its colliders, a piece placed here by its
+  // shape (H.item fills it with runs of circles: its corners round off by rr). A floor with no way in is judged by its parts:
+  // no more of them, and not none
+  const big = (k) => { const bb = box3(k); return bb.max.y - bb.min.y >= 0.4 && Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z) >= 0.6; }; // (what gets a collider: H.item)
+  const level = (lv) => { if (lvls.has(lv)) return lvls.get(lv); const st = 0.1, x0 = b.cx - b.w / 2 - 0.5, z0 = b.cz - b.d / 2 - 0.5, nx = Math.round((b.w + 1) / st), nz = Math.round((b.d + 1) / st), y = b.y + lv;
+    const X = (i) => x0 + (i + 0.5) * st, Z = (j) => z0 + (j + 0.5) * st, rooms = H.rooms.filter(r => r.lv === lv), inRoom = (x, z) => rooms.some(r => x > r.x0 && x < r.x1 && z > r.z0 && z < r.z1);
+    const loc = ([x, z]) => { const dx = x - b.x, dz = z - b.z; return [dx * b.ca + dz * b.sa, -dx * b.sa + dz * b.ca]; };
+    const ins = [...b.doors.filter(d => Math.abs(d.lv - lv) < 0.3).map(d => [d.lx - d.nx * 0.6, d.lz - d.nz * 0.6]), ...b.stairs.flatMap(q => [[q.a, q.lv0], [q.z, q.lv1]]).filter(([, l]) => Math.abs(l - lv) < 0.3).map(([p]) => p),
+      ...ladders.filter(l => l.b === b && Math.abs(l.y1 - y) < 0.3).map(l => loc(l.at(l.y1)))], crates = (H.crates || []).filter(c => Math.abs(c[2] - lv) < 0.3);
+    // (the game's standAt and nearColliders for every cell cost 1.6 s a world: this house's own floors, and its neighbourhood's colliders stamped once)
+    const sf = surfaces.filter(f => f.x === b.x && f.z === b.z), cs = new Set(); for (let i = 0; i < nx; i += 60) for (let j = 0; j < nz; j += 60) for (const c of nearColliders(...toW(b, X(i), Z(j)))) cs.add(c);
+    const cur = new Uint8Array(nx * nz); for (let i = 0; i < nx; i++) for (let j = 0; j < nz; j++) { const [x, z] = toW(b, X(i), Z(j)); let h = -Infinity;
+      for (const f of sf) { const v = f.at(x, z); if (v != null && v <= y + 0.3 + Math.max(STEP, f.climb || 0) && v > h) h = v; } cur[i * nz + j] = Math.abs(h - y) < 0.1 ? 1 : 0; } // (a floor at this level: not a stairwell)
+    for (const c of cs) { if (!c.r || c.gate || (c.bot != null && y + 1.7 < c.bot) || (c.top != null && c.top <= y + 0.35)) continue; const [lx, lz] = loc([c.x, c.z]), e = (c.prof ? 1.5 : 1) * c.r + 0.4;
+      for (let i = Math.max(0, Math.floor((lx - e - x0) / st)); i < Math.min(nx, Math.ceil((lx + e - x0) / st)); i++) for (let j = Math.max(0, Math.floor((lz - e - z0) / st)); j < Math.min(nz, Math.ceil((lz + e - z0) / st)); j++) {
+        const k = i * nz + j; if (!cur[k]) continue; const [x, z] = toW(b, X(i), Z(j)); if (Math.hypot(c.x - x, c.z - z) < colR(c, x, z) + 0.4) cur[k] = 0; } }
+    const cells = (p, d) => { const out = []; for (let k = 0; k < nx * nz; k++) if (Math.hypot(X(Math.floor(k / nz)) - p[0], Z(k % nz) - p[1]) < d) out.push(k); return out; }; // (looked up once a floor)
+    const inside = new Uint8Array(nx * nz).map((_, k) => inRoom(X(Math.floor(k / nz)), Z(k % nz)) ? 1 : 0), door = ins.map(p => cells(p, 0.8)), reach = crates.map(c => cells(c, 1.4)), q = new Int32Array(nx * nz);
+    const score = (g) => { const f = g.slice(), fill = (k, v) => { let c = 0, t = 0; q[t++] = k; f[k] = v; while (t) { const h = q[--t], i = (h / nz) | 0, j = h - i * nz; c += inside[h];
+        if (i + 1 < nx && f[h + nz] === 1) { f[h + nz] = v; q[t++] = h + nz; } if (i > 0 && f[h - nz] === 1) { f[h - nz] = v; q[t++] = h - nz; }
+        if (j + 1 < nz && f[h + 1] === 1) { f[h + 1] = v; q[t++] = h + 1; } if (j > 0 && f[h - 1] === 1) { f[h - 1] = v; q[t++] = h - 1; } } return c; };
+      const shut = door.filter(ks => !ks.some(k => f[k])).length; // (a way in with nowhere to stand by it)
+      for (const ks of door) for (const k of ks) if (f[k] === 1) fill(k, 2); // (reached from a way in)
+      let n = 0; for (let k = 0; k < f.length; k++) if (f[k] === 1) { const c = fill(k, 3); if (c >= 10) n += ins.length ? c : 1; } // (left out: its cells in the rooms, or with no way in, its parts)
+      const off = reach.filter(ks => !ks.some(k => ins.length ? f[k] === 2 : f[k])).length; return n + 1e5 * (off + shut); };
+    const stamp = (g, o) => { const rr = Math.max(0.21, Math.min(0.35, Math.min(o[1] - o[0], o[3] - o[2]) / 2)), e = 0.4;
+      for (let i = Math.max(0, Math.floor((o[0] - e - x0) / st)); i < Math.min(nx, Math.ceil((o[1] + e - x0) / st)); i++) for (let j = Math.max(0, Math.floor((o[2] - e - z0) / st)); j < Math.min(nz, Math.ceil((o[3] + e - z0) / st)); j++)
+        if (Math.hypot(Math.max(o[0] + rr - X(i), 0, X(i) - o[1] + rr), Math.max(o[2] + rr - Z(j), 0, Z(j) - o[3] + rr)) < rr + e) g[i * nz + j] = 0; return g; };
+    const L = { was: score(cur), cuts: (r) => { const n = score(stamp(cur.slice(), r)); return n > L.was || (!ins.length && L.was % 1e5 > 0 && n % 1e5 < 1); }, take: (r) => { stamp(cur, r); L.was = score(cur); } };
+    lvls.set(lv, L); return L; };
   for (const R of H.rooms) { const occ = H.occ.filter(o => R.lv >= o[4] - 0.3 && R.lv <= o[5] + 0.3).map(o => o.slice(0, 4)), put = [];
     for (const d of doors) if (Math.abs(d.lv - R.lv) < 0.7) { const along = Math.abs(d.nz) > 0.5, a = d.w / 2 + 0.25; occ.push(along ? [d.lx - a, d.lx + a, d.lz - 1.1, d.lz + 1.1] : [d.lx - 1.1, d.lx + 1.1, d.lz - a, d.lz + a]); } // (a clear lane through every doorway, 1.1 m each side of it)
     for (const h of H.holes) if (Math.abs(h[4] - R.lv) < 0.3) occ.push([h[0] - 0.3, h[1] + 0.3, h[2] - 0.3, h[3] + 0.3]);
+    const L = level(R.lv), cuts = (r, k) => big(k) && L.cuts(r), take = (r, k, rs = r) => { occ.push(r); if (big(k)) L.take(rs); };
     const free = (r) => r[0] >= R.x0 - 0.01 && r[1] <= R.x1 + 0.01 && r[2] >= R.z0 - 0.01 && r[3] <= R.z1 + 0.01 && !occ.some(o => r[0] < o[1] && r[1] > o[0] && r[2] < o[3] && r[3] > o[2]);
     const winOn = (side, c0, c1) => H.wins.some(w => Math.abs(w.y0 - R.lv - 0.9) < 0.6 && w.along === (side === '-z' || side === '+z') && Math.abs(w.line - ({ '-z': R.z0, '+z': R.z1, '-x': R.x0, '+x': R.x1 })[side]) < 0.45 && c0 < w.c + w.w / 2 + 0.1 && c1 > w.c - w.w / 2 - 0.1);
     const sides = ['-z', '+z', '-x', '+x'].filter(s => !(R.o.no || []).includes(s));
@@ -200,20 +238,20 @@ function furnish(H) { const { b } = H, doors = [...b.doors, ...b.inner];
       for (const s of o.side ? [o.side] : sides) { const ax = s === '-z' || s === '+z', a0 = ax ? R.x0 : R.z0, a1 = ax ? R.x1 : R.z1, mid = o.near ?? (a0 + a1) / 2;
         for (let i = 0; i < 40; i++) { const c = mid + (i % 2 ? 1 : -1) * Math.ceil(i / 2) * 0.2; if (c - W / 2 < a0 || c + W / 2 > a1) continue;
           const r = s === '-z' ? [c - W / 2, c + W / 2, R.z0, R.z0 + Dp + 0.03] : s === '+z' ? [c - W / 2, c + W / 2, R.z1 - Dp - 0.03, R.z1] : s === '-x' ? [R.x0, R.x0 + Dp + 0.03, c - W / 2, c + W / 2] : [R.x1 - Dp - 0.03, R.x1, c - W / 2, c + W / 2];
-          if (!free(r) || (hg > 0.85 && !o.low && winOn(s, c - W / 2, c + W / 2)) || !backed(s, c - W / 2, c + W / 2)) continue;
+          if (!free(r) || (hg > 0.85 && !o.low && winOn(s, c - W / 2, c + W / 2)) || !backed(s, c - W / 2, c + W / 2) || cuts(r, k)) continue;
           const [x, z, ry] = s === '-z' ? [c - mxl, R.z0 + 0.03 - bb.min.z, 0] : s === '+z' ? [c + mxl, R.z1 - 0.03 + bb.min.z, Math.PI] : s === '-x' ? [R.x0 + 0.03 - bb.min.z, c + mxl, Math.PI / 2] : [R.x1 - 0.03 + bb.min.z, c - mxl, -Math.PI / 2];
-          occ.push(r); H.item(k, x, R.lv, z, ry, o); const p = { k, x, z, ry, side: s, c, r }; put.push(p); return p; } } return null; };
+          take(r, k); H.item(k, x, R.lv, z, ry, o); const p = { k, x, z, ry, side: s, c, r }; put.push(p); return p; } } return null; };
     // a table in the open, chairs round it: the free spot nearest the room's middle with room for the chairs
     const centre = (k, chairs) => { const bb = box3(k), cx = (R.x0 + R.x1) / 2, cz = (R.z0 + R.z1) / 2, e = chairs ? 0.55 : 0.35, pts = [], turn = (R.x1 - R.x0 < R.z1 - R.z0) !== (bb.max.x - bb.min.x < bb.max.z - bb.min.z), W = turn ? bb.max.z - bb.min.z : bb.max.x - bb.min.x, Dp = turn ? bb.max.x - bb.min.x : bb.max.z - bb.min.z, ry0 = turn ? Math.PI / 2 : 0; // (long side along the room's)
       for (let dx = -3; dx <= 3; dx += 0.25) for (let dz = -3; dz <= 3; dz += 0.25) pts.push([cx + dx, cz + dz]); pts.sort((p, q) => Math.hypot(p[0] - cx, p[1] - cz) - Math.hypot(q[0] - cx, q[1] - cz));
-      for (const [x, z] of pts) { const r = [x - W / 2 - e, x + W / 2 + e, z - Dp / 2 - e, z + Dp / 2 + e]; if (!free(r)) continue; occ.push(r); H.item(k, x, R.lv, z, ry0);
+      for (const [x, z] of pts) { const r = [x - W / 2 - e, x + W / 2 + e, z - Dp / 2 - e, z + Dp / 2 + e]; const t0 = [x - W / 2, x + W / 2, z - Dp / 2, z + Dp / 2]; if (!free(r) || cuts(t0, k)) continue; take(r, k, t0); H.item(k, x, R.lv, z, ry0); // (the chairs round it have no collider)
         if (chairs) for (const [sx, sz, ry] of chairs === 4 ? [[0, -1, 0], [0, 1, Math.PI], [-1, 0, Math.PI / 2], [1, 0, -Math.PI / 2]] : [[0, -1, 0], [0, 1, Math.PI]]) H.item('chair', x + sx * (W / 2 + 0.28), R.lv, z + sz * (Dp / 2 + 0.28), ry + (hash(b, x, z, sx + sz * 3) - 0.5) * 0.4, { solid: false });
         return true; } return false; };
     const lamp = () => { if (R.o.ceil) hangLamp(H.put, (R.x0 + R.x1) / 2, b.y + R.lv + R.o.ceil - 0.05, (R.z0 + R.z1) / 2, b.y + R.lv, Math.max(0.4, Math.min(1, (R.o.ceil - 0.05 - 2.1) / 1.25))); }; // (the quality pass: the radio shack's 1.25 m drop hung a house's bulb at chest height in the room's middle; scaled, its bulb hangs 2.1 m up)
     for (const k of R.o.set || SETS[R.type]) {
       if (k === 'lamp') lamp();
       else if (k === 'coffee') { const s = put.find(p => p.k === 'sofa'); if (!s) continue; const bb = box3('coffee'), n = { '-z': [0, 1], '+z': [0, -1], '-x': [1, 0], '+x': [-1, 0] }[s.side], o = 0.95 + (bb.max.z - bb.min.z) / 2;
-        const x = s.x + n[0] * o, z = s.z + n[1] * o, W = bb.max.x - bb.min.x, Dp = bb.max.z - bb.min.z, r = n[0] ? [x - Dp / 2, x + Dp / 2, z - W / 2, z + W / 2] : [x - W / 2, x + W / 2, z - Dp / 2, z + Dp / 2]; if (free(r)) { occ.push(r); H.item('coffee', x, R.lv, z, s.ry); } }
+        const x = s.x + n[0] * o, z = s.z + n[1] * o, W = bb.max.x - bb.min.x, Dp = bb.max.z - bb.min.z, r = n[0] ? [x - Dp / 2, x + Dp / 2, z - W / 2, z + W / 2] : [x - W / 2, x + W / 2, z - Dp / 2, z + Dp / 2]; if (free(r) && !cuts(r, 'coffee')) { take(r, 'coffee'); H.item('coffee', x, R.lv, z, s.ry); } }
       else if (k === 'nightstand') { const s = put.find(p => p.k === 'bed' || p.k === 'bed2'); if (s) onWall('nightstand', { side: s.side, near: s.c + 1.35 }) || onWall('nightstand', { side: s.side, near: s.c - 1.35 }); }
       else if (k === 'clock') { const bb = box3('clock'); for (const s of sides) { const ax = s === '-z' || s === '+z', c = ax ? (R.x0 + R.x1) / 2 + 0.6 : (R.z0 + R.z1) / 2 + 0.6; if (!backed(s, c - 0.2, c + 0.2) || winOn(s, c - 0.3, c + 0.3) || doors.some(d => Math.hypot(d.lx - (ax ? c : s === '-x' ? R.x0 : R.x1), d.lz - (ax ? (s === '-z' ? R.z0 : R.z1) : c)) < 1.2)) continue;
         const [x, z, ry] = s === '-z' ? [c, R.z0 + 0.01, 0] : s === '+z' ? [c, R.z1 - 0.01, Math.PI] : s === '-x' ? [R.x0 + 0.01, c, Math.PI / 2] : [R.x1 - 0.01, c, -Math.PI / 2]; H.item('clock', x, R.lv, z, ry, { dy: 1.95 - bb.min.y, solid: false }); break; } }
@@ -376,15 +414,17 @@ const KIND = {
 
   // 7. Stilt house: a plank cabin on posts 1.9 m over the Bog, braced, a covered deck in front reached by a stair, a stove room and
   // a bedroom, a tin roof
-  stilt(H, b) { const { D, W } = H, P = H.P, h = 2.5;
-    H.out('planks', [[-3.4, -2.8], [3.4, -2.8], [3.4, 2.8], [-3.4, 2.8]], h, { 0: [D(-1.0), W(1.6)], 1: [W(0)], 2: [W(-2.0), W(1.6, 0.8)], 3: [W(0.8)] }, { line: 'planks' });
+  // (Jared, November 15, 2026: "a low door on this house that we cant reach (no crouching?)": its walls ran on down to the swamp,
+  // walling the space under it with a doorway 1.8 m high under its real door. They stand on its floor's frame, as its posts show)
+  stilt(H, b) { const { D, W } = H, P = H.P, h = 2.5, up = { foot: b.y - 0.3, bot: b.y - 0.3 }; H.up = true;
+    H.out('planks', [[-3.4, -2.8], [3.4, -2.8], [3.4, 2.8], [-3.4, 2.8]], h, { 0: [D(-1.0), W(1.6)], 1: [W(0)], 2: [W(-2.0), W(1.6, 0.8)], 3: [W(0.8)] }, { line: 'planks', ...up });
     H.floor([[-3.4, 3.4, -2.8, 2.8]], 0);
     const posts = []; for (const x of [-3.4, 0, 3.4]) for (const z of [-2.8, 0, 2.8]) posts.push([x, z]); box(P, 'beam', 7.0, 0.25, 5.8, 0, b.y - 0.17, 0); // the floor's frame
     for (const [x, z] of posts) { const g0 = gAt(b, x, z); box(P, 'beam', 0.2, b.y - g0 + 0.6, 0.2, x, (b.y + g0 - 0.6) / 2 - 0.1, z); collideRun(b, x, z, x, z, 0.14); }
     for (const z of [-2.8, 2.8]) for (const s of [-1, 1]) bar(P, 'beam', s * 3.4, b.y - 0.3, z, 0, gAt(b, 0, z) + 0.2, z, 0.09);
     for (const x of [-3.4, 3.4]) bar(P, 'beam', x, b.y - 0.3, -2.8, x, gAt(b, x, 2.8) + 0.2, 2.8, 0.09);
     box(P, 'beam', 7.0, 0.3, 0.12, 0, b.y - 0.2, -2.8); box(P, 'beam', 7.0, 0.3, 0.12, 0, b.y - 0.2, 2.8);
-    H.part(1.0, -2.65, 1.0, 2.65, 0, h, [D(-1.4)], 'planks');
+    H.part(1.0, -2.65, 1.0, 2.65, 0, h, [D(-1.4)], 'planks', up);
     H.gable(0, 0, 6.8, 5.6, h, 1.4, 'x', 'planks', { roofK: 'iron', gutter: false });
     H.porch({ x0: -3.5, x1: 3.5, z0: -5.15, z1: -2.95, lv: 0, roof: [h - 0.1, 2.2], posts: [-3.4, 0, 3.4], steps: { c: -2.0, w: 1.3 }, roofK: 'iron' });
     H.room('kitchen', -3.25, 0.85, -2.65, 2.65, 0, { set: ['heater', 'table', 'shelves', 'bucket'] }); H.room('bedroom', 1.15, 3.25, -2.65, 2.65, 0, { set: ['bed', 'chair', 'crate'] }); H.cache(2.6, 2.0, 0); },
