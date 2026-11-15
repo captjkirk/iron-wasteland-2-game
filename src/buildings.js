@@ -183,31 +183,170 @@ function buildTower(b, P, g) { const { w, d, h } = b, slit = (at) => [win(at, 0.
   for (const s of [-0.25, 0.25]) box(P, 'beam', 0.07, 5.8, 0.08, s, b.y + 2.85, d / 2 - t / 2 - 0.25, 0, -0.08); for (let y = 0.4; y < 5.6; y += 0.35) box(P, 'beam', 0.5, 0.05, 0.05, 0, b.y + y, d / 2 - t / 2 - 0.25 - y * 0.08);
   rubble(b, P, 'brick', w / 2 - 1.2, -d / 2 + 1.3, 1.1, 12); cache(b, g, -w / 2 + 1, -d / 2 + 1.1); }
 
-// the gas station (IW1's GAS STATION): a concrete forecourt, a canopy on four posts over two pumps, a garage at the back
-// with its roller door half up, a sign on a pole
+// the gas station (IW1's GAS STATION; its detail pass, Jared, November 15, 2026: "the gas station still needs the detail/quality
+// pass"): a cracked concrete forecourt with oil stains and faded lane arrows; a steel canopy on four posts (guard collars at their
+// feet), its fascia in the old brand's livery, panels and dead light fittings under it, one panel hanging; two pump islands, each a
+// painted curb with bollards at its ends and a pump in the brand's red (its face, dial and grade buttons, hoses on their nozzles,
+// one hose cut); the shop and service bay at the back (a glass shop door hung open, its front window and sign board, the bay's
+// roller door stuck up over head height, a boarded window, rust down the walls, the roof's coping and a dead air conditioner);
+// inside: the counter and its till, shelves of tins, a drinks fridge, a car lift in the bay, the workbench under a pegboard, tyres
+// and drums; a lantern on the counter, one on the bench and one hung under the canopy, so the place reads at night; the pole sign
+// with its price board, a number missing. Everything solid between waist and head height has a collider (walktest 'gas')
+let GM = null;
+function gasMats() { if (GM) return GM;
+  const r = mulberry32(31), rnd = (a, c) => a + r() * (c - a);
+  const wear = (x, w, h, n = 120, rust = 0.5) => { for (let i = 0; i < n; i++) { const rs = r() < rust; x.fillStyle = rs ? `rgba(${110 + r() * 50},${50 + r() * 30},20,${0.15 + r() * 0.35})` : `rgba(30,28,24,${0.05 + r() * 0.15})`;
+    x.fillRect(r() * w, r() * h, 1 + r() * (rs ? 6 : 3), 1 + r() * (rs ? 8 : 3)); } };
+  const drips = (x, w, y0, n, len) => { for (let i = 0; i < n; i++) { x.fillStyle = `rgba(${105 + r() * 40},${48 + r() * 22},18,${0.12 + r() * 0.3})`; x.fillRect(r() * w, y0 + r() * 6, 1.5 + r() * 3, len * (0.3 + r())); } };
+  const logo = (x, cx, cy, s) => { x.fillStyle = '#b8261b'; x.beginPath(); x.arc(cx, cy, s, 0, 6.283); x.fill(); x.fillStyle = '#ece8dc'; x.beginPath(); x.moveTo(cx - s * 0.7, cy + s * 0.35); x.lineTo(cx - s * 0.15, cy - s * 0.45); x.lineTo(cx + s * 0.15, cy - s * 0.05); x.lineTo(cx + s * 0.35, cy - s * 0.3); x.lineTo(cx + s * 0.75, cy + s * 0.35); x.closePath(); x.fill(); };
+  const S = (o, cut = false) => { const m = new THREE.MeshStandardMaterial({ roughness: 0.7, ...o }); if (cut) m.clippingPlanes = [CUT]; return m; }, rep = (t) => { t.wrapS = t.wrapT = THREE.RepeatWrapping; return t; };
+  const decal = (map) => S({ map, transparent: true, depthWrite: false, roughness: 0.95, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  GM = {
+    // the canopy's fascia, 4 m of it a repeat: cream panels, the brand's red and blue bands, its name and mark, rust run down from the joints
+    fascia: S({ roughness: 0.55, metalness: 0.2, map: rep(canvasTex(512, 102, (x, w, h) => { x.fillStyle = '#b8261b'; x.fillRect(0, h * 0.66, w, h * 0.2); x.fillStyle = '#1d3f74'; x.fillRect(0, h * 0.88, w, h * 0.07);
+      logo(x, w * 0.2, h * 0.36, 26); x.fillStyle = '#b8261b'; x.font = 'bold 52px sans-serif'; x.textAlign = 'left'; x.fillText('RIDGE', w * 0.29, h * 0.55); x.fillStyle = '#1d3f74'; x.font = 'bold 22px sans-serif'; x.fillText('FUEL', w * 0.66, h * 0.55);
+      x.fillStyle = 'rgba(40,36,30,0.55)'; for (const u of [0, w / 2]) x.fillRect(u, 0, 2, h); drips(x, w, 0, 40, 46); drips(x, w, h * 0.66, 40, 34); wear(x, w, h, 700, 0.5); x.fillStyle = 'rgba(80,66,46,0.26)'; x.fillRect(0, 0, w, h); for (let i = 0; i < 6; i++) { const gr = x.createLinearGradient(0, 0, 0, h), u = r() * w; gr.addColorStop(0, 'rgba(60,48,34,0.45)'); gr.addColorStop(1, 'rgba(60,48,34,0)'); x.fillStyle = gr; x.fillRect(u, 0, 30 + r() * 60, h); } }, '#d8d0bd')) }),
+    // under the canopy: painted steel panels, water stains
+    soffit: S({ roughness: 0.8, side: THREE.DoubleSide, map: canvasTex(256, 256, (x, w, h) => { x.fillStyle = '#9a968c'; for (let i = 0; i <= w; i += 64) { x.fillRect(i - 1, 0, 2, h); x.fillRect(0, i - 1, w, 2); }
+      for (let i = 0; i < 9; i++) { const gr = x.createRadialGradient(0, 0, 0, 0, 0, 1), cx = r() * w, cy = r() * h, s = 10 + r() * 30; gr.addColorStop(0, 'rgba(120,90,50,0.28)'); gr.addColorStop(1, 'rgba(120,90,50,0)'); x.save(); x.translate(cx, cy); x.scale(s, s * 0.6); x.fillStyle = gr; x.fillRect(-1, -1, 2, 2); x.restore(); } wear(x, w, h, 140, 0.25); }, '#cfcbc0') }),
+    lens: S({ color: 0x8e918c, roughness: 0.45 }),
+    steel: S({ roughness: 0.6, metalness: 0.35, map: rep(canvasTex(128, 128, (x, w, h) => { drips(x, w, 0, 14, 70); wear(x, w, h, 160, 0.55); }, '#7c7a74')) }),
+    drinks: S({ roughness: 0.5, map: canvasTex(256, 48, (x, w, h) => { x.fillStyle = '#b8261b'; x.font = 'bold 30px sans-serif'; x.textAlign = 'center'; x.fillText('COLD DRINKS', w / 2, 35); wear(x, w, h, 50, 0.3); }, '#ece8dc') }, true),
+    glow: Object.assign(new THREE.MeshBasicMaterial({ color: 0xa8743c, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, map: canvasTex(64, 64, (x, w, h) => { const gr = x.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.35, 'rgba(255,255,255,0.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = gr; x.fillRect(0, 0, w, h); }, '#000') }), { clippingPlanes: [CUT] }),
+    // the pump's face: the brand's header, the dial (sale and gallons), the price strip, three grade buttons, the nozzle's bay
+    face: S({ roughness: 0.5, metalness: 0.15, map: canvasTex(256, 512, (x, w, h) => { x.fillStyle = '#ece8dc'; x.fillRect(10, 10, w - 20, 76); logo(x, 58, 48, 24); x.fillStyle = '#b8261b'; x.font = 'bold 40px sans-serif'; x.textAlign = 'left'; x.fillText('RIDGE', 92, 64);
+      x.fillStyle = '#d8d4c8'; x.fillRect(22, 108, w - 44, 170); x.fillStyle = '#1b1d1c'; x.fillRect(30, 116, w - 60, 154); x.fillStyle = '#e8e4d8'; x.font = 'bold 15px sans-serif'; x.fillText('TOTAL SALE  $', 40, 140); x.fillText('GALLONS', 40, 212);
+      x.fillStyle = '#5a4a2a'; x.font = 'bold 42px monospace'; x.textAlign = 'right'; x.fillText('00.00', w - 40, 186); x.fillText('0.000', w - 40, 258); x.fillStyle = 'rgba(255,255,255,0.08)'; x.fillRect(30, 116, w - 60, 40);
+      x.fillStyle = '#ece8dc'; x.fillRect(22, 292, w - 44, 44); x.fillStyle = '#1b1d1c'; x.textAlign = 'left'; x.font = 'bold 17px sans-serif'; x.fillText('PRICE PER GALLON', 32, 320); x.font = 'bold 24px monospace'; x.fillText('1.29', w - 92, 322);
+      for (const [k, [c, t]] of [['#d8a420', '87'], ['#2f6fc0', '89'], ['#2a8a46', '93']].entries()) { x.fillStyle = '#1b1d1c'; x.fillRect(26 + k * 72, 350, 62, 46); x.fillStyle = c; x.fillRect(30 + k * 72, 354, 54, 38); x.fillStyle = '#111'; x.font = 'bold 22px sans-serif'; x.textAlign = 'center'; x.fillText(t, 57 + k * 72, 381); }
+      x.fillStyle = '#5a1712'; x.fillRect(40, 412, w - 80, 84); x.fillStyle = 'rgba(0,0,0,0.35)'; x.fillRect(40, 412, w - 80, 8); drips(x, w, 90, 20, 60); drips(x, w, 400, 14, 50); wear(x, w, h, 260, 0.6); }, '#bf2c22') }),
+    body: S({ roughness: 0.55, metalness: 0.2, map: rep(canvasTex(128, 128, (x, w, h) => { drips(x, w, 0, 12, 50); wear(x, w, h, 120, 0.6); }, '#b42c22')) }),
+    band: S({ roughness: 0.6, metalness: 0.1, map: rep(canvasTex(128, 128, (x, w, h) => { drips(x, w, 0, 10, 60); wear(x, w, h, 90, 0.5); }, '#b42c22')) }, true),
+    white: S({ roughness: 0.6, metalness: 0.2, map: rep(canvasTex(128, 128, (x, w, h) => { drips(x, w, 0, 16, 90); wear(x, w, h, 160, 0.55); }, '#d8d4c8')) }),
+    // worn yellow and black: the islands' curbs and the posts' guard collars; the bollards' bands
+    hazard: S({ roughness: 0.75, map: rep(canvasTex(128, 128, (x, w, h) => { x.fillStyle = '#1c1b18'; for (let i = -w; i < w * 2; i += 32) { x.beginPath(); x.moveTo(i, 0); x.lineTo(i + 16, 0); x.lineTo(i + 16 + h, h); x.lineTo(i + h, h); x.closePath(); x.fill(); }
+      for (let i = 0; i < 260; i++) { x.fillStyle = r() < 0.5 ? 'rgba(160,150,130,0.6)' : 'rgba(70,50,30,0.4)'; x.fillRect(r() * w, r() * h, 1 + r() * 4, 1 + r() * 3); } }, '#d8a820')) }),
+    bollard: S({ roughness: 0.6, metalness: 0.3, map: canvasTex(64, 128, (x, w, h) => { x.fillStyle = '#1c1b18'; x.fillRect(0, 8, w, 14); x.fillRect(0, 34, w, 14); wear(x, w, h, 70, 0.6); }, '#d8a820') }),
+    // the shop's sign board, the pole sign's face and its price board (a figure fallen off)
+    board: S({ roughness: 0.6, map: canvasTex(512, 96, (x, w, h) => { x.fillStyle = '#b8261b'; x.fillRect(0, 0, w, 10); x.fillRect(0, h - 10, w, 10); logo(x, 50, h / 2, 28); x.fillStyle = '#1d3f74'; x.font = 'bold 34px sans-serif'; x.textAlign = 'left'; x.fillText('FOOD · DRINKS · SERVICE', 92, 61); drips(x, w, h - 10, 30, 40); wear(x, w, h, 200, 0.45); }, '#ece8dc') }),
+    signFace: S({ roughness: 0.55, metalness: 0.1, map: canvasTex(256, 136, (x, w, h) => { x.strokeStyle = '#ece8dc'; x.lineWidth = 6; x.strokeRect(10, 10, w - 20, h - 20); logo(x, 62, h / 2, 34); x.fillStyle = '#ece8dc'; x.beginPath(); x.arc(62, h / 2, 34, 0, 6.283); x.lineWidth = 4; x.stroke();
+      x.font = 'bold 54px sans-serif'; x.textAlign = 'left'; x.fillText('FUEL', 106, 86); x.font = 'bold 15px sans-serif'; x.fillText('RIDGE OIL CO.', 108, 112); drips(x, w, 10, 22, 50); wear(x, w, h, 180, 0.55); }, '#a8241a') }),
+    price: S({ roughness: 0.6, map: canvasTex(256, 128, (x, w, h) => { x.fillStyle = '#1b1d1c'; x.font = 'bold 20px sans-serif'; x.textAlign = 'left'; x.fillText('UNLEADED', 14, 44); x.fillText('DIESEL', 14, 100);
+      const tile = (cx, cy, t) => { x.fillStyle = '#1b1d1c'; x.fillRect(cx, cy, 24, 36); if (t) { x.fillStyle = '#ece8dc'; x.font = 'bold 28px monospace'; x.textAlign = 'center'; x.fillText(t, cx + 12, cy + 28); } };
+      [['1', 120], ['.', 0], ['2', 150], [null, 176], ['9', 202]].forEach(([t, cx]) => { if (cx) tile(cx, 16, t); else { x.fillStyle = '#1b1d1c'; x.fillRect(146, 46, 4, 4); } }); x.strokeStyle = 'rgba(30,30,30,0.35)'; x.lineWidth = 2; x.strokeRect(176, 16, 24, 36); x.fillStyle = '#ece8dc'; x.fillRect(178, 18, 20, 32); // (the missing figure: its clean square)
+      [['1', 120], ['3', 150], ['9', 176], ['9', 202]].forEach(([t, cx]) => tile(cx, 72, t)); x.fillStyle = '#1b1d1c'; x.fillRect(146, 102, 4, 4); drips(x, w, 0, 18, 60); wear(x, w, h, 160, 0.5); }, '#e2ddce') }),
+    ice: S({ roughness: 0.5, map: canvasTex(256, 128, (x, w, h) => { x.fillStyle = '#2a5aa8'; x.font = 'bold 72px sans-serif'; x.textAlign = 'center'; x.fillText('ICE', w / 2, 88); x.fillStyle = 'rgba(42,90,168,0.6)'; x.fillRect(0, h - 18, w, 10); drips(x, w, h - 30, 24, 40); wear(x, w, h, 120, 0.5); }, '#e6ecef') }),
+    peg: S({ roughness: 0.9, map: canvasTex(256, 128, (x, w, h) => { x.fillStyle = '#3a2a1c'; for (let i = 6; i < w; i += 10) for (let j = 6; j < h; j += 10) x.fillRect(i, j, 3, 3); x.strokeStyle = 'rgba(235,230,215,0.7)'; x.lineWidth = 3;
+      for (const [a, c, d, e] of [[30, 20, 14, 80], [70, 24, 10, 70], [150, 30, 50, 12], [210, 18, 12, 90]]) x.strokeRect(a, c, d, e); x.beginPath(); x.arc(110, 50, 16, 0, 6.283); x.stroke(); wear(x, w, h, 80, 0.2); }, '#8a6a48') }, true),
+    // the forecourt's marks: oil, cracks, a faded lane arrow; rust run down the shop's walls
+    oil: decal(canvasTex(128, 128, (x, w, h) => { for (let i = 0; i < 7; i++) { const gr = x.createRadialGradient(0, 0, 0, 0, 0, 1); gr.addColorStop(0, 'rgba(16,14,12,0.75)'); gr.addColorStop(0.7, 'rgba(16,14,12,0.35)'); gr.addColorStop(1, 'rgba(16,14,12,0)');
+      x.save(); x.translate(w / 2 + rnd(-30, 30), h / 2 + rnd(-30, 30)); x.rotate(r() * 3); x.scale(rnd(14, 40), rnd(10, 30)); x.fillStyle = gr; x.fillRect(-1, -1, 2, 2); x.restore(); } }, '#141210')),
+    crack: decal(canvasTex(256, 256, (x, w, h) => { x.strokeStyle = 'rgba(26,22,18,0.8)'; for (let k = 0; k < 3; k++) { let px = rnd(20, 60), py = rnd(20, w - 20); x.lineWidth = 2.5; x.beginPath(); x.moveTo(px, py);
+      while (px < w - 20) { px += rnd(8, 22); py += rnd(-14, 14); x.lineTo(px, py); if (r() < 0.2) { x.stroke(); x.lineWidth = Math.max(0.8, x.lineWidth * 0.8); x.beginPath(); x.moveTo(px, py); } } x.stroke(); } }, '#1a1612')),
+    arrow: decal(canvasTex(128, 256, (x, w, h) => { x.fillStyle = 'rgba(232,228,214,0.65)'; x.fillRect(w / 2 - 14, 90, 28, 150); x.beginPath(); x.moveTo(w / 2, 14); x.lineTo(w / 2 + 50, 96); x.lineTo(w / 2 - 50, 96); x.closePath(); x.fill();
+      x.globalCompositeOperation = 'destination-out'; for (let i = 0; i < 500; i++) { x.fillStyle = `rgba(0,0,0,${0.4 + r() * 0.6})`; x.fillRect(r() * w, r() * h, 1 + r() * 5, 1 + r() * 4); } }, '#e8e4d6')),
+    streak: decal(canvasTex(64, 256, (x, w, h) => { for (let i = 0; i < 26; i++) { const gr = x.createLinearGradient(0, 0, 0, h), a = 0.2 + r() * 0.4; gr.addColorStop(0, `rgba(110,56,22,${a})`); gr.addColorStop(rnd(0.3, 1), 'rgba(110,56,22,0)'); x.fillStyle = gr; x.fillRect(r() * w, 0, 1 + r() * 4, h); } }, '#6e381a')) };
+  GM.streak.clippingPlanes = [CUT]; for (const k of ['steel', 'white', 'body']) { GM[k + 'In'] = GM[k].clone(); if (k === 'steel') GM.steelIn.color.set(0xc4c8c4); GM[k + 'In'].clippingPlanes = [CUT]; } // (the shop's own steel, fridge and lift: cut away with its walls; the canopy's and the sign's stay whole)
+  return GM; }
+// a pump island at sx: the curb and its paint, a pump (the face to each lane), its hoses on their nozzles (cut: the second side's
+// hose lies on the island), a bollard at each end; and their colliders
+function gasIsland(b, P, G, sx, cut) { const z0 = -5.6, z1 = -2.4, top = Math.max(...[z0, -4, z1].flatMap(z => [sx - 0.5, sx + 0.5].map(x => gAt(b, x, z)))) + 0.2;
+  box(P, 'concrete', 1.0, top - b.y + 0.5, z1 - z0, sx, (top + b.y - 0.5) / 2, (z0 + z1) / 2); box(G, 'hazard', 1.012, 0.16, z1 - z0 + 0.012, sx, top - 0.085, (z0 + z1) / 2);
+  surface(b, (lx, lz) => Math.abs(lx - sx) <= 0.5 && lz >= z0 && lz <= z1 ? top : null); for (const e of [-0.2, 0.2]) collideRun(b, sx + e, z0, sx + e, z1, 0.3, () => top); // (on a slope its low side is a wall; where it is a step, stepped onto)
+  const y = top; box(P, 'concrete', 0.6, 0.12, 0.92, sx, y + 0.06, -4); box(G, 'steel', 0.46, 0.14, 0.82, sx, y + 0.19, -4); box(G, 'body', 0.42, 1.42, 0.78, sx, y + 0.97, -4); box(G, 'steel', 0.48, 0.05, 0.86, sx, y + 1.7, -4);
+  for (const s of [-1, 1]) { G.face.push(new THREE.PlaneGeometry(0.74, 1.4).rotateY(s * Math.PI / 2).translate(sx + s * 0.214, y + 0.97, -4));
+    box(P, 'iron', 0.06, 0.16, 0.1, sx + s * 0.24, y + 0.72, -3.72); // the nozzle's holster
+    const n = [sx + s * 0.29, y + 0.68, -3.72]; box(P, 'iron', 0.07, 0.08, 0.24, n[0], n[1] + 0.06, n[2] + 0.02, 0, -0.5); box(P, 'iron', 0.03, 0.14, 0.03, n[0], n[1] - 0.02, n[2] + 0.12, 0, 0.3);
+    const pts = cut && s > 0 ? [[sx + 0.22, y + 1.35, -4.3], [sx + 0.36, y + 1.0, -4.42], [sx + 0.42, y + 0.3, -4.5], [sx + 0.45, y + 0.04, -4.85], [sx + 0.4, y + 0.04, -5.25]] // (cut: down the side and along the curb)
+      : [[sx + s * 0.22, y + 1.35, -4.3], [sx + s * 0.34, y + 1.05, -4.42], [sx + s * 0.36, y + 0.55, -4.1], [sx + s * 0.32, y + 0.62, -3.8], [n[0], n[1] + 0.08, n[2] - 0.1]];
+    G.hose.push(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts.map(p => new THREE.Vector3(...p))), 16, 0.024, 6, false)); }
+  for (const z of [z0 + 0.2, z1 - 0.2]) { G.bollard.push(new THREE.CylinderGeometry(0.09, 0.09, 1.0, 12).translate(sx, y + 0.5, z)); P.iron.push(new THREE.CylinderGeometry(0.1, 0.1, 0.03, 12).translate(sx, y + 1.01, z)); collideRun(b, sx, z, sx, z, 0.15, () => y + 1.0); }
+  collideRun(b, sx, -4.3, sx, -3.7, 0.45, () => y + 1.72); }
 function buildGas(b, P, g) { floor(b, P, 'concrete', 16, 11, 0, -3, 0.06);
-  const gw = 8, gd = 6.5, gz = 5.6; b.roofBox = { cz: gz, w: gw, d: gd }; // the garage, in the station's frame
-  b.t = 0.35; b.ruin = 0.12; b.h = 3.6;
-  wall(b, P, 'concrete', -gw / 2 - 0.175, gz - gd / 2, gw / 2 + 0.175, gz - gd / 2, 3.6, [door(0, 3.4, 2.7)]);
-  wall(b, P, 'concrete', gw / 2 + 0.175, gz + gd / 2, -gw / 2 - 0.175, gz + gd / 2, 3.6, [win(0, 1.6, [[1.1, 2.0]])]);
-  wall(b, P, 'concrete', -gw / 2, gz + gd / 2 - 0.175, -gw / 2, gz - gd / 2 + 0.175, 3.6); wall(b, P, 'concrete', gw / 2, gz - gd / 2 + 0.175, gw / 2, gz + gd / 2 - 0.175, 3.6, [win(0.6, 1.4, [[1.1, 2.0]])]);
-  b.ruin = 0; box(b.PR, 'concrete', gw + 0.5, 0.25, gd + 0.5, 0, b.y + 3.72, gz);
-  box(P, 'iron', 3.4, 1.0, 0.06, 0, b.y + 2.25, gz - gd / 2 - 0.2); // the roller door, stuck half up
+  const gw = 8, gd = 6.5, gz = 5.6, Z0 = gz - gd / 2, Z1 = gz + gd / 2, IX = gw / 2 - 0.175, F = (x, z) => gAt(b, x, z) + 0.07, G = Object.fromEntries(Object.keys(gasMats()).concat('hose').map(k => [k, []])), rnd = mulberry32(Math.round(b.seed * 1000) + 89), PI = Math.PI;
+  for (let i = 0; i < 54; i++) R(); // (the old garage's rubble drew 54 from the world's stream; still drawn, so nothing built after the station moves. ponytail: drop once the classic world is re-baselined)
+  b.roofBox = { cz: gz, w: gw, d: gd }; b.t = 0.35; b.ruin = 0; b.h = 3.6; // the shop and bay, in the station's frame
+  // the front: the shop's window and its glass door (hung open), the bay's roller door; a window in the back wall and one in the right (boarded)
+  const IN = { line: 'inwall' }; wall(b, P, 'plaster', -gw / 2 - 0.175, Z0, gw / 2 + 0.175, Z0, 3.6, [win(-3.0, 1.4, [[0.9, 2.1]]), door(-1.3, 1.1, 2.2), door(1.9, 3.0, 2.8)], IN); // (the stretch between the doors under 1.2 m: no wall spot for the walk test there)
+  wall(b, P, 'plaster', gw / 2 + 0.175, Z1, -gw / 2 - 0.175, Z1, 3.6, [win(0, 1.6, [[1.1, 2.0]])], IN);
+  wall(b, P, 'plaster', -gw / 2, Z1 - 0.175, -gw / 2, Z0 + 0.175, 3.6, [], IN); wall(b, P, 'plaster', gw / 2, Z0 + 0.175, gw / 2, Z1 - 0.175, 3.6, [win(0.6, 1.4, [[1.1, 2.0]])], IN);
   floor(b, P, 'concrete', gw - 0.35, gd - 0.35, 0, gz, 0.07);
-  const cy = b.y + 4.5; box(P, 'concrete', 12, 0.4, 7.2, 0, cy, -4); box(P, 'paint', 12.15, 0.55, 7.35, 0, cy + 0.02, -4); // the canopy and its red fascia
-  for (const sx of [-4.8, 4.8]) for (const sz of [-6.6, -1.4]) { box(P, 'concrete', 0.38, 4.5, 0.38, sx, b.y + 2.1, sz); collideRun(b, sx, sz, sx, sz, 0.32); }
-  for (const sx of [-1.7, 1.7]) { box(P, 'concrete', 1.3, 0.25, 0.9, sx, b.y + 0.15, -4); box(P, 'paint', 0.8, 1.45, 0.52, sx, b.y + 0.95, -4); box(P, 'iron', 0.86, 0.32, 0.56, sx, b.y + 1.8, -4);
-    box(P, 'iron', 0.08, 0.5, 0.1, sx + 0.42, b.y + 1.05, -4); collideRun(b, sx - 0.25, -4, sx + 0.25, -4, 0.5); }
-  const [px, pz] = [7.6, -9]; box(P, 'iron', 0.16, 6, 0.16, px, gAt(b, px, pz) + 3, pz); collideRun(b, px, pz, px, pz, 0.3);
-  const sign = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.2, 0.12), [mats().paint, mats().paint, mats().paint, mats().paint, mats().sign, mats().sign]);
-  sign.position.set(px, gAt(b, px, pz) + 6.4, pz); sign.castShadow = true; b.group.add(sign);
-  // the garage inside: a workbench, barrels, a cache (IW1: metal, ammo and food, always)
-  table(b, P, 2.4, gz + 2.3, 0); box(P, 'iron', 1.6, 0.9, 0.5, -2.6, b.y + 0.45, gz + 2.7); rubble(b, P, 'concrete', 2.8, gz - 1.6, 0.8, 6);
+  // the roof (it lifts off with the cut-away): the slab, its coping, a dead air conditioner and a vent stack
+  box(b.PR, 'concrete', gw + 0.5, 0.25, gd + 0.5, 0, b.y + 3.72, gz); box(b.PR, 'ceil', gw - 0.36, 0.02, gd - 0.36, 0, b.y + 3.585, gz); /* (boards under the slab: not a black void from inside) */ for (const s of [-1, 1]) { box(b.PR, 'iron', gw + 0.6, 0.12, 0.08, 0, b.y + 3.9, gz + s * (gd / 2 + 0.26)); box(b.PR, 'iron', 0.08, 0.12, gd + 0.6, s * (gw / 2 + 0.26), b.y + 3.9, gz); }
+  box(b.PR, 'iron', 1.2, 0.7, 0.9, 1.8, b.y + 4.2, gz + 1.6); box(b.PR, 'iron', 0.8, 0.04, 0.8, 1.8, b.y + 4.57, gz + 1.6, 0.3); b.PR.iron.push(new THREE.CylinderGeometry(0.08, 0.08, 1.1, 10).translate(-2.4, b.y + 4.3, gz + 2.3));
+  // the shop's frontage: the window's frame (one pane left whole, a shard of the other), the door's frame and its leaf swung back against the
+  // wall inside, the sign board over both, the red band round the walls at the eaves, rust run down from the band and the roof
+  const fz = Z0 - 0.175; for (const [cx, w0, y0, y1] of [[-3.0, 1.4, 0.9, 2.1], [-1.3, 1.1, 0, 2.2]]) { for (const s of [-1, 1]) box(G, 'steelIn', 0.06, y1 - y0, 0.12, cx + s * (w0 / 2 - 0.03), b.y + (y0 + y1) / 2, Z0); box(G, 'steelIn', w0, 0.06, 0.12, cx, b.y + y1 - 0.03, Z0); if (y0) box(G, 'steelIn', w0 + 0.1, 0.05, 0.3, cx, b.y + y0, fz + 0.1); }
+  box(G, 'steelIn', 0.05, 1.08, 0.08, -3.0, b.y + 1.5, Z0); box(P, 'pane', 0.6, 1.08, 0.012, -3.33, b.y + 1.5, Z0);
+  const shard = (pts, z) => { const g0 = new THREE.ShapeGeometry(new THREE.Shape(pts.map(([x, y]) => new THREE.Vector2(x, y)))), cx = pts.reduce((a, q) => a + q[0], 0) / pts.length; P.pane.push(g0.clone().translate(0, b.y, z), g0.translate(-cx, 0, 0).rotateY(PI).translate(cx, b.y, z)); }; // (seen from both sides)
+  shard([[-2.95, 0.96], [-2.36, 0.96], [-2.36, 1.62], [-2.62, 1.31], [-2.8, 1.12]], Z0);
+  { const hz = Z0 + 0.175 + 0.07, x0 = -0.72, x1 = x0 + 1.05; box(G, 'steelIn', x1 - x0, 2.1, 0.05, (x0 + x1) / 2, F(x0, hz) + 1.07, hz); box(P, 'pane', x1 - x0 - 0.14, 1.3, 0.06, (x0 + x1) / 2, F(x0, hz) + 1.3, hz); box(P, 'iron', 0.04, 0.04, 0.22, x1 - 0.15, F(x0, hz) + 1.0, hz - 0.08); }
+  box(G, 'steel', 3.6, 0.62, 0.08, -2.2, b.y + 2.72, fz - 0.06); G.board.push(new THREE.PlaneGeometry(3.5, 0.54).rotateY(PI).translate(-2.2, b.y + 2.72, fz - 0.104));
+  for (const [x0, z0, x1, z1] of [[-gw / 2 - 0.175, fz, gw / 2 + 0.175, fz], [gw / 2 + 0.175, Z1 + 0.175, -gw / 2 - 0.175, Z1 + 0.175], [-gw / 2 - 0.175, Z1 + 0.175, -gw / 2 - 0.175, fz], [gw / 2 + 0.175, fz, gw / 2 + 0.175, Z1 + 0.175]]) {
+    const L = Math.hypot(x1 - x0, z1 - z0), ux = (x1 - x0) / L, uz = (z1 - z0) / L, nx = uz, nz = -ux, ry = Math.atan2(nx, nz); box(G, 'band', L + 0.02, 0.32, 0.03, (x0 + x1) / 2 + nx * 0.016, b.y + 3.22, (z0 + z1) / 2 + nz * 0.016, ry);
+    for (let s = 0.3; s < L - 0.3; s += 0.9 + rnd() * 1.4) { const h = 0.8 + rnd() * 1.4, w = 0.25 + rnd() * 0.5, cx = x0 + ux * s, cz = z0 + uz * s; if ((z0 === fz && z1 === fz && [[-3, 0.7], [-1.3, 0.55], [1.9, 1.5], [-2.2, 1.8]].some(([hx, hw]) => Math.abs(cx - hx) < hw + w / 2)) || (z0 === Z1 + 0.175 && Math.abs(cx) < 0.8 + w / 2) || (x0 === gw / 2 + 0.175 && Math.abs(cz - gz - 0.6) < 0.7 + w / 2)) continue; /* (none over the front's openings, nor behind its sign board) */ G.streak.push(new THREE.PlaneGeometry(w, h).rotateY(ry).translate(cx + nx * 0.035, b.y + 3.06 - h / 2, cz + nz * 0.035)); } }
+  // the bay's roller door: its drum housing over the opening inside and the curtain's last slats, stuck up over head height
+  box(G, 'steelIn', 3.2, 0.42, 0.42, 1.9, b.y + 3.05, Z0 + 0.4); for (let k = 0; k < 5; k++) box(G, 'steelIn', 3.0, 0.1, 0.04 + (k % 2) * 0.02, 1.9, b.y + 2.79 - k * 0.1 - 0.02 * (k === 4), Z0 + 0.2);
+  // the right window boarded over (outside), the back window's glass gone but a shard
+  { const x = gw / 2 + 0.175 + 0.03; for (const [a, c] of [[0.5, 0.35], [-0.45, -0.3], [0.05, 0.1]]) box(P, 'planks', 0.025, 0.16, 1.75, x, b.y + 1.55 + c * 0.3, gz + 0.6, 0, a); }
+  shard([[-0.78, 1.12], [-0.2, 1.12], [-0.5, 1.5]], Z1);
+  for (const [along, c, w0] of [[true, Z1, 1.6], [false, gw / 2, 1.4]]) { const m = along ? [0, c] : [c, gz + 0.6], B = (a, h, x, y) => along ? box(G, 'steelIn', a, h, 0.1, m[0] + x, b.y + y, m[1]) : box(G, 'steelIn', 0.1, h, a, m[0], b.y + y, m[1] + x);
+    for (const s of [-1, 1]) B(0.06, 0.9, s * (w0 / 2 - 0.03), 1.55); B(w0, 0.06, 0, 1.97); B(w0, 0.06, 0, 1.13); B(0.04, 0.84, 0, 1.55); } // (the back and right windows' frames)
+  // the canopy: a steel deck, its fascia all round, panels and light fittings under it (one fitting dead and hanging, a panel down at
+  // one end), four posts in guard collars; the islands and their pumps (the right one's far hose cut)
+  const cy = b.y + 4.55, CW = 12, CD = 7.2, cz = -4; box(G, 'steel', CW, 0.3, CD, 0, cy, cz); G.soffit.push(new THREE.PlaneGeometry(CW - 0.04, CD - 0.04).rotateX(PI / 2).translate(0, cy - 0.16, cz));
+  for (const [L, x, z, ry] of [[CW + 0.1, 0, cz - CD / 2 - 0.03, PI], [CW + 0.1, 0, cz + CD / 2 + 0.03, 0], [CD + 0.1, -CW / 2 - 0.03, cz, -PI / 2], [CD + 0.1, CW / 2 + 0.03, cz, PI / 2]]) {
+    const f = new THREE.BoxGeometry(L, 0.8, 0.04), uv = f.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * L / 4); G.fascia.push(f.rotateY(ry).translate(x, cy + 0.12, z)); }
+  for (const x of [-3.4, 0, 3.4]) for (const z of [cz - 1.8, cz + 1.8]) { if (!(x === 3.4 && z > cz)) box(G, 'lens', 1.2, 0.08, 0.45, x, cy - 0.2, z); box(G, 'steel', 1.26, 0.04, 0.5, x, cy - 0.17, z); }
+ // (hung on its wire)
+  for (const sx of [-4.8, 4.8]) for (const sz of [cz - 2.6, cz + 2.6]) { const y0 = gAt(b, sx, sz); box(G, 'white', 0.3, cy - y0 - 0.1, 0.3, sx, (cy + y0) / 2 - 0.05, sz); box(G, 'hazard', 0.5, 1.0, 0.5, sx, y0 + 0.45, sz); box(P, 'concrete', 0.56, 0.06, 0.56, sx, y0 + 0.97, sz);
+    collideRun(b, sx, sz, sx, sz, 0.36, () => cy + 0.2); }
+  gasIsland(b, P, G, -1.7, false); gasIsland(b, P, G, 1.7, true);
+  // the forecourt's marks, and outside the shop an ice chest and a stack of tyres
+  const mark = (k, x, z, w, d, ry = 0) => G[k].push(new THREE.PlaneGeometry(w, d).rotateX(-PI / 2).rotateY(ry).translate(x, gAt(b, x, z) + 0.075, z));
+  for (const [x, z, s] of [[-0.6, -4.2, 1.6], [0.7, -3.3, 1.1], [-3.2, -3.6, 1.4], [3.1, -4.6, 1.8], [2.1, 4.9, 1.6], [2.6, 0.8, 1.0], [-5.6, -1.2, 0.9]]) mark('oil', x, z, s, s * 0.8, rnd() * 3);
+  for (const [x, z, s] of [[-4.5, -7.0, 2.6], [5.6, -2.0, 2.6], [-6.4, 0.6, 2.4], [1.0, -7.2, 2.2], [6.8, -7.3, 2.0]]) mark('crack', x, z, s, s, rnd() * 3);
+  for (const x of [-3.25, 3.25]) mark('arrow', x, -4.6, 0.9, 1.8, x < 0 ? 0 : PI);
+  const put = kitRoom(b);
+  { const x = -3.3, z = Z0 - 0.62, y = gAt(b, x, z) + 0.06; box(G, 'white', 1.1, 0.86, 0.6, x, y + 0.43, z); G.ice.push(new THREE.PlaneGeometry(0.9, 0.45).rotateY(PI).translate(x, y + 0.5, z - 0.302)); box(P, 'iron', 1.14, 0.06, 0.64, x, y + 0.89, z);
+    collideRun(b, x - 0.55, z, x + 0.55, z, 0.32, () => y + 0.92); } // (a run's end circles sit r in from its ends)
+  { const x = gw / 2 + 0.75, z = Z0 + 1.2, y = gAt(b, x, z); for (let i = 0; i < 3; i++) put('tyre', x + (rnd() - 0.5) * 0.05, y + 0.08 + i * 0.16, z + (rnd() - 0.5) * 0.05, rnd() * 3, { rx: PI / 2 }); put('tyre', x + 0.1, y + 0.29, z + 0.75, 0.2, { rx: 0.15 });
+    collideRun(b, x, z - 0.3, x, z + 1.05, 0.4, () => y + 0.7); }
+  // the pole sign: its cabinet's two faces and frame, the price board under it, a step bracket
+  { const [px, pz] = [7.6, -9], y = gAt(b, px, pz); box(G, 'steel', 0.2, 7.2, 0.2, px, y + 3.6, pz); collideRun(b, px, pz, px, pz, 0.3, () => y + 7);
+    box(G, 'steel', 2.7, 1.5, 0.34, px, y + 6.4, pz); box(G, 'steel', 2.3, 1.2, 0.14, px, y + 5.0, pz); for (const s of [-1, 1]) { G.signFace.push(new THREE.PlaneGeometry(2.56, 1.36).rotateY(s > 0 ? 0 : PI).translate(px, y + 6.4, pz + s * 0.172)); G.price.push(new THREE.PlaneGeometry(2.2, 1.1).rotateY(s > 0 ? 0 : PI).translate(px, y + 5.0, pz + s * 0.072)); } }
+  // inside: the counter (its till, a lantern lit on it), two shelf units of tins and a drinks fridge on the shop's side; the car lift,
+  // the workbench under its pegboard (a vise, a meter, a jerrycan, a lantern), tyres and drums in the bay
+  { const z = Z0 + 2.1, x0 = -IX, x1 = -2.25, y = F(-3, z); box(P, 'planks', x1 - x0 + 0.04, 0.05, 0.66, (x0 + x1) / 2, y + 1.0, z); box(G, 'band', x1 - x0, 0.95, 0.06, (x0 + x1) / 2, y + 0.48, z - 0.27); box(P, 'beam', x1 - x0, 0.95, 0.5, (x0 + x1) / 2, y + 0.48, z + 0.02);
+    put('till', -2.8, y + 1.025, z, -PI / 2 - 0.2); litLantern(put, -3.45, y + 1.025, z + 0.1); G.glow.push(new THREE.PlaneGeometry(3.2, 3.2).rotateX(-PI / 2).translate(-3.0, F(-3.0, z - 0.8) + 0.02, z - 0.8));
+    put('papers', -3.2, y + 1.025, z - 0.15, 0.4); G.glow.push(new THREE.PlaneGeometry(1.5, 1.4).rotateY(PI).translate(-3.0, b.y + 1.5, Z0 + 0.3)); /* (the lantern's light in the window, seen from outside) */ collideRun(b, x0 + 0.2, z, x1 + 0.1, z, 0.33, () => y + 1.03); }
+  for (const z of [Z0 + 3.4, Z0 + 4.55]) { const S = shelfAt(-IX + 0.27, F(-3.5, z), z, PI / 2); put('shelves', -IX + 0.27, F(-3.5, z), z, PI / 2); stock(put, S, [1, 2, 3], rnd, 0.35); /* (picked over: and the scanned tins are the station's heaviest part) */ collideRun(b, -IX + 0.27, z - 0.58, -IX + 0.27, z + 0.58, 0.3, () => F(-3.5, z) + 2.14); }
+  { const x = -2.1, z = Z1 - 0.175 - 0.36, y = F(x, z); box(G, 'whiteIn', 0.9, 1.9, 0.04, x, y + 0.95, z + 0.31); for (const s of [-1, 1]) box(G, 'whiteIn', 0.04, 1.9, 0.66, x + s * 0.43, y + 0.95, z);
+    box(G, 'whiteIn', 0.9, 0.22, 0.66, x, y + 1.79, z); box(G, 'whiteIn', 0.9, 0.24, 0.66, x, y + 0.12, z); G.drinks.push(new THREE.PlaneGeometry(0.8, 0.15).rotateY(PI).translate(x, y + 1.79, z - 0.332)); box(P, 'glass', 0.82, 1.44, 0.02, x, y + 0.96, z + 0.28);
+    for (const sy of [0.24, 0.66, 1.08, 1.48]) { box(G, 'steelIn', 0.82, 0.02, 0.56, x, y + sy, z + 0.02); for (let u = -0.32; u <= 0.33; u += 0.1) if (rnd() < 0.35) put(rnd() < 0.7 ? 'tin' : 'fish', x + u, y + sy + 0.01, z - 0.05 + rnd() * 0.15, rnd() * 6, { s: 2 }); }
+    box(P, 'pane', 0.82, 1.44, 0.012, x, y + 0.96, z - 0.325); box(G, 'steelIn', 0.03, 0.5, 0.04, x + 0.36, y + 1.0, z - 0.355);
+    collideRun(b, x - 0.25, z, x + 0.25, z, 0.36, () => y + 1.9); }
+  for (const x of [0.55, 3.25]) { const z = gz + 0.4, y = F(x, z); box(G, 'steelIn', 0.32, 3.0, 0.32, x, y + 1.5, z); box(G, 'steelIn', 0.5, 0.06, 0.5, x, y + 0.03, z); box(G, 'bodyIn', 0.06, 1.9, 0.08, x + (x < 2 ? 0.19 : -0.19), y + 1.2, z);
+    for (const s of [-1, 1]) box(G, 'steelIn', 0.1, 0.06, 1.0, x + (x < 2 ? 0.55 : -0.55), y + 0.22, z + s * 0.35, s * (x < 2 ? 0.5 : -0.5)); collideRun(b, x, z, x, z, 0.3, () => y + 3); }
+  box(G, 'steelIn', 2.9, 0.16, 0.16, 1.9, F(1.9, gz + 0.4) + 3.05, gz + 0.4);
+  { const x = IX - 0.38, z0 = Z1 - 1.55, z1 = Z1 - 0.3, y = F(x, (z0 + z1) / 2); box(P, 'planks', 0.7, 0.07, z1 - z0, x, y + 0.9, (z0 + z1) / 2); for (const zz of [z0 + 0.08, z1 - 0.08]) for (const dx of [-0.28, 0.28]) box(P, 'beam', 0.07, 0.86, 0.07, x + dx, y + 0.43, zz); box(P, 'planks', 0.6, 0.04, z1 - z0 - 0.1, x, y + 0.2, (z0 + z1) / 2);
+    box(G, 'steelIn', 0.16, 0.16, 0.22, x - 0.2, y + 1.02, z0 + 0.25); box(G, 'steelIn', 0.3, 0.03, 0.03, x - 0.32, y + 1.08, z0 + 0.25); G.peg.push(new THREE.PlaneGeometry(z1 - z0, 0.85).rotateY(-PI / 2).translate(IX - 0.004, y + 1.6, (z0 + z1) / 2));
+    for (const [dz, h] of [[0.2, 0.3], [0.5, 0.26], [0.9, 0.34]]) box(P, 'iron', 0.02, h, 0.04, IX - 0.02, y + 1.75 - h / 2, z0 + dz); put('meter', x + 0.1, y + 0.935, z0 + 0.75, -PI / 2); litLantern(put, x + 0.05, y + 0.935, z1 - 0.25);
+    G.glow.push(new THREE.PlaneGeometry(3.0, 3.0).rotateX(-PI / 2).translate(x - 0.7, F(x - 0.7, z1 - 0.4) + 0.02, z1 - 0.4)); put('jerry', x + 0.05, y + 0.24, z0 + 0.4, PI / 2); for (const e of [-0.15, 0.15]) collideRun(b, x + e, z0, x + e, z1, 0.25, () => y + 0.94); }
+  { const x = 0.95, z = Z1 - 0.62, y = F(x, z); for (let i = 0; i < 2; i++) put('tyre', x, y + 0.08 + i * 0.16, z, rnd() * 3, { rx: PI / 2 }); collideRun(b, x, z, x, z, 0.32, () => y + 0.34);
+    for (const [dx, dz] of [[1.0, 0.05], [1.62, -0.1]]) { put('barrel', x + dx, F(x + dx, z + dz), z + dz, rnd() * 6); collideRun(b, x + dx, z + dz, x + dx, z + dz, 0.33, () => y + 0.93); } }
+  put('clock', -1.0, b.y + 2.55, Z1 - 0.175 - 0.002, PI); put('crate', 2.9, F(2.9, Z0 + 0.9), Z0 + 0.9, 0.15); collideRun(b, 2.9, Z0 + 0.5, 2.9, Z0 + 1.3, 0.3, () => F(2.9, Z0 + 0.9) + 0.45);
+  // the lantern hung under the canopy between the islands, on its wire, its light on the forecourt
+  bar(G, 'steel', 0, cy - 0.16, cz + 0.6, 0, cy - 1.42, cz + 0.6, 0.012); litLantern(put, 0, cy - 1.95, cz + 0.6); G.glow.push(new THREE.PlaneGeometry(3.4, 3.4).rotateX(-PI / 2).translate(0, gAt(b, 0, cz + 0.6) + 0.085, cz + 0.6));
+  put.done(); gasFlush(b, G);
   cache(b, g, -2.6, gz + 1.4); cache(b, g, 0, -4.9); }
+// the station's own materials' geometry merged, one mesh per material (box-mapped where it has no uv of its own to keep)
+function gasFlush(b, G) { const M = gasMats(); for (const k in G) { if (!G[k].length) continue; const geo = mergeGeometries(G[k].map(q => q.index ? q.toNonIndexed() : q)); if (['body', 'band', 'white', 'hazard', 'lens', 'steel', 'steelIn', 'whiteIn', 'bodyIn'].includes(k)) boxUV(geo, k === 'hazard' ? 0.5 : 1);
+  const m = new THREE.Mesh(geo, k === 'hose' ? placeMats().cable : M[k]); m.castShadow = !['oil', 'crack', 'arrow', 'streak', 'glow'].includes(k); m.receiveShadow = true; b.group.add(m); } }
 
 export async function buildBuildings(scene) {
   if (!CRATE) { CRATE = { geo: await loadMesh('wooden_crate_01'), mat: pbr('props/wooden_crate_01', { rough: 0.85 }) }; CRATE.geo.computeBoundingBox(); CRATE.h = CRATE.geo.boundingBox.max.y * 1.25; }
-  if (!KIT && (places.length || buildings.some(b => b.style))) KIT = await loadKit(); // (and for the house kinds, slice 36) // (slice 23 polish: the interiors' scanned props, only for a world with places)
+  { const need = places.length || buildings.some(b => b.style) ? Object.keys(KITS) : buildings.some(b => b.kind === 'gas') ? GAS_KIT : []; if (need.some(k => !KIT?.[k])) KIT = await loadKit(need, KIT || {}); } // (and for the house kinds, slice 36) // (slice 23 polish: the interiors' scanned props, only for a world with places)
   const M = mats(), root = new THREE.Group(); root.name = 'buildings'; scene.add(root);
   for (const b of buildings) { const g = new THREE.Group(); g.position.set(b.x, 0, b.z); g.rotation.y = -b.a; root.add(b.group = g);
     const P = Object.fromEntries(Object.keys(TILE).concat('cloth', 'glow', 'glass', 'pane', ...PLANE_KEYS).map(k => [k, []])); b.place = places.find(q => q.b === b || q.shack === b) || null; b.PR = Object.fromEntries(Object.keys(TILE).map(k => [k, []]));
@@ -711,11 +850,14 @@ const KITS = { desk: ['metal_office_desk', 0, { rough: 0.55, metal: 0.35 }], she
   // (slice 36, the house kinds' rooms: more scanned CC0 furniture from Poly Haven, CREDITS.md)
   sofa: ['sofa_02', 0, { rough: 0.95 }], armchair: ['arm_chair_01', 0, { rough: 0.9 }], cabinet: ['painted_wooden_cabinet'], bookshelf: ['wooden_bookshelf_worn'],
   bed2: ['gothic_bed_01', 0, { rough: 0.85 }], rocker: ['rockingchair_01'], nightstand: ['painted_wooden_nightstand'], stove: ['electric_stove', 0, { rough: 0.5, metal: 0.3 }], till: ['cash_register_01', 0, { rough: 0.5, metal: 0.5 }],
-  clock: ['wall_clock'], coffee: ['coffee_table_01'], dining: ['dining_table'], bench: ['painted_wooden_bench'] };
+  clock: ['wall_clock'], coffee: ['coffee_table_01'], dining: ['dining_table'], bench: ['painted_wooden_bench'],
+  tyre: ['old_tyre', 'tyre', { rough: 0.9 }], barrel: ['barrel_03', 0, { rough: 0.85, metal: 0.05, color: 0xb09880 }] }; // (the gas station's detail pass)
 let KIT = null;
 export const kit = () => KIT; // (slice 36: houses.js sizes its furniture from the loaded meshes)
-async function loadKit() { const K = {};
-  await Promise.all(Object.entries(KITS).map(async ([k, [n, tx, o = {}]]) => { const geo = await loadMesh(n), mat = pbr('props/' + (tx || n), { rough: 0.8, ...o }); mat.clippingPlanes = [CUT]; mat.map.flipY = mat.normalMap.flipY = false; K[k] = { geo, mat }; })); // (glTF's uv start at the image's top: unflipped)
+const GAS_KIT = ['till', 'papers', 'shelves', 'tin', 'fish', 'salt', 'meter', 'jerry', 'clock', 'crate', 'lantern', 'tyre', 'barrel']; // (the gas station's: all a classic world loads)
+async function loadKit(keys = Object.keys(KITS), K = {}) {
+  await Promise.all(Object.entries(KITS).filter(([k]) => keys.includes(k) && !K[k]).map(async ([k, [n, tx, o = {}]]) => { const geo = await loadMesh(n), mat = pbr('props/' + (tx || n), { rough: 0.8, ...o }); mat.clippingPlanes = [CUT]; mat.map.flipY = mat.normalMap.flipY = false; K[k] = { geo, mat }; })); // (glTF's uv start at the image's top: unflipped)
+  if (K.extra) return K; // (a second call only adds the props a new world needs)
   const glowTex = canvasTex(64, 64, (x, w, h) => { const gr = x.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.25, 'rgba(255,255,255,0.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = gr; x.fillRect(0, 0, w, h); }, '#fff');
   const add = (o) => Object.assign(o, { transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, map: glowTex });
   K.extra = { bulb: new THREE.MeshBasicMaterial({ color: 0xfff1d0 }), flame: new THREE.MeshBasicMaterial({ color: 0xffa040 }), slot: new THREE.MeshBasicMaterial({ color: 0xff7a20 }), iron: mats().iron.clone(),

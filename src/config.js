@@ -110,6 +110,7 @@ export const BIOME = {
 export const BIOME_NAMES = Object.keys(BIOME), NB = BIOME_NAMES.length;
 // The safe valley (IW1: nothing spawns inside the safe radius, a campfire heals). CAMP is the campfire.
 export const SAFE_R = 118, CAMP = { x: -7, z: 7 };
+export const PASS_N = 3, PASS_OUT = 5; // (a spawn adds no more to a pass's narrow part once it holds PASS_N; about PASS_OUT wait just beyond: the follow-ups to #66)
 
 // Terrain texture layers (Poly Haven CC0, see CREDITS.md): file stem, metres per tile, roughness.
 export const LAYERS = [

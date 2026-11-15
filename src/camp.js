@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { CAMP } from './config.js';
 import { groundY } from './world.js';
 import { addCollider } from './props.js';
-import { rockMat, loadMesh, pbr as phPbr } from './propmodels.js';
+import { rockMat, loadMesh, pbr as phPbr, canvasTex } from './propmodels.js';
 import { nightK } from './daynight.js';
 
 const loader = new THREE.TextureLoader();
@@ -38,23 +38,26 @@ export function buildFire(parent, x, z, withLight) {
 }
 // flames: three crossed cards with an animated flame shader, additive; embers rise and fade (tickCamp animates them).
 // Used by every fire and by the torches players build (slice 11: s scales it down to a torch's flame).
-export function addFlame(parent, y, s = 1, nEmbers = 40) { const h = new THREE.Group(); h.position.y = y; h.scale.setScalar(s); parent.add(h);
-  const flameMat = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, uniforms: { t: { value: 0 } },
+let DOT = null; // a soft round spark (a torch's: bare points draw as squares)
+const dot = () => DOT ||= canvasTex(32, 32, (x, w, h) => { const g = x.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.4, 'rgba(255,255,255,0.5)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, w, h); }, '#ffffff');
+export function addFlame(parent, y, s = 1, nEmbers = 40, warm = false) { // (warm: a torch's flame, orange to the core; three cards add up, so it is drawn darker to stay orange where they cross)
+  const h = new THREE.Group(); h.position.y = y; h.scale.setScalar(s); parent.add(h);
+  const flameMat = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, uniforms: { t: { value: 0 }, core: { value: warm ? new THREE.Vector3(1, 0.2, 0.03) : new THREE.Vector3(1, 0.95, 0.6) }, gain: { value: warm ? 0.6 : 1.6 } },
     vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-    fragmentShader: `uniform float t; varying vec2 vUv;
+    fragmentShader: `uniform float t; uniform vec3 core; uniform float gain; varying vec2 vUv;
       float h(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       float n(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y); }
       void main(){ vec2 uv = vUv; float y = uv.y; vec2 q = vec2(uv.x * 4.0, y * 3.0 - t * 2.6);
         float turb = n(q) * 0.6 + n(q * 2.3 + 7.0) * 0.4; float w = (0.42 - y * 0.34) * (0.75 + turb * 0.5);
         float body = smoothstep(w, w * 0.25, abs(uv.x - 0.5 + (turb - 0.5) * 0.18 * y)) * smoothstep(1.0, 0.25, y + turb * 0.25) * smoothstep(0.0, 0.08, y);
-        vec3 c = mix(vec3(1.0, 0.95, 0.6), vec3(1.0, 0.38, 0.06), smoothstep(0.1, 0.6, y + (1.0 - body) * 0.3));
-        gl_FragColor = vec4(c * body * 1.6, body); }` });
+        vec3 c = mix(core, vec3(1.0, 0.38, 0.06), smoothstep(0.1, 0.6, y + (1.0 - body) * 0.3));
+        gl_FragColor = vec4(c * body * gain, body); }` });
   const flames = new THREE.Group();
   for (let k = 0; k < 3; k++) { const f = new THREE.Mesh(new THREE.PlaneGeometry(0.85, 1.25), flameMat); f.position.y = 0.66; f.rotation.y = k * Math.PI / 3; f.renderOrder = 3; flames.add(f); }
   flames.position.y = 0.05; h.add(flames); flames.traverse(m => { m.castShadow = false; m.receiveShadow = false; });
   const EN = nEmbers, ep = new Float32Array(EN * 3), eSeed = Array.from({ length: EN }, () => Math.random());
   const embers = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(ep, 3)),
-    new THREE.PointsMaterial({ color: 0xffa040, size: 0.05, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
+    new THREE.PointsMaterial({ color: warm ? 0xff5a14 : 0xffa040, size: warm ? 0.12 : 0.05, map: warm ? dot() : null, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
   embers.frustumCulled = false; embers.position.y = 0.3; h.add(embers);
   const f = { flameMat, light: null, embers, ep, eSeed, flames, h }; fires.push(f); return f; }
 // a flame whose fire is gone (a torch or a campfire taken down): out of the animated list, off its parent, its GPU parts freed

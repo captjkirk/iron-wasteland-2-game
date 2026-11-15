@@ -13,7 +13,7 @@ import { addCollider } from './props.js';
 import { PIECE, makePiece, startBuild, spotFree, slotOf, pieceState, costFor, swapOut } from './build.js';
 import { buildFire, addFlame } from './camp.js';
 import { benchMesh, bedMesh, torchMesh, wallTorchMesh } from './craftmodels.js';
-import { lightTorch, halo, wallGlow } from './torch.js';
+import { lightTorch, halo, wallGlow, groundGlow, aura } from './torch.js';
 import { dustPuff, floatText } from './effects.js';
 import { sfx } from './audio.js';
 import { logEvent } from './playlog.js';
@@ -51,8 +51,8 @@ export function addBuilt(id, key, x, y, z, f, by, hp, st) { if (built.some(b => 
   else { b.mesh = key === 'craftbench' ? benchMesh() : key === 'bed' ? bedMesh() : key === 'wall_torch' ? wallTorchMesh() : torchMesh(); b.mesh.position.set(x, y, z); b.mesh.rotation.y = f; scene.add(b.mesh); }
   if (key === 'craftbench') for (const k of [-0.5, 0.5]) col(ax * k, az * k, 0.47, 0.93);
   if (key === 'bed') for (const k of [-0.55, 0.45]) col(bx * k, bz * k, 0.56, 0.5);
-  if (key === 'torch') { col(0, 0, 0.12, 1.5); b.flame = addFlame(b.mesh, 1.5, 0.3, 10); }
-  if (key === 'wall_torch') { b.flame = addFlame(b.mesh.userData.tip, 0, 0.26, 8); halo(b.flame.h, 1.6); wallGlow(b.mesh, groundY(x, z) - y); } // (on the wall: no collider of its own)
+  if (key === 'torch') { col(0, 0, 0.12, 1.5); b.flame = addFlame(b.mesh, 1.5, 0.3, 10, true); halo(b.flame.h, 1.8); groundGlow(b.mesh, 0, 0.06, 0, 5); aura(b.mesh, 0, 0.9, 0, 5); } // (its own glow on the ground: lit with or without a real light)
+  if (key === 'wall_torch') { b.flame = addFlame(b.mesh.userData.tip, 0, 0.26, 8, true); halo(b.flame.h, 1.6); wallGlow(b.mesh, groundY(x, z) - y); } // (on the wall: no collider of its own)
   built.push(b); dustPuff(new THREE.Vector3(x, y, z), 14); sfx('craft', { x, z }); logEvent('built', { key, x: +x.toFixed(1), z: +z.toFixed(1), mine: by === net.id || !net.role });
   return b; }
 export const builtMsg = () => built.map(b => [b.id, b.key, +b.x.toFixed(2), +b.y.toFixed(2), +b.z.toFixed(2), +b.f.toFixed(3), b.by, b.max ? Math.round(b.hp) : null, pieceState(b)]);

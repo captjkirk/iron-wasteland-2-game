@@ -29,6 +29,7 @@ import { player, log, scene3, enemies, hitEnemy, getCamMode, aimGround, isPadAct
 import { send, joining, net, others } from './coop.js';
 import { built, addBuilt, spend, short, FOOT, nextBuiltId, benchNear, toggleCraft } from './craft.js';
 import { removeFlame } from './camp.js';
+import { freeGlow } from './torch.js';
 
 export const G = 2; // the grid's cell (m): a wall is one cell long
 export const PIECE = { wall: { edge: 1, hp: 200, name: 'wall', top: 2.4 }, reinforced_wall: { edge: 1, hp: 300, name: 'stone wall', top: 2.35, stone: 1 }, gate: { edge: 1, hp: 200, name: 'gate', top: 2.9 },
@@ -125,7 +126,7 @@ function showHit(b, from) { b.barT = 6; b.shakeT = 0.22; const P = PIECE[b.key],
 const falling = [];
 export function removeBuilt(b, how) { const i = built.indexOf(b); if (i < 0) return; built.splice(i, 1);
   for (const c of b.cols) { c.r = 0; c.vr = 0; } const s = scene3(), at = new THREE.Vector3(b.x, b.y + 0.8, b.z), P = PIECE[b.key] || {};
-  if (b.flame) { removeFlame(b.flame); b.flame = null; } /* slice 26: its flame leaves the animated fires and is freed */ if (P.edge) for (const [i2, j] of ends(b)) post(i2, j, -1, P.stone ? -1 : 0);
+  if (b.flame) { removeFlame(b.flame); b.flame = null; freeGlow(b.mesh); } /* slice 26: its flame leaves the animated fires and is freed, its painted light goes out */ if (P.edge) for (const [i2, j] of ends(b)) post(i2, j, -1, P.stone ? -1 : 0);
   if (P.edge) for (const t of built.filter(q => q.key === 'wall_torch' && !mountOf(q.x, q.z))) removeBuilt(t, 'dropped'); // (slice 26: its wall torches fall with it)
   if (player.bed === b.id) { player.bed = null; log('Your bed is gone: you will not wake there now.'); }
   logEvent(how === 'fell' ? 'collapse' : 'torn', { key: b.key, x: +b.x.toFixed(1), z: +b.z.toFixed(1) });
@@ -280,5 +281,5 @@ export function putPiece(key, x, z, f = 0) { if (key === 'wall_torch') { const m
   const y = isEdge(key) ? Math.min(...[-1, 0, 1].map(k => groundY(x + Math.cos(f) * k, z - Math.sin(f) * k))) : Math.max(groundY(x, z), standAt(x, z, groundY(x, z) + STEP)), ok = spotFree(key, x, y, z, f);
   if (!ok.ok) return ok.why; if (ok.swap) swapOut(ok.swap); const id = nextBuiltId(); addBuilt(id, key, x, y, z, f, net.id); send('all', { t: 'built', id, key, x, y, z, f, by: net.id }); return built.find(b => b.id === id); }
 // a new game clears every piece and its rubble (the host's game starts an empty world)
-export function clearBuilt() { endBuild(); for (const b of [...built]) { for (const c of b.cols) { c.r = 0; c.vr = 0; } scene3().remove(b.mesh); if (b.flame) { removeFlame(b.flame); b.flame = null; } } built.length = 0;
+export function clearBuilt() { endBuild(); for (const b of [...built]) { for (const c of b.cols) { c.r = 0; c.vr = 0; } scene3().remove(b.mesh); if (b.flame) { removeFlame(b.flame); b.flame = null; freeGlow(b.mesh); } } built.length = 0;
   for (const p of posts.values()) scene3().remove(p.mesh); posts.clear(); for (const f of falling) { if (f.m) scene3().remove(f.m); scene3().remove(f.rub); } falling.length = 0; }

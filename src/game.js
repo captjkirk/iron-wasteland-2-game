@@ -1,13 +1,13 @@
 // Gameplay from the prototype: player, enemies, loot, input (keyboard, mouse, gamepads), the three cameras and the HUD.
 import * as THREE from 'three';
-import { QUALITY_KEY, PX, params, HALF, WATER_Y, WAKE_RADIUS, CHARS, ENEMY, BIOME, SAFE_R, HIDE, WARN_T, CHARGE, CLOSE, RELIGHT, SPIT_GAP, EASY_CALM } from './config.js';
+import { QUALITY_KEY, PX, params, HALF, WATER_Y, WAKE_RADIUS, CHARS, ENEMY, BIOME, SAFE_R, HIDE, WARN_T, CHARGE, CLOSE, RELIGHT, SPIT_GAP, EASY_CALM, PASS_N, PASS_OUT } from './config.js';
 import { campfire, campTent } from './camp.js';
 import { caches, raiderCamps, ladderAt } from './buildings.js';
 import { tickDeep, resetDeep, ripple } from './water.js';
 import { day, tickDay, resetDay, nightK, isNight, phase } from './daynight.js';
 const DEEP_BITE = 20; // the lake serpent's bite (slice 13: 15 before, from the shadow)
 import { rng } from './noise.js';
-import { groundY, biomeAt, slopeAt, riverDist } from './world.js';
+import { groundY, biomeAt, slopeAt, riverDist, PASSES } from './world.js';
 import { nearColliders, colR, placed, hideOccluders, addCollider, standAt, steps, STEP, rockCol, headroom, slabAcross, floorAt } from './props.js';
 import { markDirty } from './scatter.js';
 import { part, box, rockG, MAT, merged } from './models.js';
@@ -84,14 +84,23 @@ export function dangerCue(e) { e.mesh.userData.anim.attack(); sfx(e.type, e, 1.3
 function toothed() { const sh = new THREE.Shape(), n = 12, hole = new THREE.Path();
   for (let i = 0; i <= n * 2; i++) { const a = i / (n * 2) * Math.PI * 2, r = i % 2 ? 1.12 : 0.9; sh[i ? 'lineTo' : 'moveTo'](Math.cos(a) * r, Math.sin(a) * r); }
   hole.absarc(0, 0, 0.76, 0, Math.PI * 2, true); sh.holes.push(hole); return new THREE.ShapeGeometry(sh, 4).rotateX(-Math.PI / 2); }
+// the follow-ups to #66 (Jared: the narrow passes out of the Greenbelt were crowded): the ring's mountains are too steep to
+// spawn on, so every spawn round a player near the valley's edge landed in a pass, 41 of them after a minute at each mouth
+// on the classic world, none just beyond. Now a spawn into a pass's narrow part is refused once that pass holds PASS_N
+// creatures, and each pass has a few waiting where it opens onto its land (topped up while a player is within 200 m of the spot)
+const inPass = (x, z) => { const r = Math.hypot(x, z), a = Math.atan2(z, x); return r < 250 ? PASSES.findIndex(q => Math.abs(Math.atan2(Math.sin(a - q.a), Math.cos(a - q.a))) * r < 32) : -1; };
+const outside = (q) => ({ x: Math.cos(q.a) * 285, z: Math.sin(q.a) * 285 }), around = (o, R) => enemies.filter(e => !e.dead && !e.home && Math.hypot(e.x - o.x, e.z - o.z) < R).length;
+const crowded = (x, z, n) => { const k = inPass(x, z); return k >= 0 && enemies.filter(e => !e.dead && !e.home && Math.hypot(e.x, e.z) >= SAFE_R && inPass(e.x, e.z) === k).length + n > PASS_N; }; // (n: the whole pack, so one never overfills a pass; the stranger's review)
 function spawnAround(cx, cz, count, minD = 25, maxD = 90, land = null, ok = null) {
   let made = 0, tries = 0;
   while (made < count && tries++ < count * 20) { const a = rng() * 6.28, d = minD + rng() * (maxD - minD), x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d;
-    if (Math.abs(x) > HALF - 60 || Math.abs(z) > HALF - 60 || Math.hypot(x, z) < SAFE_R + 12) continue; /* nothing spawns in the safe valley */ if (groundY(x, z) < (biomeAt(x, z) === 'swamp' ? WATER_Y - 0.4 : WATER_Y + 0.4) || slopeAt(x, z) > 0.7 || (ok && !ok(x, z))) continue;
+    if (Math.abs(x) > HALF - 60 || Math.abs(z) > HALF - 60 || Math.hypot(x, z) < SAFE_R + 12) continue; /* nothing spawns in the safe valley */
+    if (groundY(x, z) < (biomeAt(x, z) === 'swamp' ? WATER_Y - 0.4 : WATER_Y + 0.4) || slopeAt(x, z) > 0.7 || (ok && !ok(x, z))) continue;
     const list = BIOME[land || biomeAt(x, z)].enemies; const type = list[Math.floor(rng() * list.length)];
     // wolves and hounds run in packs, rats in small swarms
     // (slice 21: wolves and hounds 3 to 5, rats 2 to 4)
     const pack = Math.max(1, Math.round(((type === 'wolf' || type === 'dust_hound' ? 3 + Math.floor(rng() * 3) : type === 'rat' ? 2 + Math.floor(rng() * 3) : 1) + (isNight() && type !== 'bear' ? 1 : 0)) * level().pack)), id = ++packN; // (slice 33: the difficulty) // (slice 13: a pack runs one bigger at night)
+    if (crowded(x, z, pack)) continue;
     for (let k = 0; k < pack; k++) spawnEnemy(x + (rng() - 0.5) * 5, z + (rng() - 0.5) * 5, type, id, k, pack); made += pack; }
 }
 // issue #44 (Jared's play, 2026-11-12: "no enemies really showing up?"): a steady trickle of threats. A player out of the
@@ -214,6 +223,7 @@ export function startGame(i) {
   ({ x: player.x, z: player.z } = campSpot()); player.y = groundY(player.x, player.z); player.pk = 0;
   for (const e of enemies) { scene.remove(e.mesh); e.mesh.userData.dispose?.(); } enemies.length = 0;
   if (!joining()) { spawnAround(0, 0, 26, SAFE_R + 15, SAFE_R + 230); // out beyond the ring: the valley is safe
+  for (const q of PASSES) { const o = outside(q); spawnAround(o.x, o.z, PASS_OUT, 0, 20); } // (just beyond each pass; within 20 m, so none starts past the 320 m clear-out from the camp: the stranger's review)
   // each raider camp's crew, round its fire; they keep to the camp until they see you
   raiderCamps.forEach((c, i) => c.raiders.forEach((type, k) => { const a = c.a0 + 0.4 + k * 1.9; spawnEnemy(c.x + Math.cos(a) * 3, c.z + Math.sin(a) * 3, type, 9000 + i, k, c.raiders.length); enemies.at(-1).home = c; })); }
   startPlaces({ spawnEnemy, enemies, joining, log, logEvent, sfx, send, player, hurt: (d, by) => hurtPlayer(d, by) }); // slice 23: the places' guards, and what this game knows of them
@@ -834,6 +844,7 @@ export function update(dt, t) {
   if (!joining() && Math.floor(t) % 4 === 0 && Math.floor(t) !== spawnTick) { spawnTick = Math.floor(t); const P = everyone();
     for (const e of enemies) if (!e.home && !e.posed && e.state === 'idle' && P.every(q => Math.hypot(e.x - q.x, e.z - q.z) > 320)) { dropFrom(e); scene.remove(e.mesh); e.mesh.userData.dispose?.(); e.gone = true; }
     for (const q of P) if (enemies.filter(e => !e.dead && !e.home && Math.hypot(e.x - q.x, e.z - q.z) < 150).length < 20 + Math.round(12 * NK)) spawnAround(q.x, q.z, 4 + Math.round(3 * NK), 50, 105); // (busier at night: slice 13; slice 21 raised the cap from 12 + 6)
+    for (const k of PASSES) { const o = outside(k); if (P.some(q => Math.hypot(q.x - o.x, q.z - o.z) < 200) && around(o, 35) < PASS_OUT - 1) spawnAround(o.x, o.z, 2, 0, 20); }
     for (const q of P) { if (gone(q) || q.away) continue; // (away: a hidden window; no pack is sent at a player who is not there) issue #44: the hunting trickle (sendHunt); the clock waits in the valley, and starts afresh on a teleport or a respawn
       if (q.huntedAt == null || Math.hypot(q.x, q.z) < SAFE_R) { q.huntedAt = t; q.huntWait = HUNT_WAIT(NK); continue; }
       if (t - q.huntedAt >= q.huntWait) { q.huntedAt = t; q.huntWait = HUNT_WAIT(NK); sendHunt(q, t, NK); } } }
