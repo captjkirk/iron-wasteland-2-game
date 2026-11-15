@@ -126,11 +126,16 @@ function leanGeo(s, k) { const g = s.geometry; if (g.userData.lean) return; cons
 function flasher(mats) { return (k) => { for (const m of mats) m.userData.u ? (m.userData.u.uFlash.value = k) : (m.emissive?.setScalar(k * 0.6)); }; }
 
 class BeastAnimator {
-  constructor(model, clips, b) { this.mixer = new THREE.AnimationMixer(model); this.clips = clips; this.b = b; this.acts = {}; this.base = null; this.one = null; this.dead = false;
+  constructor(model, clips, b) { this.mixer = new THREE.AnimationMixer(model); this.clips = clips; this.b = b; this.acts = {}; this.base = null; this.one = null; this.dead = false; this.ph = 0; this.rate = 0.92 + Math.random() * 0.16;
     this.mixer.addEventListener('finished', (e) => { if (this.one && e.action === this.one) { this.one.fadeOut(0.2); this.one = null; } });
     this.setBase('Idle', 0); this.mixer.update(Math.random() * 3); }
   get(n) { return this.acts[n] || (this.acts[n] = this.clips[n] && this.mixer.clipAction(this.clips[n])); }
+  // (Jared, November 15, 2026, several creatures at once: "they're in sync with animations": a pack alerted together started its
+  // gallop on the same frame and ran in lockstep. A pack's members now start a clip each at its own point in the cycle (ph, set
+  // by its place in the pack: game.js spawnEnemy; a creature on its own starts at the beginning, as before), and each idles a
+  // little faster or slower than its neighbours; the walk and gallop rates still follow its feet)
   setBase(n, fade = 0.25) { if (this.baseName === n) return; const a = this.get(n); if (!a) return; a.reset().setEffectiveWeight(1).play();
+    if (n !== 'Death') a.time = this.ph * a.getClip().duration;
     if (this.base) this.base.crossFadeTo(a, fade, false); this.base = a; this.baseName = n; }
   play(n, speed = 1, weight = 6) { const a = this.get(n); if (!a) return; if (this.one) this.one.stop();
     a.reset(); a.setLoop(THREE.LoopOnce, 1); a.timeScale = speed; a.setEffectiveWeight(weight); a.fadeIn(0.08); a.play(); this.one = a; }
@@ -146,7 +151,7 @@ class BeastAnimator {
   // 10 to 30 cm a frame under a body standing still))
   update(dt, { speed = 0, idle = 'Idle', scale = 1, look = null } = {}) {
     if (!this.dead) { const v = this.speeds, cur = this.baseName, moving = cur === 'Walk' || cur === 'Gallop';
-      this.sv = (this.sv ?? 0) + (speed / scale - (this.sv ?? 0)) * Math.min(1, dt * 12); const s = this.sv; let n = idle, ts = 1;
+      this.sv = (this.sv ?? 0) + (speed / scale - (this.sv ?? 0)) * Math.min(1, dt * 12); const s = this.sv; let n = idle, ts = this.rate;
       if (s > v.Walk * (cur === 'Gallop' ? 1.5 : 1.9)) { n = 'Gallop'; ts = s / v.Gallop; } else if (s > (moving ? 0.12 : 0.4)) { n = 'Walk'; ts = s / v.Walk; }
       if (moving && n === idle) { this.base.timeScale = 0; this.setBase(n, 0.18); } else this.setBase(n, 0.25);
       this.base.timeScale = Math.min(2.2, Math.max(0.35, ts)); }

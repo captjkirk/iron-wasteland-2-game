@@ -46,7 +46,9 @@ export function spawnEnemy(x, z, type, pack = ++packN, slot = 0, size = 1) {
   mesh.add(...threatMarks(type));
   const lurk = type === 'bog_lurker' && (biomeAt(x, z) === 'swamp' || groundY(x, z) < WATER_Y + 0.3); // (issue #44: on the Fungal Hollow's dry ground it roams in sight)
   const e = { id: ++enemyN, type, mesh, x, z, hp: st.hp, maxHp: st.hp, vx: 0, vz: 0, yaw: rng() * 6.28, state: lurk ? 'lurk' : 'idle', wander: 0, atkT: 0, stag: 0, flashT: 0, dead: 0,
-    pack, slot, size, flank: (slot - (size - 1) / 2) * 0.85, circle: rng() < 0.5 ? 1 : -1, voiceT: 2 + rng() * 4, barT: 0, emT: 0, wT: 0, rT: 0 }; enemies.push(e); return e;
+    pack, slot, size, flank: (slot - (size - 1) / 2) * 0.85, circle: rng() < 0.5 ? 1 : -1, voiceT: 2 + rng() * 4, barT: 0, emT: 0, wT: 0, rT: 0 }; enemies.push(e);
+  if (mesh.userData.anim && 'ph' in mesh.userData.anim) mesh.userData.anim.ph = slot * 0.618034 % 1; // (a pack out of step: each its own point in the stride, by its place in the pack; creatures.js)
+  return e;
 }
 // slice 22 (#51): a pack of n of one kind set down round (x, z), one pack that wakes together; returns them (for #52's radio-tower
 // guards: set each one's `home` to keep them by the tower until they see someone, as the raiders keep to their camps)
@@ -736,7 +738,7 @@ export function update(dt, t) {
     if (host) switch (e.state) {
       case 'lurk': break; // buried in the mud, waiting
       case 'emerge': e.emT -= dt; if (e.emT <= 0) { e.state = 'chase'; } face = true; break;
-      case 'idle': e.warned = false; e.chargeT = 0; e.spitW = 0; e.wander -= dt; if (e.wander <= 0) { e.wander = 2 + rng() * 4; e.wyaw = rng() * 6.28; e.wmove = rng() < 0.55; }
+      case 'idle': e.warned = false; e.cueAt = 0; e.chargeT = 0; e.spitW = 0; e.wander -= dt; if (e.wander <= 0) { e.wander = 2 + rng() * 4; e.wyaw = rng() * 6.28; e.wmove = rng() < 0.55; }
         if (e.home && Math.hypot(e.x - e.home.x, e.z - e.home.z) > 9) { e.wyaw = Math.atan2(e.home.x - e.x, e.home.z - e.z); e.wmove = true; } // raiders drift back to their fire
         if (e.wmove) { mx = Math.sin(e.wyaw); mz = Math.cos(e.wyaw); spd *= 0.35; } break;
       case 'charmed': e.chT -= dt; if (e.chT <= 0) e.state = 'chase'; e.wander -= dt; if (e.wander <= 0) { e.wander = 1 + rng() * 2; e.wyaw = rng() * 6.28; } mx = Math.sin(e.wyaw); mz = Math.cos(e.wyaw); spd *= 0.3; break;
@@ -748,7 +750,11 @@ export function update(dt, t) {
       case 'chase': {
         // #66: a danger that sees you rears and roars before it comes (on Easy it leaves you be unless you hurt it or come close),
         // then charges
-        if (st.danger && !e.warned) { e.warned = true; e.warnT = WARN_T; dangerCue(e); logEvent('danger', { enemy: e.type, d: Math.round(d) }); }
+        // (Jared, November 15, 2026, several bears at once: "they're in sync": a group that sees you together now rears and roars
+        // one after another, each a third of a second or so after the last that began within 40 m in the last 1.5 s)
+        if (st.danger && !e.warned) { const k = enemies.filter(o => o !== e && !o.dead && o.warnAt > t - 1.5 && Math.hypot(o.x - e.x, o.z - e.z) < 40).length;
+          e.warned = true; e.warnAt = t; e.cueAt = t + (k * 0.35) % 1.05 + rng() * 0.08; e.warnT = WARN_T + e.cueAt - t; }
+        if (e.cueAt && t >= e.cueAt) { e.cueAt = 0; dangerCue(e); logEvent('danger', { enemy: e.type, d: Math.round(d) }); }
         if (e.warnT > 0) { e.warnT -= dt; face = true;
           if (e.warnT <= 0) { if (level() === LEVELS.easy && e.hp >= e.maxHp && d > CLOSE) { e.state = 'idle'; e.calmT = t + EASY_CALM; e.hunter = null; e.warned = false; } else e.chargeT = CHARGE.t; } break; }
         if (e.chargeT > 0) { e.chargeT -= dt; spd *= CHARGE.k; }

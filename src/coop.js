@@ -196,7 +196,7 @@ function applyWorld(m, from) { const seen = new Set(); if (m.d) setDay(...m.d); 
     track(e, from, m.ts ?? performance.now(), x, 0, z, yaw); Object.assign(e, { state: st, hp, maxHp });
     if (hp <= 0 && !e.dead) { e.dead = 5; u.anim.die(); u.flash(0); sfx(e.type, e, 0.8); sfx('thud', e, 0.6); } }
   for (const e of enemies) if (!seen.has(e.id) && !e.gone) { dropFrom(e); scene3().remove(e.mesh); e.gone = true; } }
-function worldMsg() { return { t: 'w', ts: Math.round(performance.now()), d: [+day.t.toFixed(5), day.n, day.speed, day.g], e: enemies.filter(e => !e.gone).map(e => [e.id, e.type, +e.x.toFixed(2), +e.z.toFixed(2), +e.yaw.toFixed(2), Math.max(0, ST.indexOf(e.state)), Math.max(0, e.hp), e.maxHp, (e.warnT > 0 ? 1 : 0) | (e.spitW > 0 ? 2 : 0)]) }; } // (the last: #66's cues, a danger's warning and a pale spider about to spit)
+function worldMsg() { return { t: 'w', ts: Math.round(performance.now()), d: [+day.t.toFixed(5), day.n, day.speed, day.g], e: enemies.filter(e => !e.gone).map(e => [e.id, e.type, +e.x.toFixed(2), +e.z.toFixed(2), +e.yaw.toFixed(2), Math.max(0, ST.indexOf(e.state)), Math.max(0, e.hp), e.maxHp, (e.warnT > 0 && !e.cueAt ? 1 : 0) | (e.spitW > 0 ? 2 : 0)]) }; } // (the last: #66's cues, a danger's warning and a pale spider about to spit)
 
 // ── Smooth playback (the gate of slice 12, from the family's LAN play of 2026-11-04, "working but a little choppy") ──
 // Each 'p' and 'w' carries its sender's clock (ms). Over Wi-Fi they arrive unevenly (two or three at once, then none), and
