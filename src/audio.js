@@ -90,7 +90,7 @@ const SFX = {
 VOICE.spider_pale = VOICE.spider_widow = VOICE.spider; VOICE.spider_brute = (d, t) => { VOICE.spider(d, t); growl(d, t, 0.5, 60, 1.6); }; // (the kinds of spider, slice 22: the brute rasps low under its chitter)
 export function sfx(name, at, vol = 1) { if (!ctx || muted) return; const d = out(at, vol); if (!d) return; duck(); const t = ctx.currentTime + 0.005; (SFX[name] || VOICE[name])?.(d, t); }
 export function windLevel(v) { if (windGain) windGain.gain.setTargetAtTime(v, ctx.currentTime, 0.5); }
-export function riverLevel(v) { if (riverGain) riverGain.gain.setTargetAtTime(v, ctx.currentTime, 0.8); }
+let riverWant = 0; export function riverLevel(v) { riverWant = v; if (riverGain) riverGain.gain.setTargetAtTime(v, ctx.currentTime, 0.8); }
 
 // ── The land's own sounds (slice 13), now and then round the listener: birds by day in the green places, frogs in the
 // Bog, crickets and an owl at night, and far off at night a wolf's howl (never inside the safe valley) ──
@@ -117,7 +117,7 @@ let musicDest = null, musicMode = 'day', bossHold = 0, musicBus = null, duckG = 
 const MUSIC_BASE = 0.1; // against the master 0.7: one loud sound effect peaks near 1.0 and the wind sits at 0.05
 export function setMusicVolume(v) { musicVol = Math.max(0, Math.min(1, v)); if (musicBus) musicBus.gain.setTargetAtTime(musicPaused ? 0 : musicVol * MUSIC_BASE, ctx.currentTime, 0.2); }
 export function setMusicPaused(p) { musicPaused = p; setMusicVolume(musicVol); }
-export const audioState = () => ({ started: !!ctx, music: musicBus ? musicBus.gain.value : null, musicDuck: duckG ? duckG.gain.value : null, wind: windGain ? windGain.gain.value : null, muted, master: master ? master.gain.value : null });
+export const audioState = () => ({ started: !!ctx, music: musicBus ? musicBus.gain.value : null, musicDuck: duckG ? duckG.gain.value : null, wind: windGain ? windGain.gain.value : null, river: riverWant, muted, master: master ? master.gain.value : null });
 function duck() { if (!duckG) return; const t = ctx.currentTime; if (t - duckT < 0.08) return; duckT = t; duckG.gain.cancelScheduledValues(t); duckG.gain.setTargetAtTime(0.35, t, 0.05); duckG.gain.setTargetAtTime(1, t + 0.9, 0.7); }
 function startMusic() {
   duckG = ctx.createGain(); musicBus = ctx.createGain(); musicBus.gain.value = musicPaused ? 0 : musicVol * MUSIC_BASE;

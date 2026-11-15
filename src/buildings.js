@@ -762,7 +762,7 @@ export function woodpile(put, x, y, z, n, rows = 3, len = 0.42, r = 0.065, rnd =
     put.geo('bark', new THREE.CylinderGeometry(r * (0.85 + rnd() * 0.3), r, len * (0.9 + rnd() * 0.2), 7, 1, true).rotateY(a).rotateX(Math.PI / 2).translate(lx, ly, z + (rnd() - 0.5) * 0.05));
     for (const s of [-1, 1]) put.geo('cut', new THREE.CircleGeometry(r * 0.97, 7).rotateY(s > 0 ? 0 : Math.PI).rotateZ(a).translate(lx, ly, z + s * len * 0.47)); } }
 // the hanging lamp: shade and chain from the ceiling at (x, yc, z), its bulb, its light on the floor below (fy) and a soft glow
-export function hangLamp(put, x, yc, z, fy) { put('lamp', x, yc, z); const yb = yc - 1.25; put.geo('bulb', new THREE.SphereGeometry(0.05, 10, 8).scale(1, 1.25, 1).translate(x, yb, z));
+export function hangLamp(put, x, yc, z, fy, s = 1) { put('lamp', x, yc, z, 0, { s }); const yb = yc - 1.25 * s; /* (s: smaller, for a house room's low ceiling: the quality pass) */ put.geo('bulb', new THREE.SphereGeometry(0.05, 10, 8).scale(1, 1.25, 1).translate(x, yb, z));
   put.halo(x, yb - 0.05, z, 1.2, 0xffd6a0); put.geo('pool', new THREE.PlaneGeometry(3.2, 3.2).rotateX(-Math.PI / 2).translate(x, fy + 0.015, z)); }
 // a lantern standing at (x, y, z) with its flame lit
 export function litLantern(put, x, y, z, ry = 0) { put('lantern', x, y, z, ry); put.geo('flame', new THREE.SphereGeometry(0.018, 8, 6).scale(1, 2, 1).translate(x, y + 0.2, z)); put.halo(x, y + 0.22, z, 0.75, 0xffb060); }

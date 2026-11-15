@@ -209,7 +209,7 @@ function furnish(H) { const { b } = H, doors = [...b.doors, ...b.inner];
       for (const [x, z] of pts) { const r = [x - W / 2 - e, x + W / 2 + e, z - Dp / 2 - e, z + Dp / 2 + e]; if (!free(r)) continue; occ.push(r); H.item(k, x, R.lv, z, ry0);
         if (chairs) for (const [sx, sz, ry] of chairs === 4 ? [[0, -1, 0], [0, 1, Math.PI], [-1, 0, Math.PI / 2], [1, 0, -Math.PI / 2]] : [[0, -1, 0], [0, 1, Math.PI]]) H.item('chair', x + sx * (W / 2 + 0.28), R.lv, z + sz * (Dp / 2 + 0.28), ry + (hash(b, x, z, sx + sz * 3) - 0.5) * 0.4, { solid: false });
         return true; } return false; };
-    const lamp = () => { if (R.o.ceil) hangLamp(H.put, (R.x0 + R.x1) / 2, b.y + R.lv + R.o.ceil - 0.05, (R.z0 + R.z1) / 2, b.y + R.lv); };
+    const lamp = () => { if (R.o.ceil) hangLamp(H.put, (R.x0 + R.x1) / 2, b.y + R.lv + R.o.ceil - 0.05, (R.z0 + R.z1) / 2, b.y + R.lv, Math.max(0.4, Math.min(1, (R.o.ceil - 0.05 - 2.1) / 1.25))); }; // (the quality pass: the radio shack's 1.25 m drop hung a house's bulb at chest height in the room's middle; scaled, its bulb hangs 2.1 m up)
     for (const k of R.o.set || SETS[R.type]) {
       if (k === 'lamp') lamp();
       else if (k === 'coffee') { const s = put.find(p => p.k === 'sofa'); if (!s) continue; const bb = box3('coffee'), n = { '-z': [0, 1], '+z': [0, -1], '-x': [1, 0], '+x': [-1, 0] }[s.side], o = 0.95 + (bb.max.z - bb.min.z) / 2;

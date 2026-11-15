@@ -8,7 +8,7 @@ import { day, tickDay, resetDay, nightK, isNight, phase } from './daynight.js';
 const DEEP_BITE = 20; // the lake serpent's bite (slice 13: 15 before, from the shadow)
 import { rng } from './noise.js';
 import { groundY, biomeAt, slopeAt, riverDist } from './world.js';
-import { nearColliders, colR, placed, hideOccluders, addCollider, standAt, steps, STEP, rockCol } from './props.js';
+import { nearColliders, colR, placed, hideOccluders, addCollider, standAt, steps, STEP, rockCol, headroom, slabAcross, floorAt } from './props.js';
 import { markDirty } from './scatter.js';
 import { part, box, rockG, MAT, merged } from './models.js';
 import { buildCreature } from './creatures.js';
@@ -531,7 +531,7 @@ function fallHurt(h, gy) { const d = Math.round((h - FALL_SAFE) * FALL_HP); if (
   if (WATER_Y - groundY(player.x, player.z) > 0.4 && gy < WATER_Y) { logEvent('fall', { h: +h.toFixed(1), dmg: 0, water: true }); return; }
   logEvent('fall', { h: +h.toFixed(1), dmg: d }); floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `-${d}`, '#ff8a6a', d >= 20); hurtPlayer(d, 'fall'); }
 // no bed, no respawn (the owner's ruling, 2026-11-03; IW1 respawns you only at a bed you built): death ends the game
-export function gameOver(why = null) { clearPoison(); toggleCraft(false); running = false; paused = false; syncCursor(); net.host = null; clearOthers(); nameTags([]); const t = Math.round((performance.now() - player.startT) / 1000), by = LABEL[player.killedBy] || 'the wasteland';
+export function gameOver(why = null) { clearPoison(); riverLevel(0); /* (the quality pass: the rush played on under the start menu) */ toggleCraft(false); running = false; paused = false; syncCursor(); net.host = null; clearOthers(); nameTags([]); const t = Math.round((performance.now() - player.startT) / 1000), by = LABEL[player.killedBy] || 'the wasteland';
   logEvent('game-over', { by: player.killedBy, secs: t, kills: player.kills, ...player.inv });
   if (document.pointerLockElement) document.exitPointerLock(); for (const id of ['hud-tl', 'hud-tr', 'hud-b', 'cross', 'pause', 'breath', 'prompt']) document.getElementById(id).classList.add('hidden');
   document.querySelector('#menu .sub').textContent = why || `${player.ch.player} fell to ${/^[AEIOU]/.test(by) ? 'an' : 'a'} ${by.toLowerCase()} after ${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}, with ${player.kills} kills. No bed to wake in: next time build a craftbench, then a bed, and sleep in it (Tab crafts, E sleeps). Pick who walks out next.`;
@@ -629,6 +629,7 @@ export function update(dt, t) {
       if (ledge > player.y + STEP && ledge < player.y + 2.5 && ledge > groundY(ax, az) + 0.3) { player.mantle = { t: 0, x0: player.x, y0: player.y, z0: player.z, x1: ax, y1: ledge, z1: az }; logEvent('climb', { h: +(ledge - groundY(ax, az)).toFixed(1) }); } }
     if ((keys.has('Space') || pad?.jump) && !player.dead && player.onGround && !diving) { player.vy = 8; player.onGround = false; } // a pad jumps once per press
     player.vy -= (player.y + 1.5 < WATER_Y ? 6 : 24) * dt; player.y += player.vy * dt;
+    if (player.vy > 0) { const top = headroom(player.x, player.z, player.y - player.vy * dt) - 2; if (player.y > top) { player.y = Math.max(top, player.y - player.vy * dt); player.vy = 0; } } // (the quality pass: a jump under an upper floor or a stair stops below it; the eye went through into the room above)
     if (player.y <= gy || (player.onGround && player.vy <= 0 && player.y - gy < 0.3)) { if (!player.onGround) fallHurt(Math.min((player.fallTop ?? gy) - gy, (player.fallGap ?? 99) + 1), gy); player.y = gy; player.vy = 0; player.onGround = true; } else player.onGround = false; } // feet stick on the way down a slope; off an edge they fall
   // slice 21 (#60; Zachary on 2026-11-14 ran 23 m down a hillside in 6 s and took four "falls" for 79): the drop that hurts is the
   // widest gap between the feet and the ground beneath them in the air (off a cliff the whole drop; bounding down a slope about 1 m)
@@ -773,13 +774,14 @@ export function update(dt, t) {
       e.det = side * Math.PI; for (const a of [0.8, 1.35, 1.9, 2.5]) { if (clear(a * side)) { e.det = a * side; break; } if (clear(-a * side)) { e.det = -a * side; break; } }
       e.detT = 1.2 + rng() * 1.2; e.pin = 0; }
     const ty = joining() ? e.nyaw ?? e.yaw : e.state === 'siege' && e.wfx != null ? Math.atan2(-e.wfx, -e.wfz) : face ? Math.atan2(-tx, -tz) : (mx || mz) ? Math.atan2(-mx, -mz) : e.yaw; let dd = ty - e.yaw; dd = Math.atan2(Math.sin(dd), Math.cos(dd)); e.yaw += dd * Math.min(1, dt * 8);
-    const gy = groundY(e.x, e.z), sink = e.state === 'lurk' ? 0.85 : e.state === 'emerge' ? 0.85 * Math.max(0, e.emT / 0.8) : 0;
+    const g0 = groundY(e.x, e.z), fo = floorAt(e.x, e.z, g0) - g0; e.fo = e.fo == null ? fo : e.fo + (fo - e.fo) * Math.min(1, dt * 10); // (onto a house floor or deck eased, not snapped: the quality pass)
+    const gy = g0 + e.fo, sink = e.state === 'lurk' ? 0.85 : e.state === 'emerge' ? 0.85 * Math.max(0, e.emT / 0.8) : 0;
     if (e.state === 'emerge' && e.emT > 0.7) { const at = new THREE.Vector3(e.x, Math.max(gy, WATER_Y), e.z); if (gy < WATER_Y + 0.2) { splash(at); sfx('splash', e); } else dustPuff(at, 14); e.emT = 0.7; }
     e.mesh.position.set(e.x, Math.max(gy, WATER_Y - 0.55 * st.scale) - sink * st.scale + (e.dropH || 0), e.z); e.mesh.rotation.y = e.yaw; // (dropH: a spider on its thread, slice 22)
     e.mesh.visible = e.state !== 'lurk' || d < 4;
     // slice 19: built creatures plant their feet on the ground and turn their heads to the one they hunt
     const eyes = !tgGone && ['chase', 'windup', 'recover', 'emerge', 'siege'].includes(e.state) ? (e.lookV ||= new THREE.Vector3()).set(tg.x, groundY(tg.x, tg.z) + 1.3, tg.z) : null;
-    if (d < 80) an.update(dt, { speed: joining() ? e.spd || 0 : Math.hypot(e.x - ex, e.z - ez) / Math.max(dt, 1e-3), scale: st.scale, ground: groundY, look: eyes });
+    if (d < 80) an.update(dt, { speed: joining() ? e.spd || 0 : Math.hypot(e.x - ex, e.z - ez) / Math.max(dt, 1e-3), scale: st.scale, ground: e.fo > 0.01 ? FLOOR : groundY, look: eyes }); // (on a house's floor, its feet too: the quality pass found wolves walking with only their heads above the boards)
   }
   // keep awake enemies from stacking on one another
   for (let i = 0; i < awake.length; i++) for (let j = i + 1; j < awake.length; j++) { const a = awake[i], b = awake[j]; if (a.state === 'lurk' || b.state === 'lurk') continue;
@@ -802,7 +804,7 @@ export function update(dt, t) {
     // ground, trunks, rocks and walls stop a shot: sampled every 0.3 m along this frame's path, so a fast one cannot skip a wall
     // (a frame's path is far shorter than a grid cell, so one lookup at its middle covers it; a collider stops shots below its top)
     let hit = false, stop = null, last = prev; const n = Math.max(1, Math.ceil(prev.distanceTo(p) / 0.3)), near = nearColliders((prev.x + p.x) / 2, (prev.z + p.z) / 2);
-    for (let k = 1; k <= n && !hit; k++) { const q = prev.clone().lerp(p, k / n), gq = groundY(q.x, q.z); hit = q.y < gq;
+    for (let k = 1; k <= n && !hit; k++) { const q = prev.clone().lerp(p, k / n), gq = groundY(q.x, q.z); hit = q.y < gq || slabAcross(q.x, q.z, last.y, q.y); // (the quality pass: a floor, stair or roof stops a shot too)
       for (const c of near) if (c.r && !(c.gate && c.gate.open) && Math.hypot(c.x - q.x, c.z - q.z) < colR(c, q.x, q.z, q.y) && q.y < (c.top ?? gq + 4) && !(q.y < c.bot)) { hit = true; stop = c; } if (hit) p.copy(q); else last = q; }
     if (stop) hitScenery(stop, p.clone(), s.v.clone().setY(0).normalize()); else if (hit) dustPuff(prev, 4);
     if (stop?.bp && s.hostile && !s.ghost && !joining()) damageBuilt(stop.bp, s.dmg * 0.5, s.o); // a raider's bullet chips the wall it hits (slice 12)
@@ -859,8 +861,9 @@ export function update(dt, t) {
   tickCoop(dt); tickEffects(dt); tickFireflies(dt, camera.position, true); setListener(player.x, player.z, camMode === 'top' ? topYaw : player.yaw);
   windLevel(0.03 + Math.min(0.06, Math.max(0, player.y - 20) / 600) + W.wind + (BIOME_WIND[biomeAt(player.x, player.z)] || 0)); setMusicMode(isNight() ? 'night' : 'day', dt); // (the 'boss' track is ready in audio.js for when IW2 has bosses)
   ambient(dt, biomeAt(player.x, player.z), nightK(), Math.hypot(player.x, player.z) < SAFE_R); // (slice 13: storms, the open biomes' wind, the night's sounds)
-  riverLevel(0.1 * Math.max(0, 1 - riverDist(player.x, player.z) / 45) ** 2); // (slice 31: the river rushes as you near it)
+  riverLevel(running ? 0.1 * Math.max(0, 1 - riverDist(player.x, player.z) / 45) ** 2 : 0); /* (0: a game over earlier in this frame; the quality pass) */ // (slice 31: the river rushes as you near it)
 }
+const FLOOR = (x, z) => floorAt(x, z, groundY(x, z)); // (a creature's feet on a house floor)
 const HUNTS = ['chase', 'windup', 'recover', 'emerge', 'siege'], SMELL = new Set(['wolf', 'dust_hound', 'bear']);
 const HEATERS = () => places.filter(q => q.heater).map(q => ({ ...q.heater, heater: true })); // slice 23
 let spawnTick = -1, campT = 0, warmLogged = false, lastFps = 0, cooking = false;
@@ -961,6 +964,7 @@ function prompt(dt) { const c = player.chop || player.tear || player.fix || play
 export { selected, menuPad } from './menu.js';
 
 export const isRunning = () => running;
+export const worldWaits = () => running && !coop() && (paused || craftOpen()); // (alone, the pause screen and the craft menu stop the world: update() returns early; the quality pass)
 export const scene3 = () => scene;
 export { log };
 export const getCamMode = () => camMode;

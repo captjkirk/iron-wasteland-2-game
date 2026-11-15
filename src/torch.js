@@ -44,7 +44,7 @@ export const torchLights = () => carriers().map(q => ({ x: q.x, y: q.y + 1.25, z
 export function lightTorch() { const had = !!player.torch; player.torch = { fuel: TORCH_FUEL, on: true }; sfx('craft', null, 0.6);
   log(had ? 'A fresh torch, burning.' : 'You light a torch: it burns about a night. T puts it away; any fire lights it again.'); }
 export function toggleTorch() { const t = player.torch; if (!t) { log('No torch: craft a hand torch (Tab) from wood and fiber.'); return; }
-  if (t.fuel <= 0) { log('Your torch has burnt out: hold it by a fire to light it again.'); return; } t.on = !t.on; sfx('toss', null, 0.3); log(t.on ? 'Torch out and burning.' : 'Torch put away.'); }
+  if (t.fuel <= 0) { log('Your torch has burnt out: hold it by a fire to light it again.'); return; } if (!t.on && player.under) { log('Not under the water: surface first.'); return; } t.on = !t.on; sfx('toss', null, 0.3); log(t.on ? 'Torch out and burning.' : 'Torch put away.'); }
 
 // the torch in a hand: a short stake, its head in pitch-soaked rags, burning
 function handTorch() { const g = torchMesh(); g.scale.setScalar(0.38); const f = addFlame(g, 1.52, 0.6, 0); /* (no embers: up close they read as squares) */ halo(f.h, 2.2); g.traverse(m => { if (m.isMesh && !m.material.blending) m.castShadow = true; }); return g; }
@@ -57,6 +57,7 @@ function hold(mesh, on) { const u = mesh?.userData; if (!u) return; if (on && !u
 let fp = null;
 // every frame: the local torch burns down, catches again by a fire; every carried torch shows (first person: one in view)
 export function tickTorch(dt, camera, first) { const t = player.torch; if (GLOW) { const k = nightK(); GLOW.opacity = 0.25 + 0.75 * k; POOL.opacity = k; }
+  if (t?.on && player.under) { t.on = false; sfx('splash', null, 0.3); log('Your torch hisses out under the water. T lights it again once you surface.'); } // (the quality pass: it burned on at the bottom of a lake)
   if (t?.on && !gone(player)) { t.fuel -= dt; /* (downed or dead: it does not burn) */ if (t.fuel <= 0) { t.fuel = 0; t.on = false; sfx('splash', null, 0.25); log('Your torch has burnt out. Hold it by a fire to light it again.'); } }
   if (t && t.fuel < TORCH_FUEL && !gone(player)) { const near = [{ x: CAMP.x, z: CAMP.z, r: 3 }, ...fireSpots().map(f => ({ ...f, r: 2.5 })), ...flames().filter(b => b.key !== 'campfire').map(b => ({ x: b.x, z: b.z, r: 1.6 }))].some(f => Math.hypot(player.x - f.x, player.z - f.z) < f.r);
     if (near) { if (t.fuel <= 0) { t.on = true; sfx('craft', null, 0.5); log('Your torch catches from the fire.'); } t.fuel = TORCH_FUEL; } }

@@ -71,6 +71,15 @@ export function standAt(x, z, y, step = STEP) { let s = -Infinity;
     else if ((y === Infinity || steps(c, y, step)) && Math.hypot(c.x - x, c.z - z) < colR(c, x, z) + 0.15) s = Math.max(s, c.stand); }
   for (const f of surfaces) if (Math.abs(f.x - x) < f.r && Math.abs(f.z - z) < f.r) { const h = f.at(x, z); if (h != null && h <= y + Math.max(step, f.climb || 0)) s = Math.max(s, h); } // (climb, slice 36: a stair's, so a slow frame's long stride still goes up it)
   return s; }
+// the quality pass (November 15, 2026): the floors, stairs and roofs of `surfaces`, which feet stand on, are also what a head, a
+// shot and a creature meet. headroom: the lowest one over (x, z) more than 1.2 m above feet at y (a jump stops under it).
+// slabAcross: is there one at (x, z) between heights y0 and y1 (a shot crossing it stops). floorAt: the house floor or deck a
+// creature walks on there, one no more than 0.9 m over the ground gy (a house floor stands that far over a sloping lot), else gy
+// ponytail: every surface is tested (a cheap box test each; a random world has a few hundred); a grid like the colliders' if it ever shows in a frame
+const over = (x, z, fn) => { for (const f of surfaces) if (Math.abs(f.x - x) < f.r && Math.abs(f.z - z) < f.r) { const h = f.at(x, z); if (h != null) fn(h); } };
+export function headroom(x, z, y) { let s = Infinity; over(x, z, (h) => { if (h > y + 1.2 && h < s) s = h; }); return s; }
+export function slabAcross(x, z, y0, y1) { let hit = false; over(x, z, (h) => { if ((h - y0) * (h - y1) <= 0) hit = true; }); return hit; }
+export function floorAt(x, z, gy) { let s = gy; over(x, z, (h) => { if (h > s && h <= gy + 0.9) s = h; }); return s; }
 
 export const placed = {}; // type -> items (game.js salvages placed.scrap and placed.hulk)
 const TREE_TYPES = ['pine', 'oak', 'aspen', 'snowpine', 'deadtree', 'swamptree'];

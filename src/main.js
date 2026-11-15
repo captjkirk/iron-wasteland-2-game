@@ -32,7 +32,7 @@ import { ammo, clipSize } from './supplies.js';
 import { felled, fell, harvestTarget, saplingStats } from './harvest.js';
 import { tickTorch, torchLights } from './torch.js';
 import { quiver, stuckArrows } from './arrows.js';
-import { warmCreatures, pickups, initGame, hurtPlayer, gotPickup, selected, liveShots, spreadAt, upgraded, aimGround, togglePause, startGame, setCam, update, placeCamera, hud, menuPad, isRunning, getCamMode, player, enemies, spawnEnemy, attack, teleport, look, hitEnemy, press, secondary, turrets, dropLoot, spawnPack } from './game.js';
+import { warmCreatures, pickups, initGame, hurtPlayer, gotPickup, selected, liveShots, spreadAt, upgraded, aimGround, togglePause, startGame, setCam, update, placeCamera, hud, menuPad, isRunning, worldWaits, getCamMode, player, enemies, spawnEnemy, attack, teleport, look, hitEnemy, press, secondary, turrets, dropLoot, spawnPack } from './game.js';
 import * as spiders from './spiders.js';
 
 const status = document.getElementById('loading');
@@ -117,7 +117,7 @@ function frame(now) {
     camera.position.set(x, Math.max(groundY(x, z), WATER_Y) + 55, z); camera.lookAt(40, 8, 0); env.follow(new THREE.Vector3(40, groundY(40, 0), 0)); }
   if (freeCam) { camera.position.copy(freeCam.pos); camera.lookAt(freeCam.target); camera.fov = freeCam.fov; camera.updateProjectionMatrix(); env.follow(freeCam.target); }
   // slice 13: the hour lights the world: sky, sun or moon, fog, the far trees; fires and torches light the night
-  env.setTime(day.t); eyeShine(nightK()); tickTorch(isRunning() ? dt : 0, camera, isRunning() && getCamMode() === 'first'); env.fireLights(isRunning() ? [...torchLights(), ...lightSpots(), ...campFires()] : [], camera.position, nightK(), clock);
+  env.setTime(day.t); eyeShine(nightK()); tickTorch(isRunning() && !worldWaits() ? dt : 0, camera, isRunning() && getCamMode() === 'first'); env.fireLights(isRunning() ? [...torchLights(), ...lightSpots(), ...campFires()] : [], camera.position, nightK(), clock);
   localFog(scene.fog, FOG_COLOR, env.fogNear, env.fogFar, camera.position.x, camera.position.z); scene.fog.color.multiply(env.fogTint);
   if (isRunning()) { markExplored(player.x, player.z); const r = fogReach(camera.position.x, camera.position.z, dt); scene.fog.near *= 0.2 + 0.8 * r; scene.fog.far *= r; } // (#19 part 1: unseen ground is foggier)
   { const nk = nightK(), f = scene.fog; f.near += (Math.min(f.near, 10) - f.near) * nk; f.far += (Math.min(f.far, 150) - f.far) * nk; } // the night closes in (the owner: "view distance = less at night")
