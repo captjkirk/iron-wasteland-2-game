@@ -24,9 +24,13 @@ export function toggleMute() { muted = !muted; try { localStorage.setItem('iw2.m
 export function setListener(x, z, yaw) { listener = { x, z, yaw }; }
 
 // ── building blocks ──
-function out(at, vol = 1) { const g = ctx.createGain(); let v = vol, pan = 0;
-  if (at) { const dx = at.x - listener.x, dz = at.z - listener.z, d = Math.hypot(dx, dz); v *= 1 / (1 + d / 7); if (d > 60) return null;
-    const right = [Math.cos(listener.yaw), -Math.sin(listener.yaw)]; pan = Math.max(-0.8, Math.min(0.8, (dx * right[0] + dz * right[1]) / (d + 1))); }
+// where a sound sits left to right for the listener (-0.8 left, 0.8 right)
+export function panOf(at) { const dx = at.x - listener.x, dz = at.z - listener.z, d = Math.hypot(dx, dz), right = [Math.cos(listener.yaw), -Math.sin(listener.yaw)];
+  return Math.max(-0.8, Math.min(0.8, (dx * right[0] + dz * right[1]) / (d + 1))); }
+// (reach: how far it carries, the distance at which it is half as loud; max: past it, silence. A wolf's call carries further
+// than its growl: the follow-ups to #66, "wolves that seem silent")
+function out(at, vol = 1, reach = 7, max = 60) { const g = ctx.createGain(); let v = vol, pan = 0;
+  if (at) { const d = Math.hypot(at.x - listener.x, at.z - listener.z); v *= 1 / (1 + d / reach); if (d > max) return null; pan = panOf(at); }
   g.gain.value = v; if (ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = pan; g.connect(p); p.connect(master); } else g.connect(master); return g; }
 function env(g, t, a, peak, dec) { g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + a + dec); }
 function noise(dest, t, dur, { type = 'bandpass', f0 = 1000, f1 = f0, q = 1, peak = 0.8, a = 0.005 } = {}) {
@@ -88,8 +92,17 @@ const SFX = {
   thunk: (d, t) => { tone(d, t, 0.06, { type: 'triangle', f0: 320, f1: 140, peak: 0.45 }); noise(d, t, 0.05, { f0: 1500, q: 2, peak: 0.35 }); },
   salvage: (d, t) => { for (let i = 0; i < 4; i++) { noise(d, t + i * 0.09, 0.07, { f0: 1800 + i * 300, q: 6, peak: 0.4 }); tone(d, t + i * 0.09, 0.1, { type: 'square', f0: 300 + i * 40, peak: 0.05 }); } },
 };
+// wolves (the follow-ups to #66): a pack's long howl at night from where it stands; a low rising call when it has seen you and
+// is watching; a sharp yipping call as it comes for you
+VOICE.howl = (d, t) => AMB.howl.play(d, t);
+VOICE.wolfwatch = (d, t) => { growl(d, t, 0.9, 75, 0.8); tone(d, t + 0.2, 0.9, { type: 'triangle', f0: 260, f1: 340, peak: 0.12, a: 0.15 }); };
+VOICE.wolfcall = (d, t) => { const f = 520 + Math.random() * 120; for (let i = 0; i < 3; i++) tone(d, t + i * 0.16, 0.12, { type: 'triangle', f0: f * (1 + i * 0.08), f1: f * 1.35, peak: 0.25 }); tone(d, t + 0.5, 0.8, { type: 'triangle', f0: f, f1: f * 0.7, peak: 0.2, a: 0.05 }); };
 VOICE.spider_pale = VOICE.spider_widow = VOICE.spider; VOICE.spider_brute = (d, t) => { VOICE.spider(d, t); growl(d, t, 0.5, 60 * (0.88 + Math.random() * 0.24), 1.6); }; // (the kinds of spider, slice 22: the brute rasps low under its chitter)
-export function sfx(name, at, vol = 1) { if (!ctx || muted) return; const d = out(at, vol); if (!d) return; duck(); const t = ctx.currentTime + 0.005; (SFX[name] || VOICE[name])?.(d, t); }
+// how loud and far a voice carries, where it is not a growl's [1, 7, 60]: [volume, half as loud at, silent past] (wolves' calls)
+const CARRY = { wolfcall: [1, 20, 120], wolfwatch: [0.9, 16, 90], howl: [0.8, 30, 170] };
+export const heard = []; // (the last 40 sounds with a place within earshot, and where each sat left to right: for the walk test)
+export function sfx(name, at, vol = 1) { const [cv = 1, reach, max] = CARRY[name] || []; if (at && Math.hypot(at.x - listener.x, at.z - listener.z) <= (max ?? 60)) { heard.push({ name, x: at.x, z: at.z, pan: panOf(at) }); if (heard.length > 40) heard.shift(); } // (only what is in earshot)
+  if (!ctx || muted) return; const d = out(at, vol * cv, reach, max); if (!d) return; duck(); const t = ctx.currentTime + 0.005; (SFX[name] || VOICE[name])?.(d, t); }
 export function windLevel(v) { if (windGain) windGain.gain.setTargetAtTime(v, ctx.currentTime, 0.5); }
 let riverWant = 0; export function riverLevel(v) { riverWant = v; if (riverGain) riverGain.gain.setTargetAtTime(v, ctx.currentTime, 0.8); }
 
@@ -101,7 +114,7 @@ const AMB = {
   frog: { when: (b) => b === 'swamp', gap: [0.8, 3], vol: 0.25, play: (d, t) => { for (let i = 0; i < 2 + Math.floor(Math.random() * 3); i++) tone(d, t + i * 0.16, 0.09, { type: 'square', f0: 130 + Math.random() * 30, f1: 95, peak: 0.12 }); } },
   cricket: { when: (b, n) => n > 0.5 && b !== 'tundra', gap: [0.4, 1.6], vol: 0.07, play: (d, t) => { const f = 4200 + Math.random() * 600; for (let i = 0; i < 3; i++) tone(d, t + i * 0.045, 0.03, { f0: f, peak: 0.25 }); } },
   owl: { when: (b, n) => n > 0.6 && ['grass', 'tundra', 'ruins'].includes(b), gap: [22, 50], vol: 0.3, play: (d, t) => { tone(d, t, 0.35, { f0: 390, f1: 360, peak: 0.3, a: 0.05 }); tone(d, t + 0.55, 0.7, { f0: 370, f1: 330, peak: 0.28, a: 0.06 }); } },
-  howl: { when: (b, n, safe) => n > 0.6 && !safe, gap: [35, 80], vol: 0.25, play: (d, t) => { const o = ctx.createOscillator(), g = ctx.createGain(), v = ctx.createOscillator(), vg = ctx.createGain();
+  howl: { when: () => false, gap: [35, 80], vol: 0.25, play: (d, t) => { /* (now only a real pack's: VOICE.howl, from game.js) */ const o = ctx.createOscillator(), g = ctx.createGain(), v = ctx.createOscillator(), vg = ctx.createGain();
     o.type = 'triangle'; o.frequency.setValueAtTime(380, t); o.frequency.linearRampToValueAtTime(640, t + 0.6); o.frequency.linearRampToValueAtTime(560, t + 2.0); o.frequency.linearRampToValueAtTime(420, t + 2.6);
     v.frequency.value = 5.5; vg.gain.value = 9; v.connect(vg); vg.connect(o.frequency); env(g, t, 0.4, 0.22, 2.3); o.connect(g); g.connect(d); o.start(t); v.start(t); o.stop(t + 2.9); v.stop(t + 2.9); } } };
 const ambT = {};

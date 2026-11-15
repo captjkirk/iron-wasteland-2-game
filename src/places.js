@@ -15,7 +15,7 @@ let pending = false; export const radioLater = () => { pending = true; }; // (a 
 let G = null, holdT = 0, sporeT = 0, t = 0, titleT = 0, titleEl = null, listEl = null, dirty = true;
 
 // a new game: everything unknown again; the host sets each place's guards round it (they keep to it, as raiders to their fire)
-export function startPlaces(g) { G = g; holdT = 0; sporeT = 0; dirty = true;
+export function startPlaces(g) { G = g; holdT = 0; sporeT = 0; dirty = true; titleT = 0; if (titleEl) titleEl.style.opacity = 0; // (no name left over from the last game)
   for (const q of places) Object.assign(q, { seen: false, reached: false, heard: false, on: false });
   if (!g.joining()) for (const q of places) q.guards.forEach((type, k) => { const a = k * 2.4 + 0.7, r = q.kind === 'shrooms' ? 4.2 : 5.5;
     g.spawnEnemy(q.x + Math.cos(a) * r, q.z + Math.sin(a) * r, type, 9500 + places.indexOf(q), k, q.guards.length); g.enemies.at(-1).home = q; });

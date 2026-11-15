@@ -120,11 +120,17 @@ function sendHunt(q, t, nk) {
   const land = biomeAt(q.x, q.z), n0 = enemies.length; if (!pick) spawnAround(q.x, q.z, 1, 45, 60, BIOME[land] ? land : null, level);
   const pack = pick ? enemies.filter(o => o.pack === pick.pack && !o.dead) : enemies.slice(n0); if (!pack.length) return;
   for (const e of pack) { e.hunter = { until: t + 30 }; if (e.state === 'lurk') { e.state = 'emerge'; e.emT = 0.8; } else e.state = 'chase'; }
+  if (pack[0].type === 'wolf') wolfSay('wolfcall', pack[0]); // (a pack sent at you calls as it sets off)
   logEvent('hunt', { enemy: pack[0].type, n: pack.length, d: Math.round(Math.hypot(pack[0].x - q.x, pack[0].z - q.z)), woke: !!pick, biome: land, night: nk > 0.5 || undefined });
   sfx(pack[0].type, pack[0]); }
 function alertPack(e) { for (const o of enemies) if (o.pack === e.pack && !o.dead && (o.state === 'idle' || o.state === 'lurk')) {
   if (o.state === 'lurk') { o.state = 'emerge'; o.emT = 0.8; } else o.state = 'chase'; }
-  sfx(e.type, e); }
+  sfx(e.type, e); if (e.type === 'wolf') wolfSay('wolfcall', e); }
+// wolves (the follow-ups to #66, Jared: wolves seemed silent until they bit): their calls carry (half as loud at 20 m, heard to
+// 120 m; a howl to 170 m) and come from where they stand, on every player's game. A pack that has seen you and is watching
+// gives a low call (from 45 m, before it comes for you); one that comes for you gives a sharp yipping call, and its wolves
+// call again now and then on the way; at night, now and then, a pack 50 to 160 m off howls (no longer a howl from nowhere)
+function wolfSay(n, e, k = 1) { sfx(n, e, k); send('all', { t: 'say', n, x: +e.x.toFixed(1), z: +e.z.toFixed(1), k }); }
 
 // ── Pickups and projectiles ─────────────────────────────────────────────
 export const pickups = []; const shots = []; let lootN = 0;
@@ -217,7 +223,7 @@ export function startGame(i) {
   quiver.n = quiver.start; clearArrows(); player.bed = null; player.chop = null; toggleCraft(false); // slice 11: a full quiver, no bed to wake in yet
   player.up = {}; player.fireT = 0; spitAt.clear(); player.tear = null; player.torch = null; player.shieldT = 0; endBuild(); resetSupplies(); player.inv.cooked = 0; // slice 12: upgrades are bought again each game; what is built stays in the world
   if (player.mesh) scene.remove(player.mesh); player.mesh = buildCharacter(ch); scene.add(player.mesh);
-  viewModel.clear(); viewModel.add(buildViewModel(ch)); player.dead = 0; player.down = 0; player.out = false; player.revT = 0; player.secT = player.rallyT = player.fan = 0; player.blow = false;
+  viewModel.clear(); viewModel.add(buildViewModel(ch)); player.dead = 0; player.down = 0; player.out = false; player.revT = 0; player.graceT = 0; player.secT = player.rallyT = player.fan = 0; player.blow = false;
   for (const q of turrets) removeTurret(q); turrets.length = 0; strikeCD.clear(); player.knifeT = 0; muzzleFlash.t = 0; for (const q of pulses) q.t = q.T; // a new game starts clean
   player.breath = 1; player.drownT = 0; player.mantle = null; player.fallTop = null; resetDeep(); player.sleep = null; if (!joining()) resetDay(); // (a joined game takes the host's clock)
   ({ x: player.x, z: player.z } = campSpot()); player.y = groundY(player.x, player.z); player.pk = 0;
@@ -341,7 +347,7 @@ function aimDir() { // the direction an attack goes
 export function attack(close = false) {
   const ch = player.ch, s = close ? ch.close : ch, melee = close || ch.atk === 'melee'; if (!s || player.dead) return; if (player.sleep) return wake('You get up.');
   if (close) { if (player.closeT > 0) return; player.closeT = s.cd; } else { if (player.atkT > 0 || !attackGate()) return; player.atkT = ch.cd; }
-  player.swing = 1; player.blow = close;
+  player.swing = 1; player.blow = close; endSafe();
   const dir = aimDir(); player.faceYaw = Math.atan2(-dir.x, -dir.z); player.mesh.userData.anim.attack(player.moving, close);
   send('all', { t: 'a', d: [+dir.x.toFixed(2), +dir.z.toFixed(2)], r: melee ? s.range : 0, c: close ? 1 : 0 }); // the others see the swing
   const o = new THREE.Vector3(player.x, player.y + (camMode === 'first' ? 1.6 : 1.4), player.z).addScaledVector(dir, 0.6);
@@ -352,6 +358,8 @@ export function attack(close = false) {
       fireShot(new THREE.Vector3(player.x, player.y + 1.25, player.z).addScaledVector(d2, 0.9), d2, 28, 'shield').owner = player; const sh = player.mesh.userData.offhand; if (sh) sh.visible = false; } }
   else fireShot(o, aimed(o, dir), ch.dmg, ch.id);
 }
+// #86: attacking or using a weapon ends the safe seconds after a respawn
+function endSafe() { if (!(player.graceT > 0)) return; player.graceT = 0; log('You attacked: rivals can hurt you again.'); logEvent('safe-end'); }
 // Abigail's bow takes an arrow from the quiver (slice 11); empty, she cannot shoot (her knife still works)
 function attackGate() { if (player.ch.id === 'gunslinger') { if (useRound()) return true; player.atkT = 0.3; return false; } /* slice 12: his rounds run out */
   if (player.ch.id !== 'ranger' || useArrow()) return true; player.atkT = 0.6; if (!(player.emptyT > 0)) { player.emptyT = 3; log('Quiver empty: walk over your spent arrows to pick them up, or craft more (Tab).'); sfx('chitin', null, 0.4); } return false; }
@@ -372,7 +380,7 @@ function meleeHit(dir, range, dmg, cleave = 1) {
 export function secondary() {
   const ch = player.ch; if (!running || paused || player.dead) return; if (player.secT > 0) { log(`${ch.sec}: ready in ${Math.ceil(player.secT)} s.`); return; }
   if (ch.id === 'charmer' && !useFlower()) return; // slice 12: each charm flower takes a flower
-  player.secT = ch.secCd; const dir = aimDir(); player.faceYaw = Math.atan2(-dir.x, -dir.z); logEvent('secondary', { ch: ch.id });
+  player.secT = ch.secCd; endSafe(); const dir = aimDir(); player.faceYaw = Math.atan2(-dir.x, -dir.z); logEvent('secondary', { ch: ch.id });
   if (ch.id === 'knight') { // enemies within 8 m run for 5 s; the Knight moves half again as fast for 5 s
     sfx('rally'); pulse(0xffd25a, 3, 0.8); pulse(0xaaddff, 8, 0.7); player.rallyT = 5; player.mesh.userData.anim.attack(false);
     if (joining()) { send('host', { t: 'cry', x: player.x, z: player.z }); log('War cry!'); } else { const n = scare(player.x, player.z); log(`War cry! ${n ? n + ' flee' + (n === 1 ? 's' : '') : 'Nothing near to scare'}.`); } }
@@ -497,8 +505,19 @@ export function hitEnemy(e, dmg, nx, nz, at, by = null) {
 // slice 33: a blow from this game's player on another player, in free-for-all only (pvp()); the other game takes it, and
 // tells this one if it knocked them out ('ko')
 function hitRival(o, dmg, n, at) { const d = Math.max(1, Math.round(dmg * pvp())), p = at || new THREE.Vector3(o.x, o.y + 1.2, o.z); if (!(pvp() > 0)) return;
-  hurt(o, d, 'player', player); fought(false); hitBurst(p, new THREE.Vector3(n[0], 0, n[1]), 'dust'); floatText(p, String(d), rules.ffa ? RIVAL : '#ffc8a0', d >= 20); hitMarker();
+  hurt(o, d, 'player', player); fought(false); // (#86: sent even to a rival who is safe: their own game decides, so a late word of it can never let a blow through)
+  if (rivalSafe(o) > 0) { floatText(p, 'SAFE', '#9fdcff'); sfx('chitin', o, 0.5); logEvent('hit-safe', { who: o.name, dmg: d }); return; } // (#86: a rival just back from a knockout)
+  hitBurst(p, new THREE.Vector3(n[0], 0, n[1]), 'dust'); floatText(p, String(d), rules.ffa ? RIVAL : '#ffc8a0', d >= 20); hitMarker();
   sfx(d >= 20 ? 'hitHard' : 'hit', o); o.mesh.userData.anim.hit(Math.sign(n[0]) || 1); logEvent('hit-player', { who: o.name, dmg: d, mode: modeKey() }); }
+// #86: a faint shell round a player in their safe seconds, seen by everyone: it breathes and fades as the time runs out
+// (opacity only; one geometry for all; from inside, in first person, its back faces are not drawn)
+let SAFE_GEO = null;
+// a rival's safe seconds left, timed here from their last word (so a rival who drops or goes out never stays safe)
+const rivalSafe = (o) => gone(o) ? 0 : Math.max(0, ((o.sfEnd || 0) - performance.now()) / 1000);
+function safeGlow(mesh, s, t) { let g = mesh.userData.safe; if (!(s > 0)) { if (g) g.visible = false; return; }
+  if (!g) { SAFE_GEO ||= new THREE.CapsuleGeometry(0.55, 0.9, 4, 12); g = mesh.userData.safe = new THREE.Mesh(SAFE_GEO, new THREE.MeshBasicMaterial({ color: 0x9fdcff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+    g.position.y = 1; g.renderOrder = 2; mesh.add(g); }
+  g.visible = true; g.material.opacity = Math.min(1, s / 1.5) * (0.14 + 0.06 * Math.sin(t * 5)); }
 // Lauren's flower: the enemy it hits forgets the fight for 4 s and wanders (hitting it again breaks the charm)
 export function charm(e) { if (joining()) send('host', { t: 'charm', id: e.id }); else { e.state = 'charmed'; e.chT = 4; e.wander = 0; } hitBurst(enemyCentre(e), new THREE.Vector3(0, 1, 0), 'petal', 18); floatText(enemyCentre(e).setY(e.mesh.position.y + 2.2), 'charmed', '#ff9ad0'); }
 // a crate's loot (a raider camp's stays shut while any of its crew lives, as in IW1); false when it is still guarded
@@ -556,6 +575,9 @@ export function hurtPlayer(d, by, from = null, who = null) { if (player.dead || 
 // fall damage (the owner, 2026-11-04: "we need fall damage"): a drop of up to 4 m is free (a jump on flat ground is 1.3 m,
 // off the ladder's top 7 m), then 10 HP a metre, so 16 m kills the Gunslinger and the Ranger and 24 m the Knight; water breaks any fall
 const FALL_SAFE = 4, FALL_HP = 10, KO_S = 6;
+// #86 (Jared, 2026-11-15, after a Brawl where the host knocked the joined player out twice as they came back at the camp): a
+// player back from a knockout in free-for-all cannot be hurt by a rival for this long, or until they attack; creatures still bite
+const RESPAWN_SAFE_S = 4;
 function fallHurt(h, gy) { const d = Math.round((h - FALL_SAFE) * FALL_HP); if (d <= 0 || player.dead) return; // (a body already down takes no more)
   if (WATER_Y - groundY(player.x, player.z) > 0.4 && gy < WATER_Y) { logEvent('fall', { h: +h.toFixed(1), dmg: 0, water: true }); return; }
   logEvent('fall', { h: +h.toFixed(1), dmg: d }); floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `-${d}`, '#ff8a6a', d >= 20); hurtPlayer(d, 'fall'); }
@@ -606,8 +628,9 @@ export function update(dt, t) {
   if (player.down > 0) { player.down -= dt; const helper = rules.ffa ? null : [...others.values()].find(o => o.rv && !gone(o) && Math.hypot(o.x - player.x, o.z - player.z) < 2.4); // (slice 33: no rival revives you)
     player.revT = helper ? player.revT + dt : Math.max(0, player.revT - dt);
     if (player.revT >= 2.5) { Object.assign(player, { down: 0, dead: 0, revT: 0, hp: Math.round(player.maxHp * 0.35) }); player.mesh.userData.anim.revive(); log(`${helper.name} got you back up.`); logEvent('revived', { by: helper.name }); }
-    else if (player.down <= 0 && bedRespawn(player.ko ? campSpot() : null)) { if (player.ko) player.graceT = 3; player.ko = false; } // (3 s when no rival's blow lands: no knocking out a player as they come back, review)
+    else if (player.down <= 0 && bedRespawn(player.ko ? campSpot() : null)) { if (player.ko) { player.graceT = RESPAWN_SAFE_S; log(`Safe for ${RESPAWN_SAFE_S} s: no rival can hurt you until it ends or you attack.`); } player.ko = false; } // (#86: no knocking out a player as they come back)
     else if (player.down <= 0) { player.down = 0; player.out = true; player.mesh.visible = false; logEvent('out'); log('You are out: watching the others until they fall too.'); } }
+  safeGlow(player.mesh, player.graceT, t); for (const o of others.values()) safeGlow(o.mesh, rivalSafe(o), t); // (#86: after the respawn above, so it shows on the first frame)
   if (player.out && !everyone().some(q => q !== player)) { send('all', { t: 'end' }); gameOver(); return; } // everyone is out: the game ends for all
   player.rv = !player.dead && !rules.ffa && (keys.has('KeyE') || !!pad?.useHeld) && [...others.values()].some(o => o.down > 0 && !o.out && Math.hypot(o.x - player.x, o.z - player.z) < 2.4); // reviving a friend
   const il = Math.hypot(ix, iz); if (il > 1) { ix /= il; iz /= il; }
@@ -737,6 +760,7 @@ export function update(dt, t) {
     if (inside && e.state === 'idle' && !e.posed) { e.wyaw = Math.atan2(e.x, e.z); e.wmove = true; e.wander = Math.max(e.wander, 1); }
     if (tgGone || (safe && !e.posed)) { /* no new hunts */ }
     else if ((e.state === 'idle' || e.state === 'lurk') && d < notice && !(e.calmT > t && d > CLOSE)) alertPack(e); // (#66: an Easy danger that warned you off lets you go)
+    else if (e.type === 'wolf' && e.state === 'idle' && d < 45 && !(e.watchT > t)) { const w = t + 7 + rng() * 6; for (const o of enemies) if (o.pack === e.pack) o.watchT = w; wolfSay('wolfwatch', e); } // (watching you: once a pack, every 7 to 13 s)
     else if (e.state !== 'idle' && e.state !== 'lurk' && d > Math.max(aggro * 2.6, notice * 1.3) && !(e.hunter?.until > t)) e.state = 'idle'; // (a sent pack holds on until it arrives)
     if (e.hunter && (d < notice || tgGone || safe)) e.hunter.until = 0;
     if (hunting && !tgGone && d < 45) tg.huntedAt = t; // (the trickle waits while anything near hunts them)
@@ -748,7 +772,7 @@ export function update(dt, t) {
     if (host) switch (e.state) {
       case 'lurk': break; // buried in the mud, waiting
       case 'emerge': e.emT -= dt; if (e.emT <= 0) { e.state = 'chase'; } face = true; break;
-      case 'idle': e.warned = false; e.cueAt = 0; e.chargeT = 0; e.spitW = 0; e.wander -= dt; if (e.wander <= 0) { e.wander = 2 + rng() * 4; e.wyaw = rng() * 6.28; e.wmove = rng() < 0.55; }
+      case 'idle': e.warned = false; e.cueAt = 0; e.callT = 0; e.chargeT = 0; e.spitW = 0; e.wander -= dt; if (e.wander <= 0) { e.wander = 2 + rng() * 4; e.wyaw = rng() * 6.28; e.wmove = rng() < 0.55; }
         if (e.home && Math.hypot(e.x - e.home.x, e.z - e.home.z) > 9) { e.wyaw = Math.atan2(e.home.x - e.x, e.home.z - e.z); e.wmove = true; } // raiders drift back to their fire
         if (e.wmove) { mx = Math.sin(e.wyaw); mz = Math.cos(e.wyaw); spd *= 0.35; } break;
       case 'charmed': e.chT -= dt; if (e.chT <= 0) e.state = 'chase'; e.wander -= dt; if (e.wander <= 0) { e.wander = 1 + rng() * 2; e.wyaw = rng() * 6.28; } mx = Math.sin(e.wyaw); mz = Math.cos(e.wyaw); spd *= 0.3; break;
@@ -758,6 +782,7 @@ export function update(dt, t) {
       case 'recover': e.rT -= dt; face = true; if (e.type === 'wolf' || e.type === 'dust_hound' || e.type === 'rat') { if (e.rT > st.atk / 1000 * 0.4) { mx = -tx; mz = -tz; spd *= 0.7; } }
         if (e.rT <= 0) e.state = 'chase'; break;
       case 'chase': {
+        if (e.type === 'wolf' && d > 8 && !(e.callT > t)) { if (e.callT) wolfSay('wolfcall', e, 0.6); e.callT = t + 2.5 + rng() * 3; } // (calling on the way in)
         // #66: a danger that sees you rears and roars before it comes (on Easy it leaves you be unless you hurt it or come close),
         // then charges
         // (Jared, November 15, 2026, several bears at once: "they're in sync": a group that sees you together now rears and roars
@@ -842,6 +867,8 @@ export function update(dt, t) {
   // the land round the player stays alive: spawns follow them (the cap counts only animals within 150 m), far idle ones are cleared
   // (co-op: round every player; the host's game spawns for all)
   if (!joining() && Math.floor(t) % 4 === 0 && Math.floor(t) !== spawnTick) { spawnTick = Math.floor(t); const P = everyone();
+    if (NK > 0.6) for (const q of P) { if (q.howlAt > t || gone(q) || Math.hypot(q.x, q.z) < SAFE_R) continue; // (never in the safe valley)
+      const w = enemies.find(e => e.type === 'wolf' && !e.dead && e.state === 'idle' && Math.hypot(e.x - q.x, e.z - q.z) > 50 && Math.hypot(e.x - q.x, e.z - q.z) < 160); if (w) { q.howlAt = t + 30 + rng() * 45; wolfSay('howl', w); } }
     for (const e of enemies) if (!e.home && !e.posed && e.state === 'idle' && P.every(q => Math.hypot(e.x - q.x, e.z - q.z) > 320)) { dropFrom(e); scene.remove(e.mesh); e.mesh.userData.dispose?.(); e.gone = true; }
     for (const q of P) if (enemies.filter(e => !e.dead && !e.home && Math.hypot(e.x - q.x, e.z - q.z) < 150).length < 20 + Math.round(12 * NK)) spawnAround(q.x, q.z, 4 + Math.round(3 * NK), 50, 105); // (busier at night: slice 13; slice 21 raised the cap from 12 + 6)
     for (const k of PASSES) { const o = outside(k); if (P.some(q => Math.hypot(q.x - o.x, q.z - o.z) < 200) && around(o, 35) < PASS_OUT - 1) spawnAround(o.x, o.z, 2, 0, 20); }

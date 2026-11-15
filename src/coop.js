@@ -123,7 +123,7 @@ function onMsg(m, from) {
       if ((m.u || 0) !== (o.u || 0)) { o.u = m.u || 0; applyUp(o.mesh, CHARS[o.c].id, !!(o.u & (1 << o.c))); } // slice 12: their upgrade shows here too
       const wasDown = o.down > 0;
       track(o, from, m.ts ?? performance.now(), m.x, m.y, m.z, m.f);
-      Object.assign(o, { k: m.k || 0, pk: m.pk || 0, hp: m.hp, mx: m.mx, down: m.dn, out: m.out, rv: m.rv, rt: m.rt, sw: m.sw, g: m.g, ea: m.ea, dq: m.dq, sl: m.sl, tc: m.tc, seen: performance.now() });
+      Object.assign(o, { k: m.k || 0, pk: m.pk || 0, hp: m.hp, mx: m.mx, down: m.dn, out: m.out, rv: m.rv, rt: m.rt, sw: m.sw, g: m.g, ea: m.ea, dq: m.dq, sl: m.sl, tc: m.tc, sfEnd: performance.now() + (m.sf || 0) * 1000, seen: performance.now() });
       if (m.dn > 0 && !wasDown) { o.mesh.userData.anim.die(); log(rules.ffa ? `${o.name} is knocked out.` : `${o.name} is down! Stand close and hold E (B on a pad) to revive them.`); }
       if (!(m.dn > 0) && wasDown && !m.out) { o.mesh.userData.anim.revive(); log(rules.ffa ? `${o.name} is back in the game.` : `${o.name} is back up.`); }
       if (m.out && !o.wasOut) { o.wasOut = true; log(`${o.name} is out of the game.`); } o.mesh.visible = !m.out; break; }
@@ -137,6 +137,7 @@ function onMsg(m, from) {
     case 'ko': logEvent('ko', { who: m.n, mode: modeKey() }); player.pk = (player.pk || 0) + 1; log(`You knocked out ${m.n}! (+3)`); sfx('rally', null, 0.6); break; // slice 33: a rival this game knocked out
     case 'rules': if (from === net.host && joining()) { takeRules(m); showRules(); logEvent('rules', { mode: modeKey(), lvl: rules.lvl }); log(`The host changed the game: ${modeName()}.`); } break;
     case 'log': log(m.s); break;
+    case 'say': if (running()) sfx(m.n, { x: m.x, z: m.z }, m.k || 1); break; // a wolf's call, from where it stands (the follow-ups to #66)
     case 'glob': if (running()) spit(m.o, m.v); break; // #66: a pale spider's web glob, flown on this game too (it holds only this game's player)
     case 'radio': radioOn(m.n || 'A friend'); break; // slice 23: a friend got the radio tower's radio going
     case 'gotc': crateOpen(null, null, m.got); break; // the host opened a crate for this player: its loot
@@ -234,13 +235,13 @@ export function tickCoop(dt) {
     tickGhostDeep(o.id, o.out ? null : o.dq, dt); // the serpent hunting them, if one is (slice 13)
     // the tag sits just over the head, or just over the body while they are down, with the revive's progress as its bar
     // (slice 33: in free-for-all a rival's tag is in the rivals' red, with their score, and nobody revives them)
-    const dn = o.down > 0; if (!o.out) tags.push({ p: new THREE.Vector3(o.x, o.y + (dn ? 0.75 : 2.02), o.z), text: rules.ffa ? `${o.name} · ${dn ? 'KNOCKED OUT' : '★ ' + score(o)}` : dn ? `${o.name} · DOWN ${Math.ceil(o.down)} s${o.rt ? ' · reviving' : ' · hold E to revive'}` : o.name + (o.sl ? ' · asleep' : ''),
+    const dn = o.down > 0; if (!o.out) tags.push({ p: new THREE.Vector3(o.x, o.y + (dn ? 0.75 : 2.02), o.z), text: rules.ffa ? `${o.name} · ${dn ? 'KNOCKED OUT' : '★ ' + score(o) + (o.sfEnd > performance.now() ? ' · safe' : '')}` : dn ? `${o.name} · DOWN ${Math.ceil(o.down)} s${o.rt ? ' · reviving' : ' · hold E to revive'}` : o.name + (o.sl ? ' · asleep' : ''),
       color: rules.ffa ? (dn ? '#c86a5a' : RIVAL) : dn ? '#ff8a6a' : '#' + CHARS[o.c].color.toString(16).padStart(6, '0'), frac: dn ? (o.rt || 0) / 100 : Math.max(0, o.hp / o.mx), bar: true, fill: dn ? 'linear-gradient(#ffd27a,#e08a2a)' : null }); }
   nameTags(tags);
   if (!net.role || !running()) return;
   if ((sendT += dt) >= 1 / 15 && (coop() || joining())) { sendT = 0;
     send('all', { t: 'p', ts: Math.round(performance.now()), c: CHARS.indexOf(player.ch), x: +player.x.toFixed(2), y: +player.y.toFixed(2), z: +player.z.toFixed(2), f: +player.faceYaw.toFixed(2), hp: Math.round(player.hp), mx: player.maxHp,
-      dn: +(player.down || 0).toFixed(1), out: player.out ? 1 : 0, k: player.kills, pk: player.pk || 0, rv: player.rv ? 1 : 0, rt: Math.round((player.revT || 0) / 2.5 * 100), sw: player.swim ? 1 : 0, g: player.onGround ? 1 : 0, u: upBits(), ea: player.eat ? 1 : 0, dq: deepMsg(), sl: player.sleep ? 1 : 0, tc: player.torch?.on ? 1 : 0 }); }
+      dn: +(player.down || 0).toFixed(1), out: player.out ? 1 : 0, k: player.kills, pk: player.pk || 0, rv: player.rv ? 1 : 0, rt: Math.round((player.revT || 0) / 2.5 * 100), sw: player.swim ? 1 : 0, g: player.onGround ? 1 : 0, u: upBits(), ea: player.eat ? 1 : 0, dq: deepMsg(), sl: player.sleep ? 1 : 0, tc: player.torch?.on ? 1 : 0, sf: +(player.graceT || 0).toFixed(1) }); } // (#86: sf, the safe seconds left after a respawn)
   if (net.role === 'host' && coop() && (worldT += dt) >= 1 / 12) { worldT = 0; send('all', worldMsg()); }
   if (net.role === 'host' && coop() && (chkT += dt) >= 10) { chkT = 0; send('all', checkMsg()); } // slice 13d: drift (watch.js)
   flush();

@@ -64,7 +64,7 @@
   #breath > div { height: 100%; background: linear-gradient(90deg, #6fd0ff, #c8f0ff); border-radius: 4px; }
   #breath::before { content: "Breath"; position: absolute; top: -20px; left: 0; font-size: 13px; color: #c8f0ff; text-shadow: 0 1px 2px #000; }
   body.under .hud, body.under #breath { z-index: 2; }
-  body:has(#pause:not(.hidden)) :is(.hud:not(#downed), #log, #cross) { visibility: hidden; } /* (the pause plate covered half the display: it goes while paused; a co-op fall's banner stays, review) */
+  body:has(#pause:not(.hidden)) :is(.hud:not(#downed), #log, #cross, #place-title) { visibility: hidden; } /* (the pause plate covered half the display: it goes while paused, and a place's banner waits under it (alone its seconds stop with the game; in co-op they run on); a co-op fall's banner stays, review) */
   body:has(#craft:not(.hidden)) #hud-tr { visibility: hidden; } /* (the craft menu sat over the place and camera chips) */
   body.under::after { content: ""; position: fixed; inset: 0; z-index: 1; pointer-events: none; background: radial-gradient(ellipse at 50% 40%, rgba(10,60,70,.35), rgba(2,14,18,.8)); }
   #cross { position: fixed; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; pointer-events: none; }
@@ -78,7 +78,7 @@
   /* the log sits above the bottom bar's row and stops short of it (slice 10's critic: a long line ran under the Scrap chip) */
   #log { position: fixed; left: 14px; bottom: 58px; max-width: max(240px, calc(50vw - 260px)); font-size: 13px; line-height: 1.5; color: var(--ink); pointer-events: none; text-shadow: 0 1px 2px #000;
     padding: 6px 12px; }
-  body:has(#menu:not(.hidden)) #log { display: none; } /* (the last game's lines stayed under the title after a fall) */
+  body:has(#menu:not(.hidden)) :is(#log, #place-title) { display: none; } /* (the last game's lines, and a place's name found just before a fall, stayed over the title) */
   #log:empty { display: none; }
   #hurt { position: fixed; inset: 0; pointer-events: none; box-shadow: inset 0 0 120px rgba(200,30,20,.0); transition: box-shadow .25s; }
   /* resource chips: a dot of each resource's colour (the word carries the meaning); a chip bumps when it goes up */
