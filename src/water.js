@@ -97,7 +97,7 @@ function makeBeast() { const m = mats(), root = new THREE.Group(); root.name = '
 // lay the body out coiled at the head (it unspools as the head swims off, so it never starts across a shore)
 function place(B, x, y, z) { for (const p of B.P) p.set(x, y, z); B.headY = y; }
 const ripples = []; // rings spreading on the surface where the fin cuts it and where it bubbles (shared by every serpent)
-function ripple(x, z, r = 2.4, a = 0.4) { const m = mats(); let q = ripples.find(o => o.t >= o.T);
+export function ripple(x, z, r = 2.4, a = 0.4) { const m = mats(); let q = ripples.find(o => o.t >= o.T);
   if (!q) { if (ripples.length >= 24) return; q = { mesh: new THREE.Mesh(m.ring, new THREE.MeshBasicMaterial({ color: 0xdde8e8, vertexColors: true, transparent: true, depthWrite: false })) }; q.mesh.renderOrder = 3; SCENE.add(q.mesh); ripples.push(q); }
   Object.assign(q, { t: 0, T: 1.6, r, a }); q.mesh.position.set(x, WATER_Y + 0.05, z); q.mesh.visible = true; }
 function tickRipples(dt) { for (const q of ripples) { if (q.t >= q.T) { q.mesh.visible = false; continue; } q.t += dt; const k = q.t / q.T; q.mesh.scale.setScalar(0.3 + q.r * k); q.mesh.material.opacity = q.a * (1 - k); } }

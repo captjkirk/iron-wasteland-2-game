@@ -5,6 +5,7 @@
 //  rat         Poly Haven "Street Rat" (static, scanned-quality textures), legs and tail moved in the vertex shader
 //  ice_crawler crawler.js: a frost isopod, twelve planted legs (slice 19)
 //  bog_lurker  lurker.js: a giant salamander sculpted on its own skeleton, planted legs (slice 19)
+//  spider      spider.js: a giant hairy hunting spider, eight planted legs; spider_nest its silk mound (slice 22)
 //  brawler, shooter, heavy  raiders (IW1's human enemies): the player characters' rigged bodies in raider looks
 // loadCreatures() once; buildCreature(type) returns a Group whose userData.anim has update(dt, {speed}), attack(),
 // hit(side), die(); userData.flash(k) tints it white for a hit; userData.setDetail(near) toggles fur shells.
@@ -12,12 +13,13 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import { Q } from './config.js';
+import { Q, ENEMY } from './config.js';
 import { buildCharacter } from './characters.js';
 import { furMaterial, SHELLS } from './fur.js';
 import { buildBear } from './bear.js';
 import { buildCrawler } from './crawler.js';
 import { buildLurker } from './lurker.js';
+import { buildSpider, buildNest } from './spider.js';
 
 const DIR = new URL('../assets/beasts/', import.meta.url).href;
 const docs = {};
@@ -258,6 +260,9 @@ export function buildCreature(type) {
   if (type === 'brawler' || type === 'shooter' || type === 'heavy') return buildRaider(type);
   if (type === 'rat') return buildRat();
   if (type === 'ice_crawler') { const M = builtMats(); return buildCrawler({ M, eye: M.eyeGlow, perMeshFlash }); }
+  if (ENEMY[type]?.spider) { if (!EYE_MATS.has('spider')) { const m = shine(new THREE.MeshPhysicalMaterial({ color: 0x050404, roughness: 0.08, clearcoat: 1 })); m.emissive.set(0x3c8a6a); EYE_MATS.set('spider', m); } // (a spider's eyeshine is a cold green-white glint)
+    return buildSpider({ eye: EYE_MATS.get('spider'), perMeshFlash, palette: ENEMY[type].spider }); } // (every kind: config.js ENEMY spider*)
+  if (type === 'spider_nest') return buildNest({ perMeshFlash });
   if (type === 'bog_lurker') { const M = builtMats(); return buildLurker({ M, eye: M.lurkEye, perMeshFlash }); }
   if (type === 'bear') return buildBear({ eye: EYE_MATS.get('bear') || EYE_MATS.set('bear', shine(new THREE.MeshStandardMaterial({ color: 0x0a0806, roughness: 0.15 }))).get('bear'), flasher });
   return buildBeast(type);

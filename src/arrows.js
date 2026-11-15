@@ -33,6 +33,6 @@ export function clearArrows() { while (stuck.length) drop(0); }
 export function tickArrows(dt) { let got = 0; const can = player.ch?.id === 'ranger' && !player.dead && !(player.down > 0);
   for (let i = stuck.length - 1; i >= 0; i--) { const a = stuck[i]; a.t += dt;
     if (!a.own) { if (a.t > 15) drop(i); continue; }
-    if (a.on) { if (a.on.gone) drop(i); continue; }
+    if (a.on) { if (a.on.gone) drop(i); else if (a.on.dead) dropFrom(a.on); /* slice 21 (Jared, 2026-11-14: "annoying to have to wait for [arrows] after an enemy is killed"): they fall beside it as it dies */ else continue; }
     const p = a.m.position; if (can && quiver.n < quiver.max && Math.hypot(p.x - player.x, p.z - player.z) < 1.4 && Math.abs(p.y - player.y - 0.8) < 1.8) { quiver.n++; got++; drop(i); } }
   if (got) { sfx('pickup', null, 0.5); floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `+${got} arrow${got > 1 ? 's' : ''}`, '#efe6b0'); logEvent('arrows-back', { n: got, quiver: quiver.n }); } }

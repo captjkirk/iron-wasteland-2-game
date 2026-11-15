@@ -7,6 +7,7 @@ import { Q } from './config.js';
 import { skyLight } from './environment.js';
 
 export const wind = { value: 0 };
+export const BARK = {}; // each species' trunk material, for its stump (slice 21)
 const VIEWS = 8;
 
 // Lighter geometry than the presets: fewer ring sections and sides, fewer but larger leaf cards.
@@ -140,6 +141,7 @@ export async function buildTrees(renderer, names) {
     await Promise.all([loaded(src.barkSrc.map), loaded(src.barkSrc.normalMap), loaded(src.leafSrc.map)]);
     const bark = new THREE.MeshStandardMaterial({ map: cloneTex(src.barkSrc.map, sp.bush ? 1 : 2, sp.bush ? 2 : 6), normalMap: cloneTex(src.barkSrc.normalMap, sp.bush ? 1 : 2, sp.bush ? 2 : 6),
       color: sp.bark, roughness: 0.92, metalness: 0, normalScale: new THREE.Vector2(1.2, 1.2) });
+    BARK[name] = bark;
     const leaf = src.leaves ? leafMaterial(src.leafSrc, sp.leaf, sp.snow) : null;
     const leafBake = src.leaves ? new THREE.MeshStandardMaterial({ map: src.leafSrc.map, color: sp.snow ? 0xe0e8ec : sp.leaf, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.85 }) : null;
     if (leafBake) leafBake.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <normal_fragment_begin>', THREE.ShaderChunk.normal_fragment_begin.replace('gl_FrontFacing ? 1.0 : - 1.0', '1.0')); };

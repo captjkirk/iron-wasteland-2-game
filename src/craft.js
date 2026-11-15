@@ -10,7 +10,7 @@ import { WATER_Y } from './config.js';
 import { RECIPES, RES, BENCH_R } from './recipes.js';
 import { groundY, slopeAt } from './world.js';
 import { addCollider } from './props.js';
-import { PIECE, makePiece, startBuild, spotFree, slotOf, pieceState } from './build.js';
+import { PIECE, makePiece, startBuild, spotFree, slotOf, pieceState, costFor, swapOut } from './build.js';
 import { buildFire, addFlame } from './camp.js';
 import { benchMesh, bedMesh, torchMesh } from './craftmodels.js';
 import { dustPuff, floatText } from './effects.js';
@@ -55,11 +55,11 @@ export function addBuilt(id, key, x, y, z, f, by, hp, st) { if (built.some(b => 
   return b; }
 export const builtMsg = () => built.map(b => [b.id, b.key, +b.x.toFixed(2), +b.y.toFixed(2), +b.z.toFixed(2), +b.f.toFixed(3), b.by, b.max ? Math.round(b.hp) : null, pieceState(b)]);
 // co-op: the host's answer to a joined game's `build`, and every game's side of `built` and `nobuild`
-export function onBuildReq(m, from) { if (net.role !== 'host') return; const r = RECIPES.find(q => q.key === m.key), s = r && r.type === 'build' && !r.later && PIECE[m.key] ? spotFree(m.key, m.x, m.y, m.z, m.f) : { ok: false, why: 'That cannot be built yet.' };
-  if (!s.ok) { send(from, { t: 'nobuild', key: m.key, why: s.why }); return; }
-  const id = ++builtN; addBuilt(id, m.key, m.x, m.y, m.z, m.f, from); send('all', { t: 'built', id, key: m.key, x: m.x, y: m.y, z: m.z, f: m.f, by: from }); }
+export function onBuildReq(m, from) { if (net.role !== 'host') return; const r = RECIPES.find(q => q.key === m.key), s = r && r.type === 'build' && !r.later && PIECE[m.key] ? spotFree(m.key, m.x, m.y, m.z, m.f, from) : { ok: false, why: 'That cannot be built yet.' };
+  if (!s.ok || !!s.swap !== !!m.swap || !!s.ruin !== !!m.ruin) { send(from, { t: 'nobuild', key: m.key, why: s.why || 'The wall there changed.', swap: m.swap, ruin: m.ruin }); return; }
+  if (s.swap) swapOut(s.swap); const id = ++builtN; addBuilt(id, m.key, m.x, m.y, m.z, m.f, from); send('all', { t: 'built', id, key: m.key, x: m.x, y: m.y, z: m.z, f: m.f, by: from }); }
 export function onBuilt(m) { addBuilt(m.id, m.key, m.x, m.y, m.z, m.f, m.by); if (m.by === net.id) log(`Your ${name(m.key)} is built.`); }
-export function onNoBuild(m) { const r = RECIPES.find(q => q.key === m.key); if (r) spend(r.cost, -1); log(`Could not build there: ${m.why} (paid back)`); }
+export function onNoBuild(m) { const r = RECIPES.find(q => q.key === m.key); if (r) spend(costFor(r, { swap: m.swap && { key: 'wall' }, ruin: m.ruin }), -1); log(`Could not build there: ${m.why} (paid back)`); }
 
 // ── Crafting one recipe ──
 export function craft(r) {
@@ -99,13 +99,14 @@ export function tickSleep(dt) { const s = player.sleep; if (!s) return; s.t += d
   if ((s.z += dt) >= 2.5) { s.z = 0; floatText(new THREE.Vector3(player.x, player.y + 1.9, player.z), 'z z z', '#c8b8ff'); }
   if (!isNight() && day.t < 0.35 && s.t > 1) return wake(`Day ${day.n}. You wake with the sun, rested.`);
   const rest = [...others.values()].filter(o => !gone(o)), awake = rest.filter(o => !o.sl).map(o => o.name);
-  sleepEl.firstChild.textContent = day.speed > 1 ? 'Asleep · the night passes…' : awake.length ? `Asleep · waiting for ${awake.join(' and ')} to sleep too (${rest.length - awake.length + 1} of ${rest.length + 1} in bed)` : 'Asleep…'; }
-export function bedRespawn() { const b = built.find(q => q.id === player.bed && q.key === 'bed'); if (!b) return false;
-  teleport(b.x + Math.cos(b.f) * 1.25, b.z - Math.sin(b.f) * 1.25); player.y = Math.max(player.y, b.y); // beside the bed, on its floor
+  sleepEl.firstChild.textContent = (day.speed > 1 ? 'Asleep · the night passes…' : awake.length ? `Asleep · waiting for ${awake.join(' and ')} to sleep too (${rest.length - awake.length + 1} of ${rest.length + 1} in bed)` : 'Asleep…') + ' · move, click or Space to get up'; } // (slice 21, Jared 2026-11-14: "there's no way to leave the bed to save us": the hint had scrolled away in the log)
+// (camp: where a player knocked out in free-for-all with no bed comes back, on the same terms: slice 33)
+export function bedRespawn(camp = null) { const b = built.find(q => q.id === player.bed && q.key === 'bed'); if (!b && !camp) return false;
+  if (b) { teleport(b.x + Math.cos(b.f) * 1.25, b.z - Math.sin(b.f) * 1.25); player.y = Math.max(player.y, b.y); } else teleport(camp.x, camp.z); // beside the bed, on its floor
   Object.assign(player, { dead: 0, down: 0, out: false, revT: 0, hp: Math.ceil(player.maxHp / 2) }); for (const k of RES) player.inv[k] = Math.floor((player.inv[k] || 0) / 2); quiver.n = Math.floor(quiver.n / 2); ammo.reserve = Math.floor(ammo.reserve / 2); ammo.flowers = Math.floor(ammo.flowers / 2);
   player.mesh.visible = getCamMode() !== 'first'; player.mesh.userData.anim.revive();
-  fade('You wake at your bed, with half your health and half your things.'); logEvent('bed-respawn', { hp: player.hp, ...player.inv });
-  log(`${player.ch.player} woke at the bed with half health and half of everything.`); return true; }
+  fade(`You ${b ? 'wake at your bed' : 'are back at the camp'}, with half your health and half your things.`); logEvent(b ? 'bed-respawn' : 'camp-respawn', { hp: player.hp, ...player.inv });
+  log(`${player.ch.player} ${b ? 'woke at the bed' : 'is back at the camp'} with half health and half of everything.`); return true; }
 
 // ── The craft menu (Tab, or View on a pad): the recipes this character can use, what each costs, and what is short ──
 const panel = document.getElementById('craft'), list = document.getElementById('craft-list'), tipEl = document.getElementById('craft-tip'), resEl = document.getElementById('craft-res');

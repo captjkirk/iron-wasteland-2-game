@@ -84,7 +84,8 @@ export function tickLog(dt, { player: p, cam, biome, fps, enemies }, intent) {
   acc += dt; saveAcc += dt; if (acc < 1) return; acc = 0;
   const near = enemies.filter(e => !e.dead && Math.hypot(e.x - p.x, e.z - p.z) < 40);
   // lf: the longest frame of the last second, in ms (a hitch the frame rate hides)
-  rec.samples.push({ t: now(), x: +p.x.toFixed(1), z: +p.z.toFixed(1), y: +p.y.toFixed(1), hp: Math.round(p.hp), cam, biome, fps, lf: Math.round(longest),
+  rec.samples.push({ t: now(), x: +p.x.toFixed(1), z: +p.z.toFixed(1), y: +p.y.toFixed(1), hp: Math.round(p.hp), cam, biome, fps, lf: Math.round(longest), inv: p.inv && { ...p.inv }, // (inv: what they carry, slice 21)
+   
     near: near.map(e => `${e.type}:${e.state}:${Math.round(Math.hypot(e.x - p.x, e.z - p.z))}m`) }); longest = 0;
   if (upload && rec.samples.length % 60 === 0) snapWanted ||= logEvent('look'); // a picture every minute for context
   if (saveAcc > 15) { saveAcc = 0; send(`${SESSION}.json`, JSON.stringify(rec)); keep(); } // (game time: slower than real only when frames are slow)

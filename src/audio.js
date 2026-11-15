@@ -42,6 +42,9 @@ const VOICE = {
   wolf: (d, t) => growl(d, t, 0.6, 90), dust_hound: (d, t) => { growl(d, t, 0.35, 140); tone(d, t + 0.1, 0.15, { type: 'triangle', f0: 700, f1: 500, peak: 0.12 }); },
   bear: (d, t) => growl(d, t, 1.0, 55, 1.4), rat: (d, t) => { for (let i = 0; i < 3; i++) tone(d, t + i * 0.07, 0.05, { f0: 2800 + Math.random() * 800, f1: 3600, peak: 0.12 }); },
   ice_crawler: (d, t) => { for (let i = 0; i < 6; i++) noise(d, t + i * 0.035, 0.03, { type: 'highpass', f0: 3000, q: 1, peak: 0.35 }); noise(d, t, 0.4, { f0: 5000, f1: 2500, q: 2, peak: 0.12, a: 0.05 }); },
+  // slice 22: a giant spider's dry chitter (fangs clicking) over a breathy hiss; its nest tears with a wet rip
+  spider: (d, t) => { for (let i = 0; i < 9; i++) noise(d, t + i * 0.028 + Math.random() * 0.01, 0.02, { type: 'bandpass', f0: 1800 + Math.random() * 900, q: 6, peak: 0.45 }); noise(d, t + 0.05, 0.55, { type: 'highpass', f0: 3800, f1: 2600, q: 0.7, peak: 0.22, a: 0.08 }); },
+  spider_nest: (d, t) => { noise(d, t, 0.5, { type: 'lowpass', f0: 1400, f1: 200, q: 1, peak: 0.6, a: 0.02 }); for (let i = 0; i < 5; i++) noise(d, t + i * 0.06, 0.05, { f0: 3000 - i * 300, q: 3, peak: 0.25 }); },
   bog_lurker: (d, t) => { tone(d, t, 0.3, { type: 'square', f0: 70, f1: 50, peak: 0.18 }); tone(d, t + 0.18, 0.35, { type: 'square', f0: 65, f1: 45, peak: 0.15 }); },
 };
 const SFX = {
@@ -60,6 +63,9 @@ const SFX = {
   pickup: (d, t) => { tone(d, t, 0.12, { type: 'triangle', f0: 660, peak: 0.25 }); tone(d, t + 0.08, 0.2, { type: 'triangle', f0: 990, peak: 0.25 }); },
   splash: (d, t) => { noise(d, t, 0.5, { type: 'lowpass', f0: 2500, f1: 300, peak: 0.7, a: 0.01 }); noise(d, t + 0.1, 0.6, { f0: 1200, f1: 600, q: 1, peak: 0.2, a: 0.05 }); },
   lurk: (d, t) => { growl(d, t, 1.8, 34, 1.8); growl(d, t + 0.5, 1.4, 28, 2); }, // something big, under the water
+  // slice 22: a spider coming down its thread (a silk zip, then a hiss), and the sticky crackle of walking into a web
+  spiderdrop: (d, t) => { noise(d, t, 0.6, { type: 'bandpass', f0: 5200, f1: 1800, q: 4, peak: 0.35, a: 0.01 }); noise(d, t + 0.55, 0.7, { type: 'highpass', f0: 4200, f1: 2400, q: 0.6, peak: 0.5, a: 0.04 }); for (let i = 0; i < 6; i++) noise(d, t + 0.6 + i * 0.03, 0.02, { f0: 2200, q: 8, peak: 0.3 }); },
+  web: (d, t) => { for (let i = 0; i < 7; i++) noise(d, t + i * 0.035 + Math.random() * 0.02, 0.03, { type: 'highpass', f0: 3500 + Math.random() * 2000, q: 1, peak: 0.25 }); },
   thud: (d, t) => tone(d, t, 0.3, { f0: 70, f1: 35, peak: 0.7 }),
   // slice 13: the lake serpent's jaws closing, and its bubbles rising
   snap: (d, t) => { noise(d, t, 0.09, { type: 'lowpass', f0: 3000, f1: 300, peak: 1.1, a: 0.002 }); tone(d, t, 0.2, { f0: 90, f1: 40, peak: 0.9 }); growl(d, t + 0.05, 0.7, 42, 2); },
@@ -77,6 +83,7 @@ const SFX = {
   thunk: (d, t) => { tone(d, t, 0.06, { type: 'triangle', f0: 320, f1: 140, peak: 0.45 }); noise(d, t, 0.05, { f0: 1500, q: 2, peak: 0.35 }); },
   salvage: (d, t) => { for (let i = 0; i < 4; i++) { noise(d, t + i * 0.09, 0.07, { f0: 1800 + i * 300, q: 6, peak: 0.4 }); tone(d, t + i * 0.09, 0.1, { type: 'square', f0: 300 + i * 40, peak: 0.05 }); } },
 };
+VOICE.spider_pale = VOICE.spider_widow = VOICE.spider; VOICE.spider_brute = (d, t) => { VOICE.spider(d, t); growl(d, t, 0.5, 60, 1.6); }; // (the kinds of spider, slice 22: the brute rasps low under its chitter)
 export function sfx(name, at, vol = 1) { if (!ctx || muted) return; const d = out(at, vol); if (!d) return; duck(); const t = ctx.currentTime + 0.005; (SFX[name] || VOICE[name])?.(d, t); }
 export function windLevel(v) { if (windGain) windGain.gain.setTargetAtTime(v, ctx.currentTime, 0.5); }
 

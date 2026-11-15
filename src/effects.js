@@ -25,7 +25,7 @@ export function initEffects(s, c) {
 }
 let dust, dpos, dcol, dsiz; const dvel = new Float32Array(MAX * 3), dlife = new Float32Array(MAX), dmax = new Float32Array(MAX), dgrav = new Float32Array(MAX); let dhead = 0;
 
-const PUFF = { leaf: [0x4a6a2a, 0x8aa050], petal: [0xff7ab0, 0xfff0f4], fur: [0x6a6258, 0x8a8070], hound: [0x9a8460, 0xc4b08c], bear: [0x3a2a1e, 0x5a4430], rat: [0x4a3e34, 0x6a5a4a], ice: [0xbfe6ff, 0xffffff], mud: [0x2e3320, 0x4a4a30], dust: [0x8a7a62, 0xb0a084], wood: [0x6a4a2a, 0xa07a4a], stone: [0x77736c, 0xa39d92], fire: [0xff7a22, 0xffd27a] };
+const PUFF = { leaf: [0x4a6a2a, 0x8aa050], petal: [0xff7ab0, 0xfff0f4], fur: [0x6a6258, 0x8a8070], hound: [0x9a8460, 0xc4b08c], bear: [0x3a2a1e, 0x5a4430], rat: [0x4a3e34, 0x6a5a4a], ice: [0xbfe6ff, 0xffffff], mud: [0x2e3320, 0x4a4a30], dust: [0x8a7a62, 0xb0a084], wood: [0x6a4a2a, 0xa07a4a], stone: [0x77736c, 0xa39d92], fire: [0xff7a22, 0xffd27a], silk: [0xd9d6cc, 0xfffdf6] };
 const tmpC = new THREE.Color();
 // sparks: bright, fast, short; puff: matte bits of fur, ice or mud that fall
 export function hitBurst(p, dir, kind = 'fur', n = 22, spark = true) { // spark: false for an axe in wood (chips, no flash)

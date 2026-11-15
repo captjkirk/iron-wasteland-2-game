@@ -9,6 +9,9 @@
 // sometimes) and it shows its damage (logs lean and snap, stones fall) until it falls. Players pass a gate (it swings
 // aside for them); enemies do not, unless someone holds it open with E. A spike trap does 35 damage to the first enemy
 // that steps on it, then is spent (IW1).
+// Slice 32 (Jared, 2026-11-14: "doesnt seem like there's a way to 'repair' a broken down wall yet but there SHOULD be"): hold H
+// (the d-pad's right) by a damaged wall or gate, yours or a friend's, to mend it: a quarter of its health a second for one wood (a
+// stone wall: one metal), the Architect twice as fast; and a fallen wall rebuilt on its rubble within 25 s costs half.
 // Co-op: what is built, every piece's health, the gates and the traps are the host's. A joined game asks (`build`,
 // `tear`, `gate`); the host decides and tells every game (`built`, `gone`, `bst`), and late joiners get it all in
 // `welcome`. Each game draws the ghost, the grid and the swing of a gate a player walks through for itself.
@@ -47,15 +50,18 @@ export function placeSpot(key, p = player, rot = mode?.rot || 0) { const aim = a
   return { x, y, z, f: Math.atan2(Math.sin(f), Math.cos(f)), slot: slotOf(x, z), ...spotFree(key, x, y, z, f) }; }
 
 // whether a piece fits there (every game checks its own ghost; the host re-checks a joined game's request with it)
-export function spotFree(key, x, y, z, f = 0) { const slot = slotOf(x, z);
-  if (built.some(b => b.slot === slot)) return no('Something is built there already.');
+export function spotFree(key, x, y, z, f = 0, who = net.id) { const slot = slotOf(x, z), there = built.find(b => b.slot === slot);
+  // slice 21 (Jared, 2026-11-14: "If there's a wall, you should be able to build a gate 'on top of it' which replaces the wall
+  // with a gate (maybe a discounted build)"): a gate aimed at a palisade wall takes its place
+  const swap = there && key === 'gate' && there.key === 'wall' && mine(there, who) ? there : null; // (your own wall, or one whose builder has left, as tearing down; the edge checks below still run)
+  if (there && !swap) return no(there.key === 'wall' ? 'Only your own wall can take a gate.' : 'Something is built there already.');
   if (isEdge(key)) { const [ax, az] = axis(f), pts = [-1, -0.5, 0, 0.5, 1].map(k => [x + ax * k, z + az * k]), hs = pts.map(([a, c]) => groundY(a, c));
     if (Math.min(...hs) < WATER_Y + 0.15) return no('Not in the water: find dry ground.');
     // (across it too: on a hillside the uphill ground came up near its top, and players and wolves stepped over it; the gate of slice 12)
     const across = [-1.2, 1.2].map(k => groundY(x - az * k, z + ax * k)); if (Math.max(...hs, ...across) - Math.min(...hs, ...across) > 1.2) return no('Too steep here for a wall.');
     for (const [a, c] of pts) for (const q of nearColliders(a, c)) if (q.r && !q.bp && Math.hypot(q.x - a, q.z - c) < colR(q, a, c) + 0.22) return no('Something is in the way: a tree, a rock or a building.');
     for (const p of players()) { const t = Math.max(-1, Math.min(1, (p.x - x) * ax + (p.z - z) * az)); if (Math.hypot(p.x - x - ax * t, p.z - z - az * t) < 0.8) return no('Stand clear of where it goes.'); }
-    return { ok: true }; }
+    return swap ? { ok: true, swap } : falling.some(q => q.slot === slot && q.key === key && q.t < 25) ? { ok: true, ruin: 1 } : { ok: true }; } // (slice 21's gate swap, then #62's rebuild on rubble)
   const r = FOOT[key] || 1;
   if (y < WATER_Y + 0.25) return no('Not in the water: find dry ground.');
   const hs = [0, 1.57, 3.14, 4.71].map(a => Math.max(groundY(x + Math.cos(a) * r, z + Math.sin(a) * r), standAt(x + Math.cos(a) * r, z + Math.sin(a) * r, y + STEP)));
@@ -88,7 +94,8 @@ export function makePiece(b, hp, st) { const P = PIECE[b.key]; b.type = b.key; b
   b.stage = stageOf(b); setMesh(b);
   if (P.edge) { const [ax, az] = axis(b.f), r = P.stone ? 0.34 : 0.3, top = b.y + P.top;
     for (const k of [-0.9, -0.45, 0, 0.45, 0.9]) b.cols.push(Object.assign(addCollider(b.x + ax * k, b.z + az * k, r, b), { vr: 0.45, top, stand: top, base: b.y, bp: b, gate: b.key === 'gate' ? b : undefined }));
-    for (const [i, j] of ends(b)) post(i, j, 1, P.stone ? 1 : 0); }
+    for (const [i, j] of ends(b)) post(i, j, 1, P.stone ? 1 : 0);
+    for (let i = falling.length - 1; i >= 0; i--) if (falling[i].slot === b.slot) { const q = falling.splice(i, 1)[0]; if (q.m) scene3().remove(q.m); scene3().remove(q.rub); dustPuff(new THREE.Vector3(b.x, b.y + 0.4, b.z), 14); } } // (its rubble is built over)
   return b; }
 
 // ── Health: the host's game damages a piece and tells everyone; every game shows the hit, the damage and the fall ──
@@ -110,7 +117,7 @@ export function removeBuilt(b, how) { const i = built.indexOf(b); if (i < 0) ret
   if (how !== 'fell') { s.remove(b.mesh); dustPuff(at, 18); sfx('thud', at, 0.6); return; }
   const rub = rubbleMesh(gyOf(b), !!P.stone, b.id); rub.position.set(b.x, b.y, b.z); rub.rotation.y = b.f; s.add(rub);
   for (let k = -1; k <= 1; k++) { const [ax, az] = axis(b.f), q = new THREE.Vector3(b.x + ax * k * 0.8, b.y + 0.6, b.z + az * k * 0.8); dustPuff(q, 26); hitBurst(q, new THREE.Vector3(0, 1, 0), P.stone ? 'stone' : 'wood', 26, false); }
-  sfx('crash', at); falling.push({ m: b.mesh, rub, t: 0, stone: !!P.stone, dir: Math.random() < 0.5 ? -1 : 1 });
+  sfx('crash', at); falling.push({ m: b.mesh, rub, t: 0, stone: !!P.stone, slot: b.slot, key: b.key, dir: Math.random() < 0.5 ? -1 : 1 });
   floatText(new THREE.Vector3(b.x, b.y + 2.6, b.z), `The ${P.name || b.key} falls!`, '#ffb07a'); }
 
 // ── Gates and traps ──
@@ -121,9 +128,14 @@ function spring(b, e) { b.spent = true; setMesh(b); sfx('thunk', b); sfx('hitHar
   if (e) logEvent('spike', { enemy: e.type }); }
 
 // ── Teardown: hold X (RB) by your own piece (or one whose builder has left the game) ──
-const mine = (b) => b.by === net.id || !others.has(b.by);
+const mine = (b, who = net.id) => b.by === who || !(b.by === net.id || others.has(b.by)); // (who: the builder asking; on the host, a joined player's request is judged as theirs)
 export function tearTarget(x, z) { let best = null, bd = 2.3;
   for (const b of built) { if (!mine(b)) continue; const d = b.cols.length ? Math.min(...b.cols.map(c => Math.hypot(c.x - x, c.z - z) - c.r)) + 0.4 : Math.hypot(b.x - x, b.z - z); if (d < bd) { bd = d; best = b; } } return best; }
+// a gate put in a wall's place costs the gate less the wall's own price (4 wood and 2 metal becomes 1 wood and 2 metal)
+export const costFor = (r, s) => { if (s?.ruin) return Object.fromEntries(Object.entries(r.cost).map(([k, v]) => [k, Math.ceil(v / 2)])); if (!s?.swap) return r.cost; const w = RECIPES.find(q => q.key === s.swap.key)?.cost || {}, o = {};
+  for (const k in r.cost) if (r.cost[k] - (w[k] || 0) > 0) o[k] = r.cost[k] - (w[k] || 0); return o; };
+// the host takes the wall down for the gate going in (no refund: its price went into the gate)
+export function swapOut(b) { removeBuilt(b, 'swapped'); send('all', { t: 'gone', id: b.id, how: 'swapped' }); }
 export const refundOf = (key) => { const r = RECIPES.find(q => q.key === key), o = {}; for (const k in r?.cost || {}) if (Math.floor(r.cost[k] / 2)) o[k] = Math.floor(r.cost[k] / 2); return o; };
 export const pieceName = (b) => PIECE[b.key]?.name || b.key;
 // (one piece per hold: after one comes down, X is let go before the next)
@@ -135,13 +147,41 @@ function tear(b) { if (joining()) { send('host', { t: 'tear', id: b.id }); retur
 function refund(b) { const got = refundOf(b.key); spend(got, -1); const txt = Object.entries(got).map(([k, v]) => `+${v} ${k}`).join('  ');
   log(`Tore down the ${pieceName(b)}${txt ? ': ' + txt.replace(/\+/g, '').replace(/ {2}/g, ', ') + ' back' : ''}.`); if (txt) floatText(new THREE.Vector3(player.x, player.y + 2, player.z), txt, '#e8b878'); logEvent('refund', got); }
 
+// ── Repair (slice 32): hold H (the d-pad's right) by a damaged wall or gate, anyone's ──
+const fixCost = (b) => PIECE[b.key].stone ? { metal: 1 } : { wood: 1 };
+// the Architect, the master builder, mends half a piece for that price, in half the time (Jared, 2026-11-14: "the architect should
+// either be able to do it significantly faster or cheaper": both, four times as fast for about half the wood)
+const fixN = () => player.ch.id === 'architect' ? 2 : 1;
+export const fixGain = (b) => b.max / 4 * fixN();
+export const fixCostText = (b) => Object.entries(fixCost(b)).map(([k, v]) => `${v} ${k}`).join(', ');
+export function repairTarget(x, z) { let best = null, bd = 2.3;
+  for (const b of built) { if (!b.max || !(b.hp + (b.pend || 0) * b.max / 4 < b.max) || !b.cols.length) continue; /* (pend: quarters a joined game asked for, not yet confirmed) */ const d = Math.min(...b.cols.map(c => Math.hypot(c.x - x, c.z - z) - c.r)) + 0.4; if (d < bd) { bd = d; best = b; } } return best; }
+// (out of wood or metal: H is let go before it tries again, so the log says so once)
+let fixLock = false;
+export function tickRepair(dt, held) { if (!held) fixLock = false; const b = held && !fixLock && !mode && !player.dead && !(player.down > 0) ? repairTarget(player.x, player.z) : null;
+  if (!b) { player.fix = null; return; } if (player.fix?.b !== b) player.fix = { b, t: 0, T: player.ch.id === 'architect' ? 0.5 : 1, next: 0 };
+  b.barT = Math.max(b.barT || 0, 1); hammer(b, dt); if ((player.fix.t += dt) < player.fix.T - 1e-6) return; player.fix.t = 0;
+  const cost = fixCost(b); if (short(cost).length) { log(`Mending the ${pieceName(b)} takes ${fixCostText(b)} each time: you have none.`); player.fix = null; fixLock = true; return; }
+  const n = fixN(); spend(cost); if (joining()) b.pend = (b.pend || 0) + n; else mend(b, n); logEvent('repair', { key: b.key, hp: Math.round(b.hp), ...cost });
+  // a joined game pays and asks the host, who owns the health; the host mends it and tells everyone (the mend shows on its `bst`)
+  if (joining()) send('host', { t: 'fix', id: b.id, n }); else send('all', { t: 'bst', id: b.id, hp: Math.round(b.hp) }); if (b.hp >= b.max && !joining()) log(`The ${pieceName(b)} is whole again.`); }
+// the work shows: the player faces the piece and swings at it (a hammer's knock, chips of wood or stone off the face), as chopping does
+function hammer(b, dt) { const h = player.fix, [ax, az] = axis(b.f), t = Math.max(-0.9, Math.min(0.9, (player.x - b.x) * ax + (player.z - b.z) * az)), px = b.x + ax * t, pz = b.z + az * t, dx = px - player.x, dz = pz - player.z, d = Math.hypot(dx, dz) || 1;
+  player.faceYaw = Math.atan2(-dx, -dz); if ((h.next -= dt) > 0) return; h.next = h.T / 2; player.swing = 1; player.mesh.userData.anim.attack(false); send('all', { t: 'a', d: [+(dx / d).toFixed(2), +(dz / d).toFixed(2)], r: 0 });
+  const at = new THREE.Vector3(px - dx / d * 0.3, b.y + 0.8 + Math.random() * 0.5, pz - dz / d * 0.3); hitBurst(at, new THREE.Vector3(-dx / d, 0.5, -dz / d), PIECE[b.key].stone ? 'stone' : 'wood', 8, false); sfx(PIECE[b.key].stone ? 'chitin' : 'chop', at, 0.55); }
+function mend(b, n = 1) { const was = b.hp; b.hp = Math.min(b.max, b.hp + b.max / 4 * n); showMend(b, b.hp - was); }
+function showMend(b, up) { b.barT = 6; const s = stageOf(b); if (s !== b.stage) { b.stage = s; setMesh(b); } const at = new THREE.Vector3(b.x, b.y + 1.3, b.z);
+  dustPuff(at, 8); sfx('thunk', at, 0.7); sfx('chop', at, 0.5); floatText(new THREE.Vector3(b.x, b.y + PIECE[b.key].top + 0.6, b.z), `+${Math.round(up)} HP`, '#9fe08a'); }
+// (a request for a piece already whole is still answered, so the asking game's count of quarters asked for clears)
+export function onFixReq(m) { if (net.role !== 'host') return; const b = built.find(q => q.id === m.id); if (!b) return; if (b.hp < b.max) mend(b, m.n === 2 ? 2 : 1); send('all', { t: 'bst', id: b.id, hp: Math.round(b.hp) }); }
+
 // co-op messages (coop.js routes them)
 export function onTearReq(m, from) { if (net.role !== 'host') return; const b = built.find(q => q.id === m.id); if (!b || !(b.by === from || !others.has(b.by) && b.by !== net.id)) return;
   removeBuilt(b, 'torn'); send('all', { t: 'gone', id: b.id, how: 'torn', by: from }); }
 export function onGateReq(m) { if (net.role !== 'host') return; const b = built.find(q => q.id === m.id && q.key === 'gate'); if (b) toggleGate(b); }
 export function onGone(m) { const b = built.find(q => q.id === m.id); if (!b) return; removeBuilt(b, m.how); if (m.how === 'torn' && m.by === net.id) refund(b); }
 export function onBst(m) { const b = built.find(q => q.id === m.id); if (!b) return;
-  if (m.hp != null && m.hp < b.hp) { b.hp = m.hp; showHit(b, null); } else if (m.hp != null) b.hp = m.hp;
+  if (m.hp != null && m.hp < b.hp) { b.hp = m.hp; showHit(b, null); } else if (m.hp != null) { const up = m.hp - b.hp; b.hp = m.hp; if (up > 0) showMend(b, up); } if (m.hp != null) b.pend = 0;
   if (m.open != null) setGate(b, !!m.open); if (m.spent && !b.spent) spring(b, null); }
 export const pieceState = (b) => b.key === 'gate' ? (b.open ? 1 : 0) : b.key === 'spike_trap' ? (b.spent ? 1 : 0) : 0;
 
@@ -151,7 +191,7 @@ export function wallAhead(x, z, dx, dz, r, max) { for (let s = 0.3; s <= max; s 
 // pieces in a fort: walls and gates within 7 m of it (IW1: three or more and the enemy always breaks in)
 export const fortSize = (b) => built.filter(q => q.max && Math.hypot(q.x - b.x, q.z - b.z) < 7).length;
 // health bars over pieces hit lately (game.js draws them with the enemies')
-export function pieceBars(cx, cz) { const out = []; for (const b of built) if (b.barT > 0 && b.max) { const d = Math.hypot(b.x - cx, b.z - cz); if (d < 28) out.push({ d, p: new THREE.Vector3(b.x, b.y + PIECE[b.key].top + 0.35, b.z), frac: b.hp / b.max }); } return out; }
+export function pieceBars(cx, cz) { const out = []; const fix = repairTarget(cx, cz); for (const b of built) if (b.max && (b.barT > 0 || b === fix)) { const d = Math.hypot(b.x - cx, b.z - cz); if (d < 28) out.push({ d, p: new THREE.Vector3(b.x, b.y + PIECE[b.key].top + 0.35, b.z), frac: b.hp / b.max }); } return out; }
 
 // ── Build mode ──
 let mode = null, ghost = null, ghostSig = '', grid = null, gridSig = '';
@@ -178,10 +218,10 @@ function drawGrid(ci, cj) { const N = 3, W = 0.045, pos = [], idx = [];
   if (!grid) { grid = new THREE.Mesh(g, GRID); grid.renderOrder = 4; scene3().add(grid); } else { grid.geometry.dispose(); grid.geometry = g; } }
 export function placeNow() { if (!mode) return false; const r = mode.r, s = placeSpot(r.key);
   if (!s.ok) { log(`Cannot build there: ${s.why}`); sfx('chitin', null, 0.4); return false; }
-  if (r.bench && !benchNear(player.x, player.z)) { log(`The ${PIECE[r.key].name} needs a craftbench: stand within ${BENCH_R} m of one.`); return false; }
-  const miss = short(r.cost); if (miss.length) { log(`${r.label}: you need ${miss.join(', ')} more.`); endBuild(); return false; }
-  spend(r.cost); const msg = { key: r.key, x: +s.x.toFixed(2), y: +s.y.toFixed(2), z: +s.z.toFixed(2), f: +s.f.toFixed(3) };
-  if (joining()) send('host', { t: 'build', ...msg }); else { const id = nextBuiltId(); addBuilt(id, r.key, s.x, s.y, s.z, s.f, net.id); send('all', { t: 'built', id, ...msg, by: net.id }); }
+  // (slice 21, Jared 2026-11-14: "the gate should be the crafting, not the placing": the bench is checked when it is crafted, craft.js)
+  const cost = costFor(r, s), miss = short(cost); if (miss.length) { log(`${r.label}: you need ${miss.join(', ')} more.`); endBuild(); return false; }
+  spend(cost); const msg = { key: r.key, x: +s.x.toFixed(2), y: +s.y.toFixed(2), z: +s.z.toFixed(2), f: +s.f.toFixed(3), ...(s.swap && { swap: 1 }), ...(s.ruin && { ruin: 1 }) };
+  if (joining()) send('host', { t: 'build', ...msg }); else { if (s.swap) swapOut(s.swap); const id = nextBuiltId(); addBuilt(id, r.key, s.x, s.y, s.z, s.f, net.id); send('all', { t: 'built', id, ...msg, by: net.id }); }
   logEvent('build', { ...msg, ...player.inv }); ghostSig = '';
   if (!PIECE[r.key].edge && !PIECE[r.key].keep && r.key !== 'spike_trap') endBuild(); else if (short(r.cost).length) { log(`That was the last ${PIECE[r.key].name} you have materials for.`); endBuild(); }
   return true; }
@@ -195,7 +235,7 @@ export function buildKey(e) { if (!mode) return false; const c = e.code; if (e.r
   return true; }
 // a pad while building: A places, B ends it, RB or the d-pad's left and right turn the piece
 export function buildPad(p) { if (!mode || !p) return; if (p.jump) placeNow(); if (p.use) endBuild(); if (p.rb || p.right) rotateBuild(1); if (p.left) rotateBuild(-1); }
-function renderHud(force) { if (!mode) return; const r = mode.r, pad = isPadActive(), have = r.cost ? Object.keys(r.cost).map(k => `${r.cost[k]} ${k} (${player.inv[k] || 0})`).join(', ') : '';
+function renderHud(force) { if (!mode) return; const r = mode.r, pad = isPadActive(), c = costFor(r, spot), have = r.cost ? Object.keys(c).map(k => `${c[k]} ${k} (${player.inv[k] || 0})`).join(', ') + (spot?.swap ? ' · replaces the wall' : spot?.ruin ? ' · on its rubble: half price' : '') : '';
   const keys = pad ? 'A place · RB turn · B done' : 'Click or E place · R turn · Tab or right-click done', why = spot && !spot.ok ? spot.why : '';
   const html = `<b>BUILD · ${PIECE[r.key].name.toUpperCase()}</b> <span>${have}</span><br><small>${keys}</small>${why ? `<em>${why}</em>` : ''}`;
   if (force || hudEl.dataset.h !== html) { hudEl.dataset.h = html; hudEl.innerHTML = html; } hudEl.classList.remove('hidden'); }
@@ -221,7 +261,7 @@ export function tickBuild(dt) {
     if (f.t > 25) { f.rub.position.y -= dt * 0.3; if (f.t > 28) { scene3().remove(f.rub); falling.splice(i, 1); } } } }
 // for the checks: build `key` at grid slot (x, z) facing f, as the host would (null, with the reason, if it does not fit)
 export function putPiece(key, x, z, f = 0) { const y = isEdge(key) ? Math.min(...[-1, 0, 1].map(k => groundY(x + Math.cos(f) * k, z - Math.sin(f) * k))) : Math.max(groundY(x, z), standAt(x, z, groundY(x, z) + STEP)), ok = spotFree(key, x, y, z, f);
-  if (!ok.ok) return ok.why; const id = nextBuiltId(); addBuilt(id, key, x, y, z, f, net.id); send('all', { t: 'built', id, key, x, y, z, f, by: net.id }); return built.find(b => b.id === id); }
+  if (!ok.ok) return ok.why; if (ok.swap) swapOut(ok.swap); const id = nextBuiltId(); addBuilt(id, key, x, y, z, f, net.id); send('all', { t: 'built', id, key, x, y, z, f, by: net.id }); return built.find(b => b.id === id); }
 // a new game clears every piece and its rubble (the host's game starts an empty world)
 export function clearBuilt() { endBuild(); for (const b of [...built]) { for (const c of b.cols) { c.r = 0; c.vr = 0; } scene3().remove(b.mesh); } built.length = 0;
   for (const p of posts.values()) scene3().remove(p.mesh); posts.clear(); for (const f of falling) { if (f.m) scene3().remove(f.m); scene3().remove(f.rub); } falling.length = 0; }

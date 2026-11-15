@@ -8,7 +8,7 @@ import { buildBog, localFog } from './bog.js';
 import { markExplored, fogReach, exploredStats } from './explore.js';
 import { buildDeepWater, S as deepShadow } from './water.js';
 import { buildProps, placed, nearColliders, colR, standAt } from './props.js';
-import { buildCamp, tickCamp } from './camp.js';
+import { buildCamp, tickCamp, campTent } from './camp.js';
 import { buildBuildings, tickBuildings, buildings, caches, raiderCamps, ladders } from './buildings.js';
 import { snapFrame, logEvent, frameTime, playlogState } from './playlog.js';
 import { tickWatch, checkCrates, checkMsg, solidAt } from './watch.js';
@@ -19,17 +19,18 @@ import { loadCharacters } from './characters.js';
 import { loadCreatures, eyeShine } from './creatures.js';
 import { initPortraits, drawPortraits, endPortraits } from './menu3d.js';
 import { net, netReady } from './net.js';
-import { others, deliver } from './coop.js';
+import { others, deliver, coop, joining } from './coop.js';
 import { craft, built, toggleCraft, craftOpen, placeSpot, sleep, bedNear, bedRespawn, lightSpots } from './craft.js';
 import { day, nightK, DAY_S } from './daynight.js';
 import { buildWeather, tickWeather } from './weather.js';
 import { fireflyStats } from './fireflies.js';
 import { RECIPES } from './recipes.js';
-import { startBuild, placeNow, endBuild, building, rotateBuild, damageBuilt, toggleGate, tearTarget, refundOf, clearBuilt, wallAhead, PIECE, putPiece } from './build.js';
+import { startBuild, placeNow, endBuild, building, rotateBuild, damageBuilt, toggleGate, tearTarget, repairTarget, pieceBars, refundOf, clearBuilt, wallAhead, PIECE, putPiece } from './build.js';
 import { ammo, clipSize } from './supplies.js';
 import { felled, fell, harvestTarget } from './harvest.js';
 import { quiver, stuckArrows } from './arrows.js';
-import { warmCreatures, pickups, initGame, hurtPlayer, gotPickup, selected, liveShots, spreadAt, upgraded, aimGround, togglePause, startGame, setCam, update, placeCamera, hud, menuPad, isRunning, getCamMode, player, enemies, spawnEnemy, attack, teleport, look, hitEnemy, press, secondary, turrets, dropLoot } from './game.js';
+import { warmCreatures, pickups, initGame, hurtPlayer, gotPickup, selected, liveShots, spreadAt, upgraded, aimGround, togglePause, startGame, setCam, update, placeCamera, hud, menuPad, isRunning, getCamMode, player, enemies, spawnEnemy, attack, teleport, look, hitEnemy, press, secondary, turrets, dropLoot, spawnPack } from './game.js';
+import * as spiders from './spiders.js';
 
 const status = document.getElementById('loading');
 const renderer = new THREE.WebGLRenderer({ antialias: Q.antialias, powerPreference: 'high-performance' });
@@ -96,10 +97,15 @@ function autoScale(dt) { if (navigator.webdriver || !isRunning() || fps <= 0) re
 let CF = null; const campFires = () => CF ||= raiderCamps.map(c => ({ x: c.x, y: groundY(c.x, c.z) + 0.4, z: c.z, key: 'campfire' }));
 
 // ── Loop ──
-let last = performance.now(), frames = 0, fpsT = 0, fps = 0, clock = 0, rendered = 0, freeCam = null;
+let nextFrameAt = 0, last = performance.now(), frames = 0, fpsT = 0, fps = 0, clock = 0, rendered = 0, freeCam = null;
 const menuCam = { a: 2.2 };
 function frame(now) {
-  requestAnimationFrame(frame); frameTime(now - last, isRunning()); const dt = Math.min(0.05, (now - last) / 1000); last = now; clock += dt;
+  requestAnimationFrame(frame);
+  // slice 21 (Jared, 2026-11-14: "my computer is getting really warm as I play"; his 120 Hz screen drew up to 120 frames a
+  // second): at most about 60 a second; a skipped tick costs nothing. A 30 a second battery saver is #34's
+  // (review: a fixed 16 ms floor halved 75 and 90 Hz screens; a running deadline keeps any rate near 60)
+  if (now < nextFrameAt - 2) return; nextFrameAt = Math.max(nextFrameAt + 1000 / 60, now - 1000 / 60);
+  frameTime(now - last, isRunning()); const dt = Math.max(0, Math.min(0.05, (now - last) / 1000)); last = now; clock += dt;
   frames++; fpsT += dt; if (fpsT > 0.5) { fps = Math.round(frames / fpsT); frames = 0; fpsT = 0; }
   if (isRunning()) { update(dt, clock); placeCamera(dt); hud(fps, dt); autoScale(dt); }
   else { menuPad(); drawPortraits(renderer, dt, selected()); menuCam.a += dt * 0.03; const x = 20 + Math.cos(menuCam.a) * 150, z = Math.sin(menuCam.a) * 150;
@@ -117,18 +123,26 @@ function frame(now) {
   env.tick(dt); tickCamp(dt, clock); renderer.render(scene, camera); snapFrame(renderer.domElement); rendered++;
 }
 requestAnimationFrame(frame);
+// slice 21 (#60; Jared's logs of 2026-11-14: his game was hidden 12 times while he answered Claude, and each time the world stood
+// still for Zachary): a hidden window gets no frames, so while a host's window is hidden with someone joined, a worker's
+// clock (not slowed in the background as page timers are) runs the world 20 times a second, undrawn
+let bgClock = null; try { bgClock = new Worker(URL.createObjectURL(new Blob(['setInterval(() => postMessage(0), 50)'], { type: 'text/javascript' }))); } catch { /* no workers here: a hidden host's world waits, as before */ }
+if (bgClock) bgClock.onmessage = () => { const now = performance.now(); if (!document.hidden || !coop() || joining() || !isRunning() || now - last < 40) return;
+  const dt = Math.max(0, Math.min(0.05, (now - last) / 1000)); last = now; clock += dt; update(dt, clock); };
 addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
 
 // Test hooks for the headless check (scripts/shots.js): not used by play.
 window.__iw = { fireflies: fireflyStats, explored: exploredStats, others, net, built, deliver, /* the gate of slice 12 */ logEvent, playlogState, tickWatch, checkCrates, checkMsg, solidAt, pickups, HALF, /* slice 13d */
   // a build recipe opens build mode; for the checks, craft() of one places it at once where the ghost stands (slice 12)
   craft: (key) => { const r = RECIPES.find(q => q.key === key); if (r.type !== 'build') return craft(r); if (!craft(r)) return false; const ok = placeNow(); endBuild(); return ok; },
-  startBuild: (key) => startBuild(RECIPES.find(q => q.key === key)), placeNow, endBuild, building, rotateBuild, damageBuilt, toggleGate, tearTarget, refundOf, clearBuilt, wallAhead, PIECE, putPiece, liveShots, ammo, clipSize, gotPickup, spreadAt, upgraded, aimGround, /* slice 12 */ toggleCraft, craftOpen, placeSpot, sleep, bedNear, bedRespawn, felled, fell, harvestTarget, quiver, stuckArrows, // slice 11
+  startBuild: (key) => startBuild(RECIPES.find(q => q.key === key)), placeNow, endBuild, building, rotateBuild, damageBuilt, toggleGate, tearTarget, repairTarget, pieceBars, refundOf, clearBuilt, wallAhead, PIECE, putPiece, liveShots, ammo, clipSize, gotPickup, spreadAt, upgraded, aimGround, /* slice 12 */ toggleCraft, craftOpen, placeSpot, sleep, bedNear, bedRespawn, felled, fell, harvestTarget, quiver, stuckArrows, // slice 11
    hurtPlayer, get running() { return isRunning(); }, togglePause, renderer, scene, camera, startGame, player, setCam, attack, secondary, turrets, dropLoot, spawnEnemy, enemies, hitEnemy, seeds, river, lakes, findBiome, teleport, look, groundY, quality: QUALITY_KEY,
   get rendered() { return rendered; },
   get state() { return { x: +player.x.toFixed(1), z: +player.z.toFixed(1), y: +player.y.toFixed(1), hp: player.hp, cam: getCamMode(), enemies: enemies.length, fps, biome: biomeAt(player.x, player.z),
     props: Object.fromEntries(Object.entries(placed).map(([k, v]) => [k, v.length])), calls: renderer.info.render.calls, tris: renderer.info.render.triangles }; },
+  spiders, spawnPack, /* slice 22 */
   seed: SEED_TEXT, SHAPE, LEAN, reachable, /* slice 13c */ placed, PASSES, CAMP, canyonAt, day, nightK, DAY_S, /* slice 13 */ press, nearColliders, colR, slopeAt, buildings, caches, raiderCamps, ladders, standAt, deepShadow,
+  seed: SEED_TEXT, SHAPE, LEAN, reachable, /* slice 13c */ placed, PASSES, CAMP, campTent, /* #60 */ canyonAt, day, nightK, DAY_S, /* slice 13 */ press, nearColliders, colR, slopeAt, buildings, caches, raiderCamps, ladders, standAt, deepShadow,
   findCanyon() { let best = null, bd = 1e9; // the nearest stretch of canyon floor
     for (let z = -440; z < 440; z += 4) for (let x = -440; x < 440; x += 4) { if (canyonAt(x, z) < 0.92 || groundY(x, z) < WATER_Y + 1) continue; const d = Math.hypot(x, z); if (d < bd) { bd = d; best = { x, z }; } } return best; },
   findForest() { let best = null, bd = 1e9; // a walkable spot inside a grass-biome forest, nearest the spawn

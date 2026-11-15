@@ -58,14 +58,24 @@ export const CHARS = [
   { id:'charmer',    player:'Lauren',  title:'The Charmer',   color:0xd988bb, dark:0x995577, speed:175, maxHp:130, atk:'ranged', dmg:14, range:0,   cd:0.7,  sec:'Charm flower', secCd:8,  desc:'Bouquet toss.' },
   { id:'ranger',     player:'Abigail', title:'The Ranger',    color:0x557733, dark:0x334422, speed:185, maxHp:120, atk:'ranged', dmg:24, range:0,   cd:0.8,  sec:'Knife strike', secCd:1.2, desc:'Bow. Scout.' },
 ];
-// Enemies, from IW1 ENEMY_STATS (hp, speed px/s, dmg, attack interval ms, aggro px).
+// Enemies, from IW1 ENEMY_STATS (hp, speed px/s, dmg, attack interval ms, aggro px). Slice 21 (#50, Jared and Zachary's
+// play, 2026-11-14: "too easy"; their bites did 4 to 7 against 140 to 200 health): animal bites about 1.4x IW1's, bear and lurker sturdier
 export const ENEMY = {
-  wolf:        { hp:60,  speed:75,  dmg:6,  atk:1600, aggro:190, scale:1.0,  body:0x77777f, belly:0x9a9aa0, loot:['food','fiber'] },
-  rat:         { hp:30,  speed:105, dmg:4,  atk:1200, aggro:110, scale:0.55, body:0x6a5040, belly:0x8a6a55, loot:['metal'] },
-  bear:        { hp:140, speed:50,  dmg:16, atk:2400, aggro:290, scale:1.6,  body:0x5a3a24, belly:0x6e4a30, loot:['food','fiber','fiber'] },
-  ice_crawler: { hp:45,  speed:130, dmg:7,  atk:1400, aggro:160, scale:0.9,  body:0x9cc4dc, belly:0xd8eef8, loot:['metal'] },
-  bog_lurker:  { hp:55,  speed:55,  dmg:13, atk:2000, aggro:80,  scale:1.1,  body:0x3e5232, belly:0x5f7048, loot:['fiber','food'] },
-  dust_hound:  { hp:28,  speed:118, dmg:5,  atk:1500, aggro:200, scale:0.8,  body:0xa8845a, belly:0xc8a478, loot:['food','metal'] },
+  wolf:        { hp:60,  speed:75,  dmg:9,  atk:1600, aggro:190, scale:1.0,  body:0x77777f, belly:0x9a9aa0, loot:['food','fiber'] },
+  rat:         { hp:30,  speed:105, dmg:6,  atk:1200, aggro:110, scale:0.55, body:0x6a5040, belly:0x8a6a55, loot:['metal'] },
+  bear:        { hp:160, speed:50,  dmg:22, atk:2400, aggro:290, scale:1.6,  body:0x5a3a24, belly:0x6e4a30, loot:['food','fiber','fiber'] },
+  ice_crawler: { hp:45,  speed:130, dmg:10,  atk:1400, aggro:160, scale:0.9,  body:0x9cc4dc, belly:0xd8eef8, loot:['metal'] },
+  bog_lurker:  { hp:65,  speed:55,  dmg:17, atk:2000, aggro:80,  scale:1.1,  body:0x3e5232, belly:0x5f7048, loot:['fiber','food'] },
+  dust_hound:  { hp:28,  speed:118, dmg:8,  atk:1500, aggro:200, scale:0.8,  body:0xa8845a, belly:0xc8a478, loot:['food','metal'] },
+  // slice 22 (#51, Jared, 2026-11-14: "there's no spiders either yet"): IW1's ruins spider (hp 40, speed 70, dmg 8; a web every
+  // 8 s; drops fiber), its bite 1.4x as slice 21 did the others; the nest (the dens rule of #9) stands still and sends spiders out
+  spider:      { hp:40,  speed:70,  dmg:11, atk:1500, aggro:150, scale:1.55, body:0x2a1e15, belly:0x15100c, loot:['fiber','fiber'], spider:'wolf' },
+  // Jared, November 14, 2026: "I want there to be maybe 3-5 varieties of spiders if possible": the pale one of the Fungal Hollow is
+  // quicker and sees further; the widow is small and fragile with the worst bite; the brute is huge, slow and very tough
+  spider_pale: { hp:40,  speed:82,  dmg:10, atk:1300, aggro:175, scale:1.45, body:0xc8c0ae, belly:0x6a6254, loot:['fiber','fiber'], spider:'pale' },
+  spider_widow:{ hp:28,  speed:76,  dmg:17, atk:1700, aggro:140, scale:1.25, body:0x161214, belly:0x0a0808, loot:['fiber','food'], spider:'widow' },
+  spider_brute:{ hp:95,  speed:52,  dmg:19, atk:2100, aggro:160, scale:2.1,  body:0x3a2618, belly:0x160e08, loot:['fiber','fiber','fiber','food'], spider:'brute' },
+  spider_nest: { hp:150, speed:0,   dmg:0,  atk:1e9,  aggro:0,   scale:1.0,  body:0xd9d6cc, belly:0xd9d6cc, loot:['fiber','fiber','fiber','fiber'], nest:'spider' },
   // raiders (IW1 RAIDER_STATS; shoot is the firing range in px): they hold their camps, shooters and heavies fire from range
   brawler:     { hp:130, speed:110, dmg:20, atk:1100, aggro:230, scale:1.0, loot:['metal','food','ammo'], raider:true },
   shooter:     { hp:80,  speed:90,  dmg:16, atk:1200, aggro:280, scale:1.0, loot:['metal','food','ammo'], raider:true, shoot:280 },
@@ -79,8 +89,8 @@ export const BIOME = {
   desert: { off: 4,   amp: 5,   mtn: 0.25, enemies:['dust_hound','dust_hound'],          label:'Glass Desert' },
   tundra: { off: 14,  amp: 14,  mtn: 1.0,  enemies:['ice_crawler','ice_crawler','wolf'], label:'Frostline' },
   swamp:  { off: 0.6, amp: 1.4, mtn: 0.0,  enemies:['bog_lurker','rat'],                 label:'The Bog' },
-  ruins:  { off: 5,   amp: 4,   mtn: 0.3,  enemies:['rat','rat','wolf','dust_hound'],    label:'The Ruins' },
-  fungal: { off: 3,   amp: 6,   mtn: 0.45, enemies:['bog_lurker','rat','bog_lurker'],    label:'Fungal Hollow' },
+  ruins:  { off: 5,   amp: 4,   mtn: 0.3,  enemies:['rat','rat','wolf','dust_hound','spider','spider','spider_widow','spider_brute'], label:'The Ruins' },
+  fungal: { off: 3,   amp: 6,   mtn: 0.45, enemies:['bog_lurker','rat','bog_lurker','spider','spider_pale','spider_pale','spider_widow'], label:'Fungal Hollow' },
 };
 export const BIOME_NAMES = Object.keys(BIOME), NB = BIOME_NAMES.length;
 // The safe valley (IW1: nothing spawns inside the safe radius, a campfire heals). CAMP is the campfire.

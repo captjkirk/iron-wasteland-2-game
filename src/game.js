@@ -1,9 +1,9 @@
 // Gameplay from the prototype: player, enemies, loot, input (keyboard, mouse, gamepads), the three cameras and the HUD.
 import * as THREE from 'three';
 import { QUALITY_KEY, PX, params, HALF, WATER_Y, WAKE_RADIUS, CHARS, ENEMY, BIOME, SAFE_R } from './config.js';
-import { campfire } from './camp.js';
+import { campfire, campTent } from './camp.js';
 import { caches, raiderCamps, ladderAt } from './buildings.js';
-import { tickDeep, resetDeep } from './water.js';
+import { tickDeep, resetDeep, ripple } from './water.js';
 import { day, tickDay, resetDay, nightK, isNight, phase } from './daynight.js';
 const DEEP_BITE = 20; // the lake serpent's bite (slice 13: 15 before, from the shadow)
 import { rng } from './noise.js';
@@ -20,14 +20,15 @@ import { W } from './weather.js';
 const BIOME_WIND = { tundra: 0.03, waste: 0.025, desert: 0.02 };
 import { buildCharacter, buildViewModel } from './characters.js';
 import { logEvent, tickLog, savePlayLog, startVideo, recording } from './playlog.js';
-import { tickWatch, watchStart } from './watch.js';
-import { others, coop, joining, gone, nearestP, everyone, hurt, salvagedProp, requestJoin, tickCoop, followHost, net, send, clearOthers } from './coop.js';
+import { tickWatch, watchStart, solidAt } from './watch.js';
+import { others, coop, joining, gone, nearestP, everyone, hurt, salvagedProp, requestJoin, tickCoop, followHost, net, send, clearOthers, rules, pvp, modeKey, modeName, RIVAL, level } from './coop.js';
 import { craftOpen, toggleCraft, craftKey, craftPad, renderMenu, bedNear, sleep, wake, tickSleep, bedRespawn, fireSpots, benchNear } from './craft.js';
 import { tickHarvest, harvestTarget, harvestName, prepHarvest } from './harvest.js';
 import { quiver, useArrow, stick, dropFrom, tickArrows, clearArrows } from './arrows.js';
-import { building, buildKey, buildPad, placeNow, endBuild, rotateBuild, tickBuild, tickTear, tearTarget, pieceName, refundOf, gateNear, toggleGate, wallAhead, fortSize, damageBuilt, pieceBars } from './build.js';
+import { building, buildKey, buildPad, placeNow, endBuild, rotateBuild, tickBuild, tickTear, tearTarget, tickRepair, repairTarget, fixCostText, fixGain, pieceName, refundOf, gateNear, toggleGate, wallAhead, fortSize, damageBuilt, pieceBars } from './build.js';
 import { built } from './craft.js';
 import { attachGear, eatPose } from './characters.js';
+import { startSpiders, tickSpiders, webSlow } from './spiders.js';
 import { ammo, resetSupplies, tickSupplies, fought, useRound, useFlower, reload, addRounds, clipSize, foodCount, fireNear, HEAL, MAX_ROUNDS } from './supplies.js';
 
 let scene, camera, renderer, env, viewModel;
@@ -40,9 +41,12 @@ export function spawnEnemy(x, z, type, pack = ++packN, slot = 0, size = 1) {
   const st = ENEMY[type], mesh = buildCreature(type); mesh.scale.setScalar(st.scale); mesh.position.set(x, groundY(x, z), z); scene.add(mesh);
   mesh.add(...threatMarks(type));
   const lurk = type === 'bog_lurker' && (biomeAt(x, z) === 'swamp' || groundY(x, z) < WATER_Y + 0.3); // (issue #44: on the Fungal Hollow's dry ground it roams in sight)
-  enemies.push({ id: ++enemyN, type, mesh, x, z, hp: st.hp, maxHp: st.hp, vx: 0, vz: 0, yaw: rng() * 6.28, state: lurk ? 'lurk' : 'idle', wander: 0, atkT: 0, stag: 0, flashT: 0, dead: 0,
-    pack, slot, size, flank: (slot - (size - 1) / 2) * 0.85, circle: rng() < 0.5 ? 1 : -1, voiceT: 2 + rng() * 4, barT: 0, emT: 0, wT: 0, rT: 0 });
+  const e = { id: ++enemyN, type, mesh, x, z, hp: st.hp, maxHp: st.hp, vx: 0, vz: 0, yaw: rng() * 6.28, state: lurk ? 'lurk' : 'idle', wander: 0, atkT: 0, stag: 0, flashT: 0, dead: 0,
+    pack, slot, size, flank: (slot - (size - 1) / 2) * 0.85, circle: rng() < 0.5 ? 1 : -1, voiceT: 2 + rng() * 4, barT: 0, emT: 0, wT: 0, rT: 0 }; enemies.push(e); return e;
 }
+// slice 22 (#51): a pack of n of one kind set down round (x, z), one pack that wakes together; returns them (for #52's radio-tower
+// guards: set each one's `home` to keep them by the tower until they see someone, as the raiders keep to their camps)
+export function spawnPack(x, z, type, n = 4) { const id = ++packN; return Array.from({ length: n }, (_, k) => { const a = k / n * 6.283; return spawnEnemy(x + Math.cos(a) * 2.5, z + Math.sin(a) * 2.5, type, id, k, n); }); }
 // issue #44: the 1.1 s freeze 32 s into Jared's play, as the first bears and wolves came into view: the first creature of
 // each kind on screen compiled its shaders then (on this Mac's M5 GPU 150 to 600 ms a kind, more on older machines). While
 // the world loads, one of each (fur shells on, threat ring showing) is compiled and drawn once in front of the camera, so
@@ -61,7 +65,7 @@ function threatMarks(type) {
     gr.addColorStop(0, 'rgba(0,0,0,0.55)'); gr.addColorStop(0.6, 'rgba(0,0,0,0.3)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
     MARKS = { blob: new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }),
       ring: new THREE.RingGeometry(0.78, 0.92, 40).rotateX(-Math.PI / 2), disc: new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2) }; }
-  const len = { wolf: 1.9, dust_hound: 1.7, bear: 2.2, rat: 1.6, ice_crawler: 1.9, bog_lurker: 1.8 }[type] || 1.8;
+  const len = { wolf: 1.9, dust_hound: 1.7, bear: 2.2, rat: 1.6, ice_crawler: 1.9, bog_lurker: 1.8, spider: 2.3, spider_pale: 2.3, spider_widow: 2.3, spider_brute: 2.3, spider_nest: 3.4 }[type] || 1.8;
   const blob = new THREE.Mesh(MARKS.disc, MARKS.blob); blob.scale.set(len * 0.62, 1, len); blob.position.y = 0.04; blob.name = 'blob';
   const ring = new THREE.Mesh(MARKS.ring, new THREE.MeshBasicMaterial({ color: 0xff3a22, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
   ring.scale.setScalar(len * 0.62); ring.position.y = 0.06; ring.visible = false; ring.name = 'threat'; return [blob, ring];
@@ -71,15 +75,17 @@ function spawnAround(cx, cz, count, minD = 25, maxD = 90, land = null, ok = null
   while (made < count && tries++ < count * 20) { const a = rng() * 6.28, d = minD + rng() * (maxD - minD), x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d;
     if (Math.abs(x) > HALF - 60 || Math.abs(z) > HALF - 60 || Math.hypot(x, z) < SAFE_R + 12) continue; /* nothing spawns in the safe valley */ if (groundY(x, z) < (biomeAt(x, z) === 'swamp' ? WATER_Y - 0.4 : WATER_Y + 0.4) || slopeAt(x, z) > 0.7 || (ok && !ok(x, z))) continue;
     const list = BIOME[land || biomeAt(x, z)].enemies; const type = list[Math.floor(rng() * list.length)];
-    // wolves and hounds run in packs of 2 to 4, rats in twos and threes
-    const pack = (type === 'wolf' || type === 'dust_hound' ? 2 + Math.floor(rng() * 3) : type === 'rat' ? 1 + Math.floor(rng() * 3) : 1) + (isNight() && type !== 'bear' ? 1 : 0), id = ++packN; // (slice 13: a pack runs one bigger at night)
+    // wolves and hounds run in packs, rats in small swarms
+    // (slice 21: wolves and hounds 3 to 5, rats 2 to 4)
+    const pack = Math.max(1, Math.round(((type === 'wolf' || type === 'dust_hound' ? 3 + Math.floor(rng() * 3) : type === 'rat' ? 2 + Math.floor(rng() * 3) : 1) + (isNight() && type !== 'bear' ? 1 : 0)) * level().pack)), id = ++packN; // (slice 33: the difficulty) // (slice 13: a pack runs one bigger at night)
     for (let k = 0; k < pack; k++) spawnEnemy(x + (rng() - 0.5) * 5, z + (rng() - 0.5) * 5, type, id, k, pack); made += pack; }
 }
 // issue #44 (Jared's play, 2026-11-12: "no enemies really showing up?"): a steady trickle of threats. A player out of the
 // valley whom nothing has hunted for 45 to 75 s (a third less at night) has a pack sent at them: an idle pack 35 to 62 m
 // off (within 10 m of their height) is woken, or else a pack of their own land's creatures comes from 45 to 60 m out. It does not give up on the way
 // (until it has come within its notice range, or 30 s pass). The host's game only, as every spawn; never in the valley
-const HUNT_WAIT = (nk) => (45 + rng() * 30) * (1 - 0.35 * nk);
+// slice 21 (#50, 2026-11-14: "too easy (few enemies)"; no creature within 40 m half the time): 25 to 45 s, half that at night
+const HUNT_WAIT = (nk) => (25 + rng() * 20) * (1 - 0.35 * nk) * level().hunt; // (the stranger's review: night stacked too hard for the youngest players; slice 33: Easy sends them less often)
 function sendHunt(q, t, nk) {
   // (from where it can run to them: within 10 m of their height, and the straight way in has no deep water and no rise too
   // steep to scramble; a pack sent across the river sat on its far bank, the walk check's first try)
@@ -99,6 +105,12 @@ function alertPack(e) { for (const o of enemies) if (o.pack === e.pack && !o.dea
 
 // ── Pickups and projectiles ─────────────────────────────────────────────
 export const pickups = []; const shots = []; let lootN = 0;
+// slice 21: loot that lands inside a rock, a spire or a scrap pile is set down just outside it (the play of 2026-11-14 lost three
+// pieces of wood that way, inside an ice spire and a scrap pile: "it's like it couldn't be picked up"). The same on every game, so
+// a joined game's copy lands where the host's does
+function unbury(p) { for (let n = 0; n < 4; n++) { const c = solidAt(p.x, p.z, groundY(p.x, p.z) + 0.1, 0.1); if (!c) break;
+    const dx = p.x - c.x, dz = p.z - c.z, d = Math.hypot(dx, dz), R = colR(c, p.x, p.z) + 0.5; p.x = c.x + (d > 1e-3 ? dx / d : 1) * R; p.z = c.z + (d > 1e-3 ? dz / d : 0) * R; }
+  p.y = groundY(p.x, p.z) + 0.3; }
 export function dropLoot(x, z, kind, r = 0) { const a = rng() * 6.28, s = 1 + rng() * 1.5, v = [Math.cos(a) * s, 3.5 + rng() * 1.5, Math.sin(a) * s], id = ++lootN; x += Math.cos(a) * r; z += Math.sin(a) * r; // (r: thrown from the body's edge, not out of its middle, so it does not land inside a big corpse)
   addPickup(id, kind, x, z, false, v); send('all', { t: 'loot', id, kind, x: +x.toFixed(2), z: +z.toFixed(2), v: v.map(q => +q.toFixed(2)) }); }
 // a pickup on the ground (co-op: the host's; a joined game draws the ones the host tells it of, landed when it joins late)
@@ -151,7 +163,7 @@ function enemyShot(e, dmg, tg) { const o = new THREE.Vector3(e.x, e.mesh.positio
 function struck(s, a, b, stop) { const e = s.inE;
   if (e) { const dir = s.v.clone().normalize(), hit = new THREE.Raycaster(b.clone().addScaledVector(dir, -2.5), dir, 0, 5).intersectObject(e.mesh, true).find(h => h.object.isMesh && h.object.name !== 'blob' && h.object.name !== 'threat' && !h.object.parent?.userData.arrow);
     if (hit) return hit.point.addScaledVector(dir, 0.24); // its body, skinned pose and all: the head well in
-    const dx = b.x - a.x, dz = b.z - a.z, L = dx * dx + dz * dz || 1, t = Math.max(0, Math.min(1, ((e.x - a.x) * dx + (e.z - a.z) * dz) / L)), q = a.clone().lerp(b, t), y0 = e.mesh.position.y, h = e.mesh.userData.height * ENEMY[e.type].scale;
+    const dx = b.x - a.x, dz = b.z - a.z, L = dx * dx + dz * dz || 1, t = Math.max(0, Math.min(1, ((e.x - a.x) * dx + (e.z - a.z) * dz) / L)), q = a.clone().lerp(b, t), y0 = e.mesh.position.y, h = e.mesh.userData.height * e.mesh.scale.x;
     q.y = Math.max(y0 + h * 0.3, Math.min(y0 + h * 0.45, q.y)); return q.addScaledVector(dir, 0.2); }
   const inside = (q) => q.y < groundY(q.x, q.z) || (stop && Math.hypot(stop.x - q.x, stop.z - q.z) < colR(stop, q.x, q.z) * (stop.ref && /pine|oak|aspen|tree/.test(stop.ref.type) ? 0.7 : 1));
   const lo = a.clone(), hi = b.clone(), m = new THREE.Vector3(); for (let k = 0; k < 8; k++) { m.copy(lo).add(hi).multiplyScalar(0.5); if (inside(m)) hi.copy(m); else lo.copy(m); } return hi; }
@@ -185,16 +197,20 @@ export function startGame(i) {
   viewModel.clear(); viewModel.add(buildViewModel(ch)); player.dead = 0; player.down = 0; player.out = false; player.revT = 0; player.secT = player.rallyT = player.fan = 0; player.blow = false;
   for (const q of turrets) removeTurret(q); turrets.length = 0; strikeCD.clear(); player.knifeT = 0; muzzleFlash.t = 0; for (const q of pulses) q.t = q.T; // a new game starts clean
   player.breath = 1; player.drownT = 0; player.mantle = null; player.fallTop = null; resetDeep(); player.sleep = null; if (!joining()) resetDay(); // (a joined game takes the host's clock)
-  // spawn on dry, flat ground at the centre of the safe valley, a few steps from the camp
-  for (let r = 0; r < 60; r += 2) { let found = false; for (let a = 0; a < 6.28; a += 0.4) { const x = Math.cos(a) * r, z = Math.sin(a) * r;
-    if (groundY(x, z) > WATER_Y + 1 && slopeAt(x, z) < 0.3 && !nearColliders(x, z).some(c => Math.hypot(c.x - x, c.z - z) < c.r + 1.5)) { player.x = x; player.z = z; found = true; break; } } if (found) break; }
-  player.y = groundY(player.x, player.z);
+  ({ x: player.x, z: player.z } = campSpot()); player.y = groundY(player.x, player.z); player.pk = 0;
   for (const e of enemies) { scene.remove(e.mesh); e.mesh.userData.dispose?.(); } enemies.length = 0;
   if (!joining()) { spawnAround(0, 0, 26, SAFE_R + 15, SAFE_R + 230); // out beyond the ring: the valley is safe
   // each raider camp's crew, round its fire; they keep to the camp until they see you
   raiderCamps.forEach((c, i) => c.raiders.forEach((type, k) => { const a = c.a0 + 0.4 + k * 1.9; spawnEnemy(c.x + Math.cos(a) * 3, c.z + Math.sin(a) * 3, type, 9000 + i, k, c.raiders.length); enemies.at(-1).home = c; })); }
-  document.getElementById('menu').classList.add('hidden'); for (const id of ['hud-tl', 'hud-tr', 'hud-b']) document.getElementById(id).classList.remove('hidden'); running = true; log(`${ch.player} walks out as ${ch.title}. (F9 saves a play log.)`); setCam(camMode); logEvent('start', { ch: ch.id, cam: camMode }); watchStart(); startVideo(renderer.domElement);
+  startSpiders(scene, !joining(), spawnEnemy); // slice 22: the webs go; the spider nests are set down (a joined game gets them from the host)
+  document.getElementById('menu').classList.add('hidden'); for (const id of ['hud-tl', 'hud-tr', 'hud-b']) document.getElementById(id).classList.remove('hidden'); running = true; log(`${ch.player} walks out as ${ch.title}. (F9 saves a play log.)`); if (net.role) log(`Game: ${modeName()}.`); setCam(camMode); logEvent('start', { ch: ch.id, cam: camMode, mode: modeKey(), lvl: rules.lvl }); watchStart(); startVideo(renderer.domElement);
 }
+// dry, flat ground at the centre of the safe valley, a few steps from the camp (where a game starts, and where a player knocked
+// out in free-for-all with no bed comes back: slice 33)
+function campSpot() { for (let r = 0; r < 60; r += 2) for (let a = 0; a < 6.28; a += 0.4) { const x = Math.cos(a) * r, z = Math.sin(a) * r;
+  if (groundY(x, z) > WATER_Y + 1 && slopeAt(x, z) < 0.3 && !nearColliders(x, z).some(c => Math.hypot(c.x - x, c.z - z) < c.r + 1.5)) return { x, z }; } return { x: 0, z: 0 }; }
+// slice 33: a player's free-for-all score: a creature 1, a rival knocked out 3
+export const score = (q) => (q === player ? q.kills : q.k || 0) + 3 * (q.pk || 0);
 // The mouse arrow is hidden over the game while playing (a crosshair stands in: at the screen's centre, or following the
 // mouse in the top camera); the craft menu, pause and menus keep it. Opening the craft menu lets go of the mouse lock, so
 // closing it takes the lock back (a held-down Tab/C is a user gesture; Esc is not, and a refusal here is not "blocked").
@@ -237,10 +253,11 @@ const keys = new Set(); let mouseDown = false, mouseNDC = new THREE.Vector2();
 let padPrev = [], lockFailed = false; document.addEventListener('pointerlockerror', () => { lockFailed = true; log('Mouse lock blocked here: right-drag or arrow keys to look.'); });
 export function readPad() { const p = [...(navigator.getGamepads?.() || [])].find(Boolean); if (!p) return null;
   const dz = v => Math.abs(v) < 0.15 ? 0 : v, b = i => p.buttons[i]?.pressed, edge = i => b(i) && !padPrev[i];
-  const out = { mx: dz(p.axes[0]), mz: dz(p.axes[1]), lx: dz(p.axes[2]), ly: dz(p.axes[3]), atk: b(7) || b(2), jump: edge(0), jumpHeld: b(0), dive: b(10), use: edge(1), useHeld: b(1), sec: edge(4) || edge(6), cam: edge(3), pause: edge(9), left: edge(14), right: edge(15), menu: edge(8), up: edge(12), down: edge(13), downHeld: b(13), rb: edge(5), tearHeld: b(5), close: edge(11) };
+  const out = { mx: dz(p.axes[0]), mz: dz(p.axes[1]), lx: dz(p.axes[2]), ly: dz(p.axes[3]), atk: b(7) || b(2), jump: edge(0), jumpHeld: b(0), dive: b(10), use: edge(1), useHeld: b(1), sec: edge(4) || edge(6), cam: edge(3), pause: edge(9), left: edge(14), right: edge(15), menu: edge(8), up: edge(12), down: edge(13), downHeld: b(13), rb: edge(5), tearHeld: b(5), fixHeld: b(15), close: edge(11) };
   padPrev = p.buttons.map(x => x.pressed); return out; }
-export function togglePause(on = !paused) { if (!running) return; paused = on; setMusicPaused(on); if (on) { keys.clear(); mouseDown = false; } logEvent(on ? 'pause' : 'resume'); document.getElementById('pause').classList.toggle('hidden', !paused); syncCursor();
+export function togglePause(on = !paused, tent = false) { if (!running) return; paused = on; if (on) pauseChars(tent); setMusicPaused(on); if (on) { keys.clear(); mouseDown = false; } logEvent(on ? 'pause' : 'resume'); document.getElementById('pause').classList.toggle('hidden', !paused); syncCursor();
   document.getElementById(paused ? 'pause-settings' : 'menu-settings').appendChild(document.getElementById('settings'));
+  document.getElementById(paused ? 'pause-modes' : 'menu-modes').appendChild(document.getElementById('modes')); // (slice 33: the host's rules)
   if (paused && document.pointerLockElement) document.exitPointerLock?.(); }
 // Settings (menu and pause screen share one panel): mouse/stick look sensitivity, invert up/down, sound. Quality is in main.js.
 export const settings = { sens: 1, invertY: false, music: 0.5 };
@@ -255,10 +272,29 @@ function bindSettings() {
   snd.checked = !isMuted(); snd.onchange = () => { if (snd.checked === isMuted()) toggleMute(); };
   document.getElementById('resume').onclick = () => togglePause(false);
   document.getElementById('tomenu').onclick = () => location.reload();
+  // #60: the pause screen's row of characters to switch to in place (switchChar)
+  const row = document.getElementById('pause-chars'); CHARS.forEach((c, i) => { const b = document.createElement('button'); b.className = 'q';
+    b.innerHTML = `<i style="background:#${c.color.toString(16).padStart(6, '0')}"></i>${c.title}`; b.title = `${c.player}, ${c.maxHp} HP`; b.onclick = () => switchChar(i); row.appendChild(b); });
   // losing the mouse lock mid-game (Esc) opens the pause screen
   // (in build mode, Esc lets the mouse go and ends building instead: slice 12)
   document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement && running && !paused && camMode !== 'top' && !craftOpen()) { if (building()) endBuild(); else togglePause(true); } });
 }
+
+// #60 (the play of 2026-11-14: Zachary left and rejoined four times in one game to change character): at the camp's tent (E
+// at its door) another character takes over in place; the spot, the pack, the kills and the share of health stay (no switching
+// to heal), and friends see the new one with this game's next message (coop.js rebuilds an avatar whose character changed).
+// Only at the tent (Jared, 2026-11-14: "I do not want the players to be able to just change characters from the pause screen";
+// his pick: only at the camp, so getting back to the safe valley makes a switch a real choice). Not while down
+const atTent = (x = player.x, z = player.z) => Math.hypot(x - campTent.x, z - campTent.z) < 2.8;
+let tentOpen = false;
+function pauseChars(tent = tentOpen) { tentOpen = tent; document.getElementById('pause-switch').classList.toggle('hidden', !tent); document.querySelector('#pause h1').textContent = tent ? 'THE CAMP TENT' : 'PAUSED';
+  const off = player.dead || player.down > 0 || player.out; [...document.getElementById('pause-chars').children].forEach((b, i) => { b.disabled = !!off || CHARS[i] === player.ch; b.classList.toggle('on', CHARS[i] === player.ch); }); }
+export function switchChar(i) { const ch = CHARS[i]; if (!running || !tentOpen || !atTent() || !ch || ch === player.ch || player.dead || player.down > 0 || player.out) return false;
+  const share = player.hp / player.maxHp, from = player.ch.id; player.ch = ch; player.maxHp = ch.maxHp; player.hp = Math.max(1, Math.round(ch.maxHp * share));
+  scene.remove(player.mesh); player.mesh = buildCharacter(ch); scene.add(player.mesh); applyUp(player.mesh, ch.id, upgraded(ch.id)); // (an upgrade bought for this one earlier comes back with it)
+  viewModel.clear(); viewModel.add(buildViewModel(ch)); Object.assign(player, { atkT: 0, closeT: 0, fan: 0, shieldT: 0, knifeT: 0, swing: 0 }); // (the secondary's cooldown carries over: no fresh one by switching, review)
+  for (let k = shots.length - 1; k >= 0; k--) if (shots[k].kind === 'shield' && shots[k].owner === player) { scene.remove(shots[k].mesh); shots.splice(k, 1); } // (a thrown shield in flight goes with the old Knight, review)
+  togglePause(false); setCam(camMode); logEvent('switch', { from, to: ch.id }); log(`${ch.player} takes over as ${ch.title}.`); return true; }
 
 // ── Gameplay ───────────────────────────────────────────────────────────
 const logEl = document.getElementById('log'); const lines = [];
@@ -292,8 +328,10 @@ function attackGate() { if (player.ch.id === 'gunslinger') { if (useRound()) ret
 function meleeHit(dir, range, dmg, cleave = 1) {
   const near = [];
   for (const e of enemies) { if (e.dead) continue; const dx = e.x - player.x, dz = e.z - player.z, d = Math.hypot(dx, dz) || 1e-3, fw = (dx * dir.x + dz * dir.z) / d;
-    if (d < range + ENEMY[e.type].scale * 0.6 && fw > 0.25) near.push({ e, n: [dx / d, dz / d], score: d * (1.6 - fw) }); }
-  near.sort((a, b) => a.score - b.score).slice(0, cleave).forEach((h, k) => hitEnemy(h.e, k ? Math.round(dmg / 2) : dmg, ...h.n));
+    if (d < range + e.mesh.scale.x * 0.6 && fw > 0.25) near.push({ e, n: [dx / d, dz / d], score: d * (1.6 - fw) }); }
+  if (pvp()) for (const o of others.values()) { if (gone(o) || Math.abs(o.y - player.y) > 2) continue; const dx = o.x - player.x, dz = o.z - player.z, d = Math.hypot(dx, dz) || 1e-3, fw = (dx * dir.x + dz * dir.z) / d;
+    if (d < range + 0.45 && fw > 0.25) near.push({ o, n: [dx / d, dz / d], score: d * (1.6 - fw) }); } // (slice 33: another player, when the rules let blows land)
+  near.sort((a, b) => a.score - b.score).slice(0, cleave).forEach((h, k) => { const dd = k ? Math.round(dmg / 2) : dmg; if (h.e) hitEnemy(h.e, dd, ...h.n); else hitRival(h.o, dd, h.n); });
   if (near.length) return;
   let best = null, bd = range * 0.8; for (const c of nearColliders(player.x, player.z)) { if (!c.r) continue; const dx = c.x - player.x, dz = c.z - player.z, d = Math.hypot(dx, dz) || 1e-3, edge = d - colR(c, player.x, player.z);
     if (edge < bd && (dx * dir.x + dz * dir.z) / d > 0.5) { bd = edge; best = { c, at: new THREE.Vector3(player.x + dx / d * edge, player.y + 1.1, player.z + dz / d * edge) }; } }
@@ -349,9 +387,11 @@ function tickSecondary(dt) {
     const dir = new THREE.Vector3(d.x * c - d.z * s, d.y + (rng() - 0.5) * 0.06, d.z * c + d.x * s).normalize(); fireShot(new THREE.Vector3(player.x, player.y + (camMode === 'first' ? 1.6 : 1.4), player.z).addScaledVector(dir, 0.6), dir, 12, 'gunslinger'); }
   for (let i = turrets.length - 1; i >= 0; i--) { const q = turrets[i]; q.life -= dt; q.fireT -= dt;
     if (q.life <= 0) { removeTurret(q); dustPuff(new THREE.Vector3(q.x, q.y + 0.5, q.z), 12); turrets.splice(i, 1); continue; }
-    let tgt = null, bd = 12; for (const e of enemies) { if (e.dead || e.state === 'lurk') continue; const d = Math.hypot(e.x - q.x, e.z - q.z); if (d < bd) { bd = d; tgt = e; } }
+    let tgt = null, bd = 12, rival = false; for (const e of enemies) { if (e.dead || e.state === 'lurk') continue; const d = Math.hypot(e.x - q.x, e.z - q.z); if (d < bd) { bd = d; tgt = e; } }
+    // slice 33: in free-for-all an Architect's turret fires on rivals too (another game's copy of it aims at this player, as the real one may)
+    if (rules.ffa) for (const o of q.ghost ? (running && !gone(player) ? [player] : []) : others.values()) { if (gone(o)) continue; const d = Math.hypot(o.x - q.x, o.z - q.z); if (d < bd) { bd = d; tgt = o; rival = true; } }
     if (!tgt) continue; const aimYaw = Math.atan2(-(tgt.x - q.x), -(tgt.z - q.z)); let dd = aimYaw - q.head.rotation.y; dd = Math.atan2(Math.sin(dd), Math.cos(dd)); q.head.rotation.y += dd * Math.min(1, dt * 10);
-    if (q.fireT <= 0 && Math.abs(dd) < 0.3) { q.fireT = 0.8; const o = new THREE.Vector3(q.x, q.y + 1.42, q.z), dir = spreadDir(enemyCentre(tgt).sub(o).normalize(), spreadAt(bd)); o.addScaledVector(dir, 1.2); fireShot(o, dir, 18, 'gunslinger', false, true, q.ghost); q.flash = 0.12; }
+    if (q.fireT <= 0 && Math.abs(dd) < 0.3) { q.fireT = 0.8; const o = new THREE.Vector3(q.x, q.y + 1.42, q.z), dir = spreadDir((rival ? new THREE.Vector3(tgt.x, tgt.y + 1.1, tgt.z) : enemyCentre(tgt)).sub(o).normalize(), spreadAt(bd)); o.addScaledVector(dir, 1.2); fireShot(o, dir, 18, 'gunslinger', false, true, q.ghost); q.flash = 0.12; }
     q.muzzle.visible = q.flash > 0; q.light.material.color.setHex(q.flash > 0 ? 0xffe0a0 : 0x6aff8a); q.flash -= dt; } }
 // the Knight's thrown shield: out along the throw for about half a second (or until it strikes something), then back to
 // the thrower's hand; it hits each enemy once on its way. True when it is home (or lost).
@@ -361,9 +401,11 @@ function tickShield(s, dt) { s.t = (s.t || 0) + dt; const p = s.mesh.position, o
     if (L < 0.9 || s.t > 4) { if (own === player && player.mesh.userData.offhand) player.mesh.userData.offhand.visible = true; if (L < 0.9) sfx('chitin', own, 0.5); return true; } s.v.copy(to.multiplyScalar(20 / L)); }
   p.addScaledVector(s.v, dt);
   if (!s.back && (p.y < groundY(p.x, p.z) + 0.15 || nearColliders(p.x, p.z).some(c => c.r && !c.gate && Math.hypot(c.x - p.x, c.z - p.z) < colR(c, p.x, p.z) && p.y < (c.top ?? 99)))) { s.back = true; hitBurst(p.clone(), s.v.clone().negate().normalize(), 'stone', 8); sfx('chitin', p, 0.6); }
-  for (const e of enemies) { if (e.dead || e.state === 'lurk' || s.hitE?.has(e)) continue; const sc = ENEMY[e.type].scale, y0 = e.mesh.position.y;
+  for (const e of enemies) { if (e.dead || e.state === 'lurk' || s.hitE?.has(e)) continue; const sc = e.mesh.scale.x, y0 = e.mesh.position.y;
     if (Math.hypot(e.x - p.x, e.z - p.z) < 0.55 * sc + 0.45 && p.y > y0 - 0.2 && p.y < y0 + e.mesh.userData.height * sc + 0.4) { (s.hitE ||= new Set()).add(e); const v = s.v.clone().setY(0).normalize();
       if (!s.ghost) hitEnemy(e, s.dmg, v.x * 0.8, v.z * 0.8, p.clone()); else hitBurst(p.clone(), v, 'stone', 8); s.back = true; } }
+  if (!s.ghost && pvp()) for (const o of others.values()) { if (gone(o) || s.hitP?.has(o)) continue; // (slice 33: the thrown shield strikes another player once, where the rules let it)
+    if (Math.hypot(o.x - p.x, o.z - p.z) < 0.85 && p.y > o.y - 0.2 && p.y < o.y + 2.1) { (s.hitP ||= new Set()).add(o); const v = s.v.clone().setY(0).normalize(); hitRival(o, s.dmg, [v.x * 0.8, v.z * 0.8], p.clone()); s.back = true; } }
   return false; }
 // an expanding ring on the ground round the player (the war cry)
 const pulses = [];
@@ -402,9 +444,9 @@ function tickSlashes(dt) { for (let i = slashes.length - 1; i >= 0; i--) { const
   if (s.t <= 0) { scene.remove(s.m); s.m.geometry.dispose(); s.m.material.dispose(); slashes.splice(i, 1); } } }
 // hunting animals run down a walking player (IW1's speeds are a wander; at them the player outran every wolf)
 const CHASE = { wolf: 2.0, dust_hound: 1.4, bear: 2.2 };
-const PUFFK = { wolf: 'fur', dust_hound: 'hound', bear: 'bear', rat: 'rat', ice_crawler: 'ice', bog_lurker: 'mud', brawler: 'dust', shooter: 'dust', heavy: 'dust' };
-const LABEL = { wolf: 'Wolf', dust_hound: 'Dust hound', bear: 'Bear', rat: 'Rat', ice_crawler: 'Ice crawler', bog_lurker: 'Bog lurker', brawler: 'Raider', shooter: 'Raider shooter', heavy: 'Raider heavy', 'Thing in the deep': 'the lake serpent', fall: 'Long drop' };
-function enemyCentre(e) { const st = ENEMY[e.type]; return new THREE.Vector3(e.x, e.mesh.position.y + e.mesh.userData.height * st.scale * 0.6, e.z); }
+const PUFFK = { spider: 'rat', spider_pale: 'dust', spider_widow: 'rat', spider_brute: 'bear', spider_nest: 'silk', wolf: 'fur', dust_hound: 'hound', bear: 'bear', rat: 'rat', ice_crawler: 'ice', bog_lurker: 'mud', brawler: 'dust', shooter: 'dust', heavy: 'dust' };
+const LABEL = { spider: 'Giant spider', spider_pale: 'Pale hollow spider', spider_widow: 'Widow spider', spider_brute: 'Brute spider', spider_nest: 'Spider nest', wolf: 'Wolf', dust_hound: 'Dust hound', bear: 'Bear', rat: 'Rat', ice_crawler: 'Ice crawler', bog_lurker: 'Bog lurker', brawler: 'Raider', shooter: 'Raider shooter', heavy: 'Raider heavy', 'Thing in the deep': 'the lake serpent', fall: 'Long drop' };
+function enemyCentre(e) { return new THREE.Vector3(e.x, e.mesh.position.y + e.mesh.userData.height * e.mesh.scale.x * 0.6, e.z); } // (the mesh's own scale: a spider rolls its own size, slice 22)
 export function hitEnemy(e, dmg, nx, nz, at, by = null) {
   if (e.dead) return; const st = ENEMY[e.type], heavy = e.type === 'bear';
   if (!by) fought(false); // (a blow dealt: in a fight, no eating for a few seconds: slice 12)
@@ -416,9 +458,14 @@ export function hitEnemy(e, dmg, nx, nz, at, by = null) {
   const side = Math.sign(Math.cos(e.yaw) * nz - Math.sin(e.yaw) * nx) || 1; e.mesh.userData.anim.hit(side);
   const p = at || enemyCentre(e); hitBurst(p, new THREE.Vector3(nx, 0, nz), PUFFK[e.type]); floatText(p, String(dmg), dmg >= 20 ? '#ffd27a' : '#fff0d8', dmg >= 20); if (!by) hitMarker();
   sfx(e.type === 'ice_crawler' ? 'chitin' : dmg >= 20 ? 'hitHard' : 'hit', e);
-  if (e.hp <= 0) { e.dead = 5; e.mesh.userData.anim.die(); e.mesh.userData.flash(0); sfx(e.type, e, 0.8); sfx('thud', e, 0.6);
+  if (e.hp <= 0) { e.dead = 5; logEvent('kill', { enemy: e.type, biome: biomeAt(e.x, e.z) }); /* (slice 21: the logs had no kills by kind) */ e.mesh.userData.anim.die(); e.mesh.userData.flash(0); sfx(e.type, e, 0.8); sfx('thud', e, 0.6);
     for (const k of st.loot) if (rng() < 0.75) dropLoot(e.x, e.z, k, 0.5 * st.scale); if (by) send(by, { t: 'kill', s: `${LABEL[e.type]} down.` }); else { player.kills++; log(`${LABEL[e.type]} down.`); } }
   logEvent('hit', { enemy: e.type, dmg, hp: Math.max(0, e.hp), killed: e.hp <= 0 }); }
+// slice 33: a blow from this game's player on another player, in free-for-all only (pvp()); the other game takes it, and
+// tells this one if it knocked them out ('ko')
+function hitRival(o, dmg, n, at) { const d = Math.max(1, Math.round(dmg * pvp())), p = at || new THREE.Vector3(o.x, o.y + 1.2, o.z); if (!(pvp() > 0)) return;
+  hurt(o, d, 'player', player); fought(false); hitBurst(p, new THREE.Vector3(n[0], 0, n[1]), 'dust'); floatText(p, String(d), rules.ffa ? RIVAL : '#ffc8a0', d >= 20); hitMarker();
+  sfx(d >= 20 ? 'hitHard' : 'hit', o); o.mesh.userData.anim.hit(Math.sign(n[0]) || 1); logEvent('hit-player', { who: o.name, dmg: d, mode: modeKey() }); }
 // Lauren's flower: the enemy it hits forgets the fight for 4 s and wanders (hitting it again breaks the charm)
 export function charm(e) { if (joining()) send('host', { t: 'charm', id: e.id }); else { e.state = 'charmed'; e.chT = 4; e.wander = 0; } hitBurst(enemyCentre(e), new THREE.Vector3(0, 1, 0), 'petal', 18); floatText(enemyCentre(e).setY(e.mesh.position.y + 2.2), 'charmed', '#ff9ad0'); }
 // a crate's loot (a raider camp's stays shut while any of its crew lives, as in IW1); false when it is still guarded
@@ -447,6 +494,7 @@ function interact(quiet) {
   // (a bed comes before a gate or a fire, as the prompt says: a bed beside a campfire could not be slept in with raw meat
   // in the pack; the review of slice 12)
   const bed = bedNear(player.x, player.z); if (bed) { sleep(bed); return true; }
+  if (atTent()) { togglePause(true, true); return true; } // #60: the camp's tent, where a player changes character
   const gate = gateNear(player.x, player.z); if (gate) { log(gate.open ? 'You shut the gate.' : 'You hold the gate open: enemies can come through until it is shut.'); toggleGate(gate); return true; } // slice 12
   if (player.inv.food > 0 && fireNear()) return true; // (holding E there cooks: slice 12)
   const near = (placed.scrap || []).concat(placed.hulk || []).find(p => !p.gone && !p.salvaged && Math.hypot(p.x - player.x, p.z - player.z) < (p.type === 'hulk' ? 4 : 2.6));
@@ -454,18 +502,24 @@ function interact(quiet) {
   const n = near.type === 'hulk' ? 6 : 3; player.inv.metal += n; salvagedProp(near); logEvent('salvage', { what: near.type, n }); log(`Salvaged ${n} metal from the ${near.type === 'hulk' ? 'wreck' : 'scrap'}.`); sfx('salvage'); floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `+${n} metal`, '#ffc070');
   if (near.type === 'scrap') { near.gone = true; markDirty(); near.col.r = 0; near.col.vr = 0; }
   else near.salvaged = true; return true; }
-export function hurtPlayer(d, by, from = null) { if (player.dead) return; if (player.sleep) wake('Something is attacking you in your sleep!');
+// (who: the game whose player struck the blow, slice 33; a player's blow lands only where the rules let it, and not in the
+// 3 s grace just after a knockout: review)
+export function hurtPlayer(d, by, from = null, who = null) { if (player.dead || (by === 'player' && (!(pvp() > 0) || player.graceT > 0))) return; if (player.sleep) wake('Something is attacking you in your sleep!');
   // slice 12: the Knight's upgraded shield takes 60% of a blow from the front (within 70 degrees of where he faces), while it is on his arm
   if (from && upgraded('knight') && player.mesh.userData.offhand?.visible !== false) { const dx = from.x - player.x, dz = from.z - player.z, L = Math.hypot(dx, dz) || 1;
     if ((-Math.sin(player.faceYaw) * dx - Math.cos(player.faceYaw) * dz) / L > 0.34) { const was = d; d = Math.max(1, Math.round(d * 0.4)); const at = new THREE.Vector3(player.x + dx / L * 0.5, player.y + 1.25, player.z + dz / L * 0.5);
       hitBurst(at, new THREE.Vector3(dx / L, 0.4, dz / L), 'stone', 10); floatText(at.clone().setY(at.y + 0.7), 'BLOCK', '#9ad0ff', true); sfx('chitin', null, 0.8); logEvent('block', { from: was, to: d }); } }
   player.hp -= d; fought(true); logEvent('hurt', { dmg: d, by, hp: Math.max(0, Math.round(player.hp)) }); player.hurtT = 0.35; player.shake = 0.25; sfx('hurt');
-  if (player.hp <= 0) { player.hp = 0; player.killedBy = by; logEvent('died', { by, x: +player.x.toFixed(1), z: +player.z.toFixed(1), coop: coop() }); player.mesh.userData.anim.die();
-    if (coop()) { player.dead = 1e9; player.down = 15; player.revT = 0; log(`${player.ch.player} is down! A friend can revive you: they stand close and hold E.`); } else { player.dead = 3; log(`${player.ch.player} went down…`); } }
+  if (player.hp <= 0) { player.hp = 0; player.killedBy = by; logEvent('died', { by, x: +player.x.toFixed(1), z: +player.z.toFixed(1), coop: coop(), ...(who && { who: others.get(who)?.name }), mode: modeKey() }); player.mesh.userData.anim.die();
+    if (who) send(who, { t: 'ko', n: player.ch.player }); // (slice 33: the player whose blow it was scores it)
+    // (slice 33: in free-for-all nobody revives a rival: knocked out for a few seconds, then back at your bed or the camp)
+    player.ko = coop() && rules.ffa; // (a knockout comes back at the bed or the camp even if the host changes the mode meanwhile, review)
+    if (player.ko) { player.dead = 1e9; player.down = KO_S; player.revT = 0; log(`Knocked out${who ? ' by ' + (others.get(who)?.name || 'a rival') : ''}! Back in ${KO_S} s at your bed, or the camp.`); }
+    else if (coop()) { player.dead = 1e9; player.down = 15; player.revT = 0; log(`${player.ch.player} is down! A friend can revive you: they stand close and hold E.`); } else { player.dead = 3; log(`${player.ch.player} went down…`); } }
   else player.mesh.userData.anim.hit(); }
 // fall damage (the owner, 2026-11-04: "we need fall damage"): a drop of up to 4 m is free (a jump on flat ground is 1.3 m,
 // off the ladder's top 7 m), then 10 HP a metre, so 16 m kills the Gunslinger and the Ranger and 24 m the Knight; water breaks any fall
-const FALL_SAFE = 4, FALL_HP = 10;
+const FALL_SAFE = 4, FALL_HP = 10, KO_S = 6;
 function fallHurt(h, gy) { const d = Math.round((h - FALL_SAFE) * FALL_HP); if (d <= 0 || player.dead) return; // (a body already down takes no more)
   if (WATER_Y - groundY(player.x, player.z) > 0.4 && gy < WATER_Y) { logEvent('fall', { h: +h.toFixed(1), dmg: 0, water: true }); return; }
   logEvent('fall', { h: +h.toFixed(1), dmg: d }); floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `-${d}`, '#ff8a6a', d >= 20); hurtPlayer(d, 'fall'); }
@@ -496,9 +550,9 @@ export function update(dt, t) {
   const pad = paused || inMenu ? null : rawPad;
   if (pad && (pad.mx || pad.mz || pad.lx || pad.ly || pad.atk)) padActive = true; if (keys.size || mouseDown) padActive = false;
   // build mode (slice 12): A places, B ends it, RB and the d-pad turn the piece; those presses do nothing else
-  if (pad && building()) { buildPad(pad); pad.jump = pad.use = pad.atk = pad.sec = pad.rb = pad.left = pad.right = false; pad.useHeld = pad.tearHeld = false; }
+  if (pad && building()) { buildPad(pad); pad.jump = pad.use = pad.atk = pad.sec = pad.rb = pad.left = pad.right = false; pad.useHeld = pad.tearHeld = pad.fixHeld = false; }
   if (pad?.cam) setCam(CAMS[(CAMS.indexOf(camMode) + 1) % 3]);
-  if (pad && camMode === 'top') { if (pad.left) topYaw += Math.PI / 4; if (pad.right) topYaw -= Math.PI / 4; }
+  if (pad && camMode === 'top') { if (pad.left) topYaw += Math.PI / 4; if (pad.right && !repairTarget(player.x, player.z)) topYaw -= Math.PI / 4; } // (by a damaged wall the d-pad's right mends it)
   // look (arrow keys work everywhere, for pages that block mouse lock)
   if (camMode !== 'top') { player.yaw += ((keys.has('ArrowLeft') ? 1 : 0) - (keys.has('ArrowRight') ? 1 : 0)) * 2.2 * dt;
     player.pitch = Math.max(-1.35, Math.min(1.2, player.pitch + ((keys.has('ArrowUp') ? 1 : 0) - (keys.has('ArrowDown') ? 1 : 0)) * 1.6 * dt)); }
@@ -508,19 +562,29 @@ export function update(dt, t) {
   if (pad) { ix += pad.mx; iz += pad.mz; } if (player.dead) { ix = iz = 0; player.dead -= dt; if (player.dead <= 0 && !bedRespawn()) gameOver(); } // a bed you slept in wakes you (slice 11)
   if (player.sleep) { if (ix || iz || mouseDown || pad?.atk || pad?.jump || keys.has('Space')) wake('You get up.'); ix = iz = 0; } // asleep in a bed (slice 13): moving wakes you
   // co-op: down for 15 s; a friend standing close with E held for 2.5 s gets you up at a third of your health, else you are out
-  if (player.down > 0) { player.down -= dt; const helper = [...others.values()].find(o => o.rv && !gone(o) && Math.hypot(o.x - player.x, o.z - player.z) < 2.4);
+  player.graceT = Math.max(0, (player.graceT || 0) - dt);
+  if (player.down > 0) { player.down -= dt; const helper = rules.ffa ? null : [...others.values()].find(o => o.rv && !gone(o) && Math.hypot(o.x - player.x, o.z - player.z) < 2.4); // (slice 33: no rival revives you)
     player.revT = helper ? player.revT + dt : Math.max(0, player.revT - dt);
     if (player.revT >= 2.5) { Object.assign(player, { down: 0, dead: 0, revT: 0, hp: Math.round(player.maxHp * 0.35) }); player.mesh.userData.anim.revive(); log(`${helper.name} got you back up.`); logEvent('revived', { by: helper.name }); }
-    else if (player.down <= 0 && !bedRespawn()) { player.down = 0; player.out = true; player.mesh.visible = false; logEvent('out'); log('You are out: watching the others until they fall too.'); } }
+    else if (player.down <= 0 && bedRespawn(player.ko ? campSpot() : null)) { if (player.ko) player.graceT = 3; player.ko = false; } // (3 s when no rival's blow lands: no knocking out a player as they come back, review)
+    else if (player.down <= 0) { player.down = 0; player.out = true; player.mesh.visible = false; logEvent('out'); log('You are out: watching the others until they fall too.'); } }
   if (player.out && !everyone().some(q => q !== player)) { send('all', { t: 'end' }); gameOver(); return; } // everyone is out: the game ends for all
-  player.rv = !player.dead && (keys.has('KeyE') || !!pad?.useHeld) && [...others.values()].some(o => o.down > 0 && !o.out && Math.hypot(o.x - player.x, o.z - player.z) < 2.4); // reviving a friend
+  player.rv = !player.dead && !rules.ffa && (keys.has('KeyE') || !!pad?.useHeld) && [...others.values()].some(o => o.down > 0 && !o.out && Math.hypot(o.x - player.x, o.z - player.z) < 2.4); // reviving a friend
   const il = Math.hypot(ix, iz); if (il > 1) { ix /= il; iz /= il; }
   const heading = camMode === 'top' ? topYaw : player.yaw, sh = Math.sin(heading), chh = Math.cos(heading);
   const wx = ix * chh + iz * sh, wz = -ix * sh + iz * chh;
   const depth = WATER_Y - groundY(player.x, player.z), inWater = depth > 0.4 && player.y < WATER_Y, sprint = keys.has('ShiftLeft') ? 1.35 : 1;
-  const sp = player.ch.speed * PX * sprint * (inWater ? (depth > 1.1 ? 0.4 : 0.55) : 1) * (player.rallyT > 0 ? 1.5 : 1) * (player.eat ? 0.45 : 1); // (slice 12: eating, you walk)
+  // slice 21 (Jared, 2026-11-14: "water splashes when going through it"): wading or swimming on the move throws a little spray and a ring
+  if (depth > 0.1 && player.y < WATER_Y + 0.1 && Math.hypot(ix, iz) > 0.1 && (player.splashT = (player.splashT || 0) - dt) <= 0) { player.splashT = 0.3; splash(new THREE.Vector3(player.x, WATER_Y, player.z), 5); ripple(player.x, player.z, 1.6, 0.3); }
+  const sp = player.ch.speed * PX * sprint * (inWater ? (depth > 1.1 ? 0.4 : 0.55) : 1) * (player.rallyT > 0 ? 1.5 : 1) * (player.eat ? 0.45 : 1) * webSlow(player.x, player.z, player.y); // (slice 12: eating, you walk; slice 22: a web on the ground holds you to 40%)
   const ox = player.x, oz = player.z, oy = groundY(ox, oz);
-  player.x += wx * sp * dt; player.z += wz * sp * dt; collide(player, 0.45, player.y);
+  player.x += wx * sp * dt; player.z += wz * sp * dt;
+  // slice 21 (Jared, 2026-11-14: "the characters have no collision so you can walk through each other and see the inside of
+  // the players' heads"): each game moves its own player out of the others standing at its height (the whole overlap: the
+  // other's place here is a moment old); one down or out can be walked over, to revive them
+  for (const o of others.values()) { if (gone(o) || Math.abs((o.y ?? player.y) - player.y) > 1.6) continue; const dx = player.x - o.x, dz = player.z - o.z, d = Math.hypot(dx, dz);
+    if (d < 0.85) { if (d < 1e-3) player.x += 0.85; else { player.x += dx * (0.85 - d) / d; player.z += dz * (0.85 - d) / d; } } }
+  collide(player, 0.45, player.y);
   // cliffs: too steep to walk up (sliding along them still works, and walking down is always allowed)
   if (slopeAt(player.x, player.z) > 1.05 && groundY(player.x, player.z) > oy + 0.02) {
     const tx = player.x, tz = player.z; player.z = oz; if (slopeAt(player.x, player.z) > 1.05 && groundY(player.x, player.z) > oy + 0.02) { player.x = ox; player.z = tz;
@@ -533,6 +597,7 @@ export function update(dt, t) {
   if (camMode === 'first') player.faceYaw = player.yaw;
   tickHarvest(dt, (keys.has('KeyE') || !!pad?.useHeld) && !player.rv && !player.mantle && !player.climbing && !building() && !cooking); // hold E by a tree: chop it (slice 11)
   tickTear(dt, keys.has('KeyX') || !!pad?.tearHeld);
+  tickRepair(dt, (keys.has('KeyH') || !!pad?.fixHeld) && !craftOpen() && !player.rv && !player.mantle && !player.climbing); // hold H (the d-pad's right) by a damaged wall or gate: mend it (slice 32)
   // slice 12: hold G (d-pad down) to eat, hold E at a fire to cook; R or d-pad up reloads the revolver
   cooking = tickSupplies(dt, keys.has('KeyG') || !!pad?.downHeld, keys.has('KeyE') || !!pad?.useHeld); if (pad?.up) reload(); // hold X (RB) by your own piece: tear it down (slice 12)
   // jump and gravity
@@ -554,7 +619,10 @@ export function update(dt, t) {
       if (ledge > player.y + STEP && ledge < player.y + 2.5 && ledge > groundY(ax, az) + 0.3) { player.mantle = { t: 0, x0: player.x, y0: player.y, z0: player.z, x1: ax, y1: ledge, z1: az }; logEvent('climb', { h: +(ledge - groundY(ax, az)).toFixed(1) }); } }
     if ((keys.has('Space') || pad?.jump) && !player.dead && player.onGround && !diving) { player.vy = 8; player.onGround = false; } // a pad jumps once per press
     player.vy -= (player.y + 1.5 < WATER_Y ? 6 : 24) * dt; player.y += player.vy * dt;
-    if (player.y <= gy || (player.onGround && player.vy <= 0 && player.y - gy < 0.3)) { if (!player.onGround) fallHurt((player.fallTop ?? gy) - gy, gy); player.y = gy; player.vy = 0; player.onGround = true; } else player.onGround = false; } // feet stick on the way down a slope; off an edge they fall
+    if (player.y <= gy || (player.onGround && player.vy <= 0 && player.y - gy < 0.3)) { if (!player.onGround) fallHurt(Math.min((player.fallTop ?? gy) - gy, (player.fallGap ?? 99) + 1), gy); player.y = gy; player.vy = 0; player.onGround = true; } else player.onGround = false; } // feet stick on the way down a slope; off an edge they fall
+  // slice 21 (#60; Zachary on 2026-11-14 ran 23 m down a hillside in 6 s and took four "falls" for 79): the drop that hurts is the
+  // widest gap between the feet and the ground beneath them in the air (off a cliff the whole drop; bounding down a slope about 1 m)
+  player.fallGap = player.onGround || player.mantle ? 0 : Math.max(player.fallGap ?? 0, player.y - (gy ?? player.y));
   player.fallTop = player.onGround || player.mantle ? player.y : Math.max(player.fallTop ?? player.y, player.y); // the highest the feet were since they left the ground (a ladder or a mantle holds them)
   // under the surface the breath runs out in 12 s (the meter shows only then), and after that the water hurts
   player.under = player.y + 1.62 < WATER_Y; /* the eye is under */ player.breath = Math.min(1, Math.max(0, player.breath + (player.under ? -dt / 12 : dt / 3)));
@@ -591,18 +659,24 @@ export function update(dt, t) {
   // turns: one enemy winds up at a time, and the next waits a moment after it (his first play: four raiders struck inside a second)
   const NK = nightK(), fires = [campfire, ...fireSpots()], warm = (q) => fires.some(f => Math.hypot(q.x - f.x, q.z - f.z) < f.r + 1.5);
   let alive = 0; const striking = new Set(enemies.filter(e => !e.dead && e.state === 'windup').map(e => e.tg)), awake = []; for (const [k, v] of strikeCD) strikeCD.set(k, v - dt);
+  const ppl = joining() ? null : everyone();
   for (const e of enemies) {
     const st = ENEMY[e.type], u = e.mesh.userData, an = u.anim;
     if (e.dead) { e.dead -= dt; const tr = e.mesh.getObjectByName('threat'); if (tr) tr.visible = false; an.update(dt, { speed: 0, scale: st.scale, ground: groundY }); if (e.dead < 1.2 && !e.dropped) { e.dropped = true; dropFrom(e); } /* its arrows fall beside it */ if (e.dead < 1) e.mesh.position.y -= dt * 0.6; if (e.dead <= 0) { scene.remove(e.mesh); e.mesh.userData.dispose?.(); e.gone = true; } continue; }
     alive++; const tg = joining() ? player : nearestP(e.x, e.z) || player, tgGone = gone(tg); if (joining()) followHost(e, dt); // a joined game's enemies go where the host's are
     const dx = tg.x - e.x, dz = tg.z - e.z, d = Math.hypot(dx, dz) || 1e-3, tx = dx / d, tz = dz / d;
-    if (d > WAKE_RADIUS && !(e.hunter?.until > t)) { e.mesh.visible = d < 200; continue; } e.mesh.visible = true; awake.push(e); // (a pack sent hunting stays awake on its way: issue #44)
+    if (st.nest) { e.mesh.visible = d < 200; e.flashT = Math.max(0, e.flashT - dt); e.barT = Math.max(0, e.barT - dt); u.flash(e.flashT / 0.15); an.update(dt); continue; } // slice 22: a nest stands still (spiders.js sends its spiders out)
+    // #60 (2026-11-14: two dust hounds stood frozen over Jared's body for 5 s, still "chasing"): asleep only when every player
+    // is far off, a downed one too, whose camera is still on the spot. Measured to the quarry alone, a creature whose quarry
+    // fell took the next one 200 m away as its quarry and froze mid-chase; awake, it gives up the hunt below and wanders off
+    const wd = ppl ? ppl.reduce((m, q) => Math.min(m, Math.hypot(q.x - e.x, q.z - e.z)), d) : d;
+    if (wd > WAKE_RADIUS && !(e.hunter?.until > t)) { e.mesh.visible = wd < 200; continue; } e.mesh.visible = true; awake.push(e); // (a pack sent hunting stays awake on its way: issue #44)
     u.setDetail(camera.position.distanceTo(e.mesh.position) < 32); // fur shells near the camera
     e.stag = Math.max(0, e.stag - dt); e.flashT = Math.max(0, e.flashT - dt); e.barT = Math.max(0, e.barT - dt); u.flash(e.flashT / 0.15);
     { const ring = e.mesh.getObjectByName('threat'), hunt = HUNTS.includes(e.state), want = hunt ? (e.state === 'windup' ? 1.0 : 0.55 + 0.12 * Math.sin(t * 5)) : e.state !== 'lurk' && d < 45 ? 0.22 : 0; // a faint ring on idle creatures in range
       ring.material.opacity += (want - ring.material.opacity) * Math.min(1, dt * 6); ring.visible = ring.material.opacity > 0.02; }
     // slice 13: at night an animal sees further, runs faster and bites harder (IW1: 1.35), unless its quarry is by a fire
-    const nb = NK && !warm(tg) ? NK : 0, aggro = st.aggro / 12 * (1 + 0.35 * nb), reach = 0.9 + st.scale * 0.75, bite = Math.round(st.dmg * (1 + 0.35 * nb));
+    const nb = NK && !warm(tg) ? NK : 0, aggro = st.aggro / 12 * (1 + 0.35 * nb), reach = 0.9 + st.scale * 0.75, bite = Math.max(1, Math.round(st.dmg * (1 + 0.35 * nb) * level().bite)); // (slice 33: the difficulty)
     // issue #44: an idle animal notices a little further than IW1's sight (1.19x: the night check keeps a day wolf at 19 m
     // idle), and wolves, hounds and bears smell blood: a player under half health from twice IW1's sight; one dug in the mud
     // still only close. A creature below a player stood up on a ledge or a rock strikes up at them: its reach grows with the
@@ -687,7 +761,7 @@ export function update(dt, t) {
     const ty = joining() ? e.nyaw ?? e.yaw : e.state === 'siege' && e.wfx != null ? Math.atan2(-e.wfx, -e.wfz) : face ? Math.atan2(-tx, -tz) : (mx || mz) ? Math.atan2(-mx, -mz) : e.yaw; let dd = ty - e.yaw; dd = Math.atan2(Math.sin(dd), Math.cos(dd)); e.yaw += dd * Math.min(1, dt * 8);
     const gy = groundY(e.x, e.z), sink = e.state === 'lurk' ? 0.85 : e.state === 'emerge' ? 0.85 * Math.max(0, e.emT / 0.8) : 0;
     if (e.state === 'emerge' && e.emT > 0.7) { const at = new THREE.Vector3(e.x, Math.max(gy, WATER_Y), e.z); if (gy < WATER_Y + 0.2) { splash(at); sfx('splash', e); } else dustPuff(at, 14); e.emT = 0.7; }
-    e.mesh.position.set(e.x, Math.max(gy, WATER_Y - 0.55 * st.scale) - sink * st.scale, e.z); e.mesh.rotation.y = e.yaw;
+    e.mesh.position.set(e.x, Math.max(gy, WATER_Y - 0.55 * st.scale) - sink * st.scale + (e.dropH || 0), e.z); e.mesh.rotation.y = e.yaw; // (dropH: a spider on its thread, slice 22)
     e.mesh.visible = e.state !== 'lurk' || d < 4;
     // slice 19: built creatures plant their feet on the ground and turn their heads to the one they hunt
     const eyes = !tgGone && ['chase', 'windup', 'recover', 'emerge', 'siege'].includes(e.state) ? (e.lookV ||= new THREE.Vector3()).set(tg.x, groundY(tg.x, tg.z) + 1.3, tg.z) : null;
@@ -695,15 +769,16 @@ export function update(dt, t) {
   }
   // keep awake enemies from stacking on one another
   for (let i = 0; i < awake.length; i++) for (let j = i + 1; j < awake.length; j++) { const a = awake[i], b = awake[j]; if (a.state === 'lurk' || b.state === 'lurk') continue;
-    const r = 0.45 * (ENEMY[a.type].scale + ENEMY[b.type].scale), dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz);
+    const r = 0.45 * (a.mesh.scale.x + b.mesh.scale.x), dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz);
     if (d < r && d > 1e-4) { const push = (r - d) / 2 / d; a.x -= dx * push; a.z -= dz * push; b.x += dx * push; b.z += dz * push; } }
   for (let i = enemies.length - 1; i >= 0; i--) if (enemies[i].gone) enemies.splice(i, 1);
+  tickSpiders(dt, { scene, enemies, players: everyone().filter(q => !gone(q)), host: !joining(), spawn: spawnEnemy, log, logEvent, t, me: running ? player : null }); // slice 22: webs, nests, the drop at night
   // the land round the player stays alive: spawns follow them (the cap counts only animals within 150 m), far idle ones are cleared
   // (co-op: round every player; the host's game spawns for all)
   if (!joining() && Math.floor(t) % 4 === 0 && Math.floor(t) !== spawnTick) { spawnTick = Math.floor(t); const P = everyone();
     for (const e of enemies) if (!e.home && !e.posed && e.state === 'idle' && P.every(q => Math.hypot(e.x - q.x, e.z - q.z) > 320)) { dropFrom(e); scene.remove(e.mesh); e.mesh.userData.dispose?.(); e.gone = true; }
-    for (const q of P) if (enemies.filter(e => !e.dead && !e.home && Math.hypot(e.x - q.x, e.z - q.z) < 150).length < 12 + Math.round(6 * NK)) spawnAround(q.x, q.z, 3 + Math.round(2 * NK), 60, 110); // (busier at night: slice 13)
-    for (const q of P) { if (gone(q)) continue; // issue #44: the hunting trickle (sendHunt); the clock waits in the valley, and starts afresh on a teleport or a respawn
+    for (const q of P) if (enemies.filter(e => !e.dead && !e.home && Math.hypot(e.x - q.x, e.z - q.z) < 150).length < 20 + Math.round(12 * NK)) spawnAround(q.x, q.z, 4 + Math.round(3 * NK), 50, 105); // (busier at night: slice 13; slice 21 raised the cap from 12 + 6)
+    for (const q of P) { if (gone(q) || q.away) continue; // (away: a hidden window; no pack is sent at a player who is not there) issue #44: the hunting trickle (sendHunt); the clock waits in the valley, and starts afresh on a teleport or a respawn
       if (q.huntedAt == null || Math.hypot(q.x, q.z) < SAFE_R) { q.huntedAt = t; q.huntWait = HUNT_WAIT(NK); continue; }
       if (t - q.huntedAt >= q.huntWait) { q.huntedAt = t; q.huntWait = HUNT_WAIT(NK); sendHunt(q, t, NK); } } }
   // projectiles
@@ -721,22 +796,31 @@ export function update(dt, t) {
     else if (s.hostile) { if (!hit) for (const q of everyone()) if (!gone(q) && segD(prev, p, q.x, q.z) < 0.5 && p.y > q.y && p.y < q.y + 1.9) { hurt(q, s.dmg, s.from); hit = true; break; } }
     // (an enemy is tested along this frame's whole path, at its closest point: a fast shot tested only where the frame ended
     // could pass through a wolf, 2 m a frame for an arrow at 20 fps; found by slice 12's spread check)
-    else for (const e of enemies) { if (e.dead || hit || e.state === 'lurk') continue; const sc = ENEMY[e.type].scale, top = e.mesh.position.y + e.mesh.userData.height * sc + 0.25;
+    else for (const e of enemies) { if (e.dead || hit || e.state === 'lurk') continue; const sc = e.mesh.scale.x, top = e.mesh.position.y + e.mesh.userData.height * sc + 0.25;
       const sx = p.x - prev.x, sz = p.z - prev.z, L2 = sx * sx + sz * sz || 1, tt = Math.max(0, Math.min(1, ((e.x - prev.x) * sx + (e.z - prev.z) * sz) / L2)), cq = prev.clone().lerp(p, tt);
       if (Math.hypot(e.x - cq.x, e.z - cq.z) < 0.55 * sc + 0.3 + (s.wide || 0) && cq.y < top && cq.y > e.mesh.position.y - 0.2) { p.copy(cq); const v = s.v.clone().setY(0).normalize(); if (!s.ghost) hitEnemy(e, s.dmg + (s.boom ? 16 : 0), v.x * 0.6, v.z * 0.6, p.clone()); hit = true; s.inE = e; if (s.charm && !e.dead && !s.ghost) charm(e); } }
+    // slice 33: this game's own shots (the turret's too) strike another player where the rules let them; another game's are seen, not felt
+    if (!hit && !s.ghost && !s.hostile && pvp()) for (const o of others.values()) { if (gone(o)) continue;
+      const sx = p.x - prev.x, sz = p.z - prev.z, L2 = sx * sx + sz * sz || 1, tt = Math.max(0, Math.min(1, ((o.x - prev.x) * sx + (o.z - prev.z) * sz) / L2)), cq = prev.clone().lerp(p, tt);
+      // (to the top of the head: a shot from a first-person eye a little upslope passed over 1.9)
+      if (Math.hypot(o.x - cq.x, o.z - cq.z) < 0.45 + (s.wide || 0) && cq.y > o.y - 0.1 && cq.y < o.y + 2.15) { p.copy(cq); const v = s.v.clone().setY(0).normalize(); hitRival(o, s.dmg + (s.boom ? 16 : 0), [v.x, v.z], p.clone()); hit = true; s.inP = o; break; } }
     // slice 12: a fire arrow that struck an enemy bursts (and burns up); an upgraded charm flower charms all round where it lands
     if (hit && s.boom && s.inE) { blast(p.clone(), s.ghost, s.inE); scene.remove(s.mesh); shots.splice(i, 1); continue; }
     if (hit && s.aura) charmBurst(p.clone(), s.ghost);
     // an arrow stays where it struck (slice 11): in the ground, a trunk, a rock or a wall, or in the creature it hit
-    if (hit && s.kind === 'ranger') { stick(s.mesh, struck(s, last, p, stop), s.v.clone().normalize(), !s.ghost, s.inE); shots.splice(i, 1); }
+    if (hit && s.kind === 'ranger') { stick(s.mesh, s.inP ? new THREE.Vector3(p.x, groundY(p.x, p.z) + 0.15, p.z) : struck(s, last, p, stop), s.v.clone().normalize(), !s.ghost, s.inE); shots.splice(i, 1); }
     else if (hit || s.life <= 0) { scene.remove(s.mesh); shots.splice(i, 1); } }
   // pickups: pop out of the kill, settle, bob; drawn in when close
   for (let i = pickups.length - 1; i >= 0; i--) { const k = pickups[i], m = k.mesh, u = m.userData; k.t += dt; k.age += dt;
     const gy = groundY(m.position.x, m.position.z);
-    if (!k.landed) { k.vy -= 14 * dt; m.position.x += k.vx * dt; m.position.z += k.vz * dt; m.position.y += k.vy * dt; if (m.position.y < gy + 0.3 && k.vy < 0) { k.landed = true; m.position.y = gy + 0.3; } }
+    if (!k.landed) { k.vy -= 14 * dt; m.position.x += k.vx * dt; m.position.z += k.vz * dt; m.position.y += k.vy * dt; if (m.position.y < gy + 0.3 && k.vy < 0) { k.landed = true; unbury(m.position); } }
     else { m.position.y = gy + 0.35 + Math.sin(k.t * 2.5) * 0.06; }
     u.item.rotation.y += dt * 1.6; u.ring.position.y = gy - m.position.y + 0.05; u.ring.scale.setScalar(1 + Math.sin(k.t * 3) * 0.08); u.beam.position.y = gy - m.position.y + 1.3;
     // the host's game hands each pickup to the nearest player standing (a joined game only draws them, until the host says)
+    // slice 21 (Jared, 2026-11-14: "someone else tried to pick up wood and it's like it couldn't be picked up by them"): the host
+    // judged by a moment-old copy of where the joined player was, so a joined player who touches a pickup on their own screen
+    // claims it, and the host gives it to the first claim (a gun's rounds still only to the Gunslinger)
+    if (joining()) { if (k.age > 190) { scene.remove(m); pickups.splice(i, 1); continue; } /* (the host's take was lost: its pickups go at 180 s) */ if (k.landed && !gone(player) && (k.kind !== 'ammo' || player.ch.id === 'gunslinger') && t - (k.claimT ?? -9) > 1.5 && Math.hypot(player.x - m.position.x, player.z - m.position.z) < 1) { k.claimT = t; send(net.host, { t: 'claim', id: k.id }); } continue; }
     const q = joining() ? null : k.kind === 'ammo' ? nearestGun(m.position.x, m.position.z) : nearestP(m.position.x, m.position.z), dx = q ? q.x - m.position.x : 0, dz = q ? q.z - m.position.z : 0, dd = q ? Math.hypot(dx, dz) : 1e9;
     if (k.landed && dd < 2.6) { m.position.x += dx / dd * dt * 6; m.position.z += dz / dd * dt * 6; }
     if (dd < 0.8 || k.age > 180) { if (dd < 0.8) { if (q === player) gotPickup(k.kind); else send(q.id, { t: 'got', kind: k.kind }); } send('all', { t: 'take', id: k.id });
@@ -746,7 +830,9 @@ export function update(dt, t) {
   tickArrows(dt); tickBuild(dt);
   // slice 13: the clock (the host's; a joined game follows the host's), nightfall and dawn, and sleeping the night away
   const turn = tickDay(dt, !!player.sleep && everyone().every(q => q === player || q.sl || gone(q)), joining());
-  if (turn === 'night') { log('Night falls. Animals hunt bolder and bite harder in the dark: keep near a fire, behind walls, or sleep it off in a bed.'); sfx('night'); logEvent('night', { day: day.n }); }
+  if (turn === 'night') { log('Night falls. Packs are out hunting, bolder and hungrier: keep near a fire, behind walls, or sleep it off in a bed.'); sfx('night'); logEvent('night', { day: day.n });
+    // slice 21: dusk sends a pack at everyone outside the valley at once (IW1's night waves, in small)
+    if (!joining() && level().night) for (const q of everyone()) if (!gone(q) && !q.away && Math.hypot(q.x, q.z) >= SAFE_R) { q.huntedAt = t; q.huntWait = HUNT_WAIT(1) + 20; sendHunt(q, t, 1); } } // (+20 s: the dusk pack is not followed straight away by the trickle; slice 33: none on Easy)
   if (turn === 'day') { log(`Day ${day.n} dawns.`); sfx('dawn'); logEvent('dawn', { day: day.n }); }
   tickSleep(dt);
   // the campfire mends wounds, as in IW1 (every 2 s within a few metres); so does a campfire a player built (slice 11)
@@ -768,7 +854,7 @@ const strikeCD = new Map(); // player -> seconds until the next enemy may wind u
 // rounds go only to a Gunslinger on his feet (the nearest), or lie there
 function nearestGun(x, z) { let best = null, bd = 1e9; for (const q of everyone()) { if (gone(q) || (q === player ? player.ch.id : CHARS[q.c]?.id) !== 'gunslinger' || (q === player && ammo.clip + ammo.reserve >= MAX_ROUNDS)) continue; const d = Math.hypot(q.x - x, q.z - z); if (d < bd) { bd = d; best = q; } } return best; }
 export function gotPickup(kind) { if (kind === 'ammo') { const n = addRounds(3); sfx('pickup'); floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `+${n} rounds`, '#ffe08a'); return; }
-  player.inv[kind] = (player.inv[kind] || 0) + 1; sfx('pickup');
+  player.inv[kind] = (player.inv[kind] || 0) + 1; sfx('pickup'); logEvent('got', { kind }); // (slice 21: pickups were not logged, so "couldn't pick it up" had no trail)
   floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `+1 ${kind}`, { food: '#ff9a7a', metal: '#ffc070', wood: '#e8b878' }[kind] || '#efe6b0'); }
 let snapCam = true; export function snapCamera() { snapCam = true; }
 export function placeCamera(dt) {
@@ -792,9 +878,9 @@ export function placeCamera(dt) {
 let slowT = 0, slowHinted = false;
 function perfHint(fps, dt) { if (slowHinted || navigator.webdriver || paused || QUALITY_KEY === 'low') return;
   slowT = fps > 0 && fps < 24 ? slowT + dt : 0; if (slowT > 12) { slowHinted = true; log('Running slowly here: try Quality → Low (P opens settings).'); } }
-export function hud(fps, dt = 0) { perfHint(fps, dt); lastFps = fps;
+export function hud(fps, dt = 0) { perfHint(fps, dt); lastFps = fps; if (paused) pauseChars(); // (the world runs on in co-op: down or up again while paused, review)
   const watch = player.out && [...others.values()].find(o => !o.out); // co-op: down, or out and watching a friend
-  document.getElementById('name').textContent = `${player.ch.player.toUpperCase()} · ${player.ch.title}   ` + (player.out ? `OUT${watch ? ' · watching ' + watch.name : ''}` : player.down > 0 ? `DOWN ${Math.ceil(player.down)} s · ${player.revT > 0 ? `${watch?.name || 'a friend'} is reviving you ${Math.round(player.revT / 2.5 * 100)}%` : 'a friend can revive you (they hold E beside you)'}` : '').trimEnd(); // health moved onto the bar (#37)
+  document.getElementById('name').textContent = `${player.ch.player.toUpperCase()} · ${player.ch.title}   ` + (player.out ? `OUT${watch ? ' · watching ' + watch.name : ''}` : player.down > 0 && rules.ffa ? `KNOCKED OUT · back in ${Math.ceil(player.down)} s` : player.down > 0 ? `DOWN ${Math.ceil(player.down)} s · ${player.revT > 0 ? `${watch?.name || 'a friend'} is reviving you ${Math.round(player.revT / 2.5 * 100)}%` : 'a friend can revive you (they hold E beside you)'}` : '').trimEnd(); // health moved onto the bar (#37)
   document.getElementById('hpfill').style.width = Math.max(0, player.hp / player.maxHp * 100) + '%';
   document.getElementById('hpnum').textContent = `${Math.max(0, Math.ceil(player.hp))} / ${player.maxHp}`;
   document.getElementById('biome').textContent = `${BIOME[biomeAt(player.x, player.z)].label} · Day ${day.n} · ${phase()}`; // (slice 13: the time of day)
@@ -807,16 +893,16 @@ export function hud(fps, dt = 0) { perfHint(fps, dt); lastFps = fps;
   else if (cid === 'charmer') { chip('arrows', 'Flowers', ammo.flowers); ammoEl.classList.toggle('empty', ammo.flowers === 0); }
   // the ring round the crosshair while eating or cooking
   { const busy = player.eat || player.cook, el = document.getElementById('eat'); el.classList.toggle('hidden', !busy); if (busy) { el.style.setProperty('--p', (busy.t / busy.T * 100).toFixed(0)); el.classList.toggle('cook', !!player.cook); } }
-  chip('kills', 'Kills', player.kills); prompt(dt);
+  if (rules.ffa && coop()) chip('kills', 'Score ★', score(player)); else chip('kills', 'Kills', player.kills); prompt(dt); // (slice 33: free-for-all keeps score)
   // co-op: each friend's name and a small health bar under the player's own (red and counting down while they are down)
   const team = [...others.values()].map(o => { const dn = o.down > 0 && !o.out, f = o.out ? 0 : dn ? o.down / 15 : Math.max(0, o.hp) / (o.mx || 1);
-    return `<div class="mate"><span style="color:#${CHARS[o.c].color.toString(16).padStart(6, '0')}">${o.name}</span> ${o.out ? 'out' : o.away ? 'away (window hidden)' : performance.now() - o.seen > 3000 ? 'no word…' : dn ? `DOWN ${Math.ceil(o.down)} s` : `${Math.max(0, o.hp)}/${o.mx}`}<i><b style="width:${(f * 100).toFixed(0)}%${dn ? ';background:#ff8a6a' : ''}"></b></i></div>`; }).join(''), tEl = document.getElementById('team');
+    return `<div class="mate"><span style="color:${rules.ffa ? RIVAL : '#' + CHARS[o.c].color.toString(16).padStart(6, '0')}">${o.name}</span>${rules.ffa ? ` ★ ${score(o)} ·` : ''} ${o.out ? 'out' : o.away ? 'away (window hidden)' : performance.now() - o.seen > 3000 ? 'no word…' : dn ? (rules.ffa ? 'knocked out' : `DOWN ${Math.ceil(o.down)} s`) : `${Math.max(0, o.hp)}/${o.mx}`}<i><b style="width:${(f * 100).toFixed(0)}%${dn ? ';background:#ff8a6a' : ''}"></b></i></div>`; }).join(''), tEl = document.getElementById('team');
   if (tEl.innerHTML !== team) tEl.innerHTML = team; tEl.classList.toggle('hidden', !team);
   const sec = document.getElementById('sec'); sec.textContent = `F · ${player.ch.sec}${upgraded(player.ch.id) ? ' ★' : ''}` + (player.secT > 0 ? ` ${Math.ceil(player.secT)} s` : ''); sec.style.opacity = player.secT > 0 ? 0.55 : 1;
   document.getElementById('cross').style.opacity = player.atkT > 0 ? 0.35 : 1; // dim while the attack recovers
   document.getElementById('fps').textContent = fps ? fps + ' fps' : ''; // (not "0 fps" before the first count: round 1 of 13d)
   const list = []; for (const e of enemies) { if (e.dead || e.state === 'lurk') continue; const d = Math.hypot(e.x - player.x, e.z - player.z);
-    if (d < 28 && (e.barT > 0 || e.state === 'chase' || e.state === 'windup' || e.state === 'recover')) list.push({ d, p: new THREE.Vector3(e.x, e.mesh.position.y + e.mesh.userData.height * ENEMY[e.type].scale + 0.15, e.z), frac: Math.max(0, e.hp / e.maxHp) }); }
+    if (d < 28 && (e.barT > 0 || e.state === 'chase' || e.state === 'windup' || e.state === 'recover')) list.push({ d, p: new THREE.Vector3(e.x, e.mesh.position.y + e.mesh.userData.height * e.mesh.scale.x + 0.15, e.z), frac: Math.max(0, e.hp / e.maxHp) }); }
   list.push(...pieceBars(player.x, player.z)); // walls and gates hit lately (slice 12)
   list.sort((a, b) => a.d - b.d); healthBars(camMode === 'first' || camMode === 'angled' || camMode === 'top' ? list : []);
   document.getElementById('hurt').style.boxShadow = `inset 0 0 120px rgba(200,30,20,${player.hurtT > 0 ? 0.55 : 0})`;
@@ -828,18 +914,21 @@ function chip(k, label, v, tail = '') { const txt = `${label} ${v}${tail}`; if (
   if (chipV[k] !== undefined && v > chipV[k]) { el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump'); } chipV[k] = v; chipV[k + 't'] = txt; }
 // what E (B on a pad) does here, shown over the bottom bar, with the chopping's progress while E is held (slice 11)
 const promptEl = document.getElementById('prompt'); let promptT = 0;
-function prompt(dt) { const c = player.chop || player.tear || player.eat || player.cook, bar = promptEl.querySelector('i b'); promptEl.classList.toggle('busy', !!c); if (c) bar.style.width = Math.min(100, c.t / c.T * 100).toFixed(0) + '%';
+function prompt(dt) { const c = player.chop || player.tear || player.fix || player.eat || player.cook, bar = promptEl.querySelector('i b'); promptEl.classList.toggle('busy', !!c); if (c) bar.style.width = Math.min(100, c.t / c.T * 100).toFixed(0) + '%';
   if ((promptT -= dt) > 0 && !c) return; promptT = 0.15; const E = padActive ? 'B' : 'E', TAB = padActive ? 'View' : 'Tab', x = player.x, z = player.z; let t = '';
   if (!running || player.dead || player.down > 0 || player.out || craftOpen()) t = '';
   else if (player.tear) t = `Hold ${padActive ? 'RB' : 'X'} · tearing down the ${pieceName(player.tear.b)}`;
+  else if (player.fix) t = `Hold ${padActive ? 'd-pad right' : 'H'} · mending the ${pieceName(player.fix.b)}: ${fixCostText(player.fix.b)} for +${fixGain(player.fix.b)} (${Math.round(player.fix.b.hp)}/${player.fix.b.max})`;
   else if (player.eat) t = `Hold ${padActive ? 'd-pad down' : 'G'} · eating the ${player.eat.what === 'cooked' ? 'roast meat' : 'raw meat'} (a hit stops you)`;
   else if (player.cook) t = `Hold ${E} · cooking over the fire (${player.inv.food} raw left)`;
   else if (building()) t = '';
   else if (c) t = `Hold ${E} · ${c.it.type.endsWith('bush') ? 'pulling fiber from the ' : 'chopping the '}${harvestName(c.it)}`;
-  else if ([...others.values()].some(o => o.down > 0 && !o.out && Math.hypot(o.x - x, o.z - z) < 2.4)) t = `Hold ${E} · revive`;
+  else if (!rules.ffa && [...others.values()].some(o => o.down > 0 && !o.out && Math.hypot(o.x - x, o.z - z) < 2.4)) t = `Hold ${E} · revive`;
+  else if (repairTarget(x, z)) { const b = repairTarget(x, z); t = `Hold ${padActive ? 'd-pad right' : 'H'} · repair the ${pieceName(b)}: ${fixCostText(b)} for +${fixGain(b)} (${Math.round(b.hp)}/${b.max})`; }
   else if (caches.some(q => !q.opened && Math.hypot(q.x - x, q.z - z) < 2.4)) t = `${E} · search the crate`;
   else if (gateNear(x, z)) t = `${E} · ${gateNear(x, z).open ? 'shut the gate' : 'hold the gate open'}`;
   else if (bedNear(x, z)) t = `${E} · sleep (you wake here if you fall)`;
+  else if (atTent(x, z)) t = `${E} · change character`;
   else if ((placed.scrap || []).concat(placed.hulk || []).some(q => !q.gone && !q.salvaged && Math.hypot(q.x - x, q.z - z) < (q.type === 'hulk' ? 4 : 2.6))) t = `${E} · salvage metal`;
   else { const h = harvestTarget(x, z); if (h) t = `Hold ${E} · ${h.type.endsWith('bush') ? 'pull fiber from the ' : 'chop the '}${harvestName(h)}`; }
   if (!t && benchNear(x, z) && !craftOpen() && running && !player.dead) t = `${TAB} · craft at the bench`;

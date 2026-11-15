@@ -14,6 +14,7 @@ const pbr = (name, o = {}) => new THREE.MeshStandardMaterial({ map: tex(name + '
 
 const fires = []; // the camp's and the raider camps'
 export const campfire = { x: CAMP.x, z: CAMP.z, r: 5.5 };
+export const campTent = { x: CAMP.x - 4.4, z: CAMP.z + 3.6 }; // (#60: where a player changes character)
 let MATS = null;
 function campMats() { if (MATS) return MATS;
   MATS = { canvas: pbr('canvas', { color: new THREE.Color().setRGB(2.0, 1.1, 0.36), side: THREE.DoubleSide, rep: 3 }) /* the linen texture is blue-grey: this turns it khaki */, bark: pbr('logbark', { color: 0x9a8a7a, rep: 1 }),
@@ -31,7 +32,7 @@ export function buildFire(parent, x, z, withLight) {
   for (let k = 0; k < 11; k++) { const a = k / 11 * Math.PI * 2, s = new THREE.Mesh(stoneG, rockMat('rock')); s.scale.set(1 + (k % 3) * 0.25, 0.7 + (k % 2) * 0.3, 1.1); s.rotation.set(k, k * 2, 0); at(s, Math.cos(a) * 0.82, Math.sin(a) * 0.82, 0.05); }
   for (let k = 0; k < 5; k++) { const a = k / 5 * Math.PI * 2 + 0.3, l = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.07, 0.95, 7), k % 2 ? bark : char);
     l.position.set(Math.cos(a) * 0.22, 0.32, Math.sin(a) * 0.22); l.rotation.set(Math.sin(a) * 0.6, 0, -Math.cos(a) * 0.6); const holder = new THREE.Group(); holder.add(l); at(holder, 0, 0); }
-  const fire = addFlame(g, groundY(x, z) - fy, 1); fire.light = withLight ? new THREE.PointLight(0xff8a3a, 6, 16, 1.6) : null; if (fire.light) { fire.light.position.set(0, 1.1, 0); g.add(fire.light); }
+  const fire = addFlame(g, groundY(x, z) - fy, 1); fire.light = withLight ? new THREE.PointLight(0xff8a3a, 18, 26, 1.25) : null; if (fire.light) { fire.light.position.set(0, 1.1, 0); g.add(fire.light); }
   addCollider(x, z, 0.9, null).top = fy + 0.6; // shots fly over it
   return g;
 }
@@ -131,7 +132,7 @@ export async function buildCamp(scene) {
 export function tickCamp(dt, t) {
   for (const fire of fires) {
     fire.flameMat.uniforms.t.value = t;
-    if (fire.light) fire.light.intensity = (5.2 + Math.sin(t * 13) * 0.6 + Math.sin(t * 7.3 + 1) * 0.5 + Math.sin(t * 23.1) * 0.3) * (1 + 0.6 * nightK()); // (brighter at night: slice 13)
+    if (fire.light) fire.light.intensity = (15.5 + Math.sin(t * 13) * 1.8 + Math.sin(t * 7.3 + 1) * 1.5 + Math.sin(t * 23.1) * 0.9) * (1 + 0.6 * nightK()); // (brighter at night: slice 13; three times brighter and wider: slice 21)
     const p = fire.ep; for (let i = 0; i < fire.eSeed.length; i++) { const s = fire.eSeed[i], life = (t * (0.35 + s * 0.3) + s * 7) % 1;
       p[i * 3] = Math.sin(s * 40 + t * (1 + s)) * 0.25 * (0.4 + life); p[i * 3 + 1] = life * (2.2 + s * 1.5); p[i * 3 + 2] = Math.cos(s * 33 + t * (0.8 + s)) * 0.25 * (0.4 + life); }
     fire.embers.geometry.attributes.position.needsUpdate = true;

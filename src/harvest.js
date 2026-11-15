@@ -7,8 +7,13 @@ import * as THREE from 'three';
 import { placed, nearColliders, addCollider } from './props.js';
 import { markDirty } from './scatter.js';
 import { pbr } from './propmodels.js';
+import { BARK } from './trees.js';
 import { groundY } from './world.js';
-import { hitBurst, dustPuff, grainDisc } from './effects.js';
+import { hitBurst, dustPuff, grainDisc, splash } from './effects.js';
+import { ripple } from './water.js';
+import { WATER_Y } from './config.js';
+// slice 21 (Jared, 2026-11-14: "water splashes ... if a harvested tree falls in it?"): where the falling trunk meets water it splashes, not dusts
+const thud = (x, z, n) => { if (groundY(x, z) < WATER_Y - 0.05) { splash(new THREE.Vector3(x, WATER_Y, z), n * 2); ripple(x, z, 3, 0.45); } else dustPuff(new THREE.Vector3(x, groundY(x, z), z), n); };
 import { sfx } from './audio.js';
 import { logEvent } from './playlog.js';
 import { rng } from './noise.js';
@@ -61,8 +66,13 @@ export function onShake(m) { const it = placed[m.k]?.[m.i]; if (it && !it.felled
 // rings and a ragged hinge of splinters where it broke; solid, and low enough to stand on
 let STUMP = null;
 export function prepHarvest() { STUMP = { bark: pbr('props/logbark', { rough: 0.95, color: 0xb8a490 }), grain: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }), splinter: new THREE.MeshStandardMaterial({ color: 0xc8a070, roughness: 0.9 }) }; }
+// slice 21 (Jared, 2026-11-14: "cutting down a tree that looks like a birch tree leaves a different kind of stump"): a stump
+// wears its own tree's bark (the aspen's white), its texture tiled to a stump's size
+const STUMP_BARK = {};
+const stumpBark = (k) => { const b = BARK[k]; if (!b) return STUMP.bark; if (STUMP_BARK[k]) return STUMP_BARK[k]; const m = b.clone();
+  for (const t of ['map', 'normalMap']) if (b[t]) { m[t] = b[t].clone(); m[t].repeat.set(2, 0.5); m[t].needsUpdate = true; } return (STUMP_BARK[k] = m); };
 function stump(it, r, d) { const y = groundY(it.x, it.z), h = 0.38 + r * 0.5, g = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 1.22, h + 0.25, 16, 1), STUMP.bark); body.position.y = (h - 0.25) / 2; g.add(body);
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 1.22, h + 0.25, 16, 1), stumpBark(it.type)); body.position.y = (h - 0.25) / 2; g.add(body);
   const top = new THREE.Mesh(grainDisc(r * 0.97).rotateX(-Math.PI / 2), STUMP.grain); top.position.y = h + 0.002; g.add(top);
   // the hinge: splinters standing on the side the tree fell toward
   for (let k = 0; k < 5; k++) { const a = d + (k - 2) * 0.28, s = new THREE.Mesh(new THREE.ConeGeometry(r * 0.16, 0.12 + rng() * 0.16, 4), STUMP.splinter); s.position.set(Math.sin(a) * r * 0.72, h + 0.06, Math.cos(a) * r * 0.72); s.rotation.set((rng() - 0.5) * 0.4, rng() * 3, (rng() - 0.5) * 0.4); g.add(s); }
@@ -92,7 +102,7 @@ function tickLive(it, L, dt) { L.t += dt;
   const F = L.fall, len = it.s; F.t += dt;
   if (!F.land || F.t - F.land < 1.2) { F.w += (3.2 * Math.sin(F.a) + 0.2) * dt; F.a += F.w * dt;
     if (F.a >= F.max) { F.a = F.max; if (!F.land) { F.land = F.t; F.w = -F.w * 0.16; sfx('crash', it);
-      for (let k = 2; k <= 8; k += 2) dustPuff(new THREE.Vector3(it.x + F.fx * len * k / 10, groundY(it.x + F.fx * len * k / 10, it.z + F.fz * len * k / 10), it.z + F.fz * len * k / 10), 10);
+      for (let k = 2; k <= 8; k += 2) thud(it.x + F.fx * len * k / 10, it.z + F.fz * len * k / 10, 10);
       if (Math.hypot(it.x - player.x, it.z - player.z) < 25) player.shake = 0.3; } else F.w = 0; } }
   L.g.rotation.set(0, 0, 0); L.g.quaternion.setFromAxisAngle(F.axis, F.a);
   if (F.land && F.t - F.land > 1.6) { if (!F.broke) { F.broke = true; for (let k = 1; k <= 7; k += 2) dustPuff(new THREE.Vector3(it.x + F.fx * len * k / 10, groundY(it.x + F.fx * len * k / 10, it.z + F.fz * len * k / 10), it.z + F.fz * len * k / 10), 12);

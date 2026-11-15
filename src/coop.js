@@ -3,7 +3,7 @@
 // who wins a hit. Each game moves its own player and works out its own attacks, then tells the host what it hit.
 // Each game sends its player 15 times a second; the host sends every enemy 12 times a second.
 import * as THREE from 'three';
-import { CHARS, ENEMY, SEED_TEXT, params } from './config.js';
+import { CHARS, ENEMY, SEED_TEXT, params, JOINER } from './config.js';
 import { groundY } from './world.js';
 import { caches } from './buildings.js';
 import { placed } from './props.js';
@@ -11,7 +11,7 @@ import { markDirty } from './scatter.js';
 import { buildCharacter, eatPose } from './characters.js';
 import { nameTags } from './effects.js';
 import { sfx } from './audio.js';
-import { net, send as post, flush, onMessage } from './net.js';
+import { net, netReady, send as post, flush, onMessage } from './net.js';
 import { logEvent } from './playlog.js';
 import { checkMsg, onCheck } from './watch.js';
 import { deepMsg, tickGhostDeep, dropGhostDeep } from './water.js';
@@ -19,9 +19,10 @@ import { day, setDay } from './daynight.js';
 import { builtMsg, addBuilt, onBuildReq, onBuilt, onNoBuild } from './craft.js';
 import { felled, applyFelled, onChop, onFell, onShake } from './harvest.js';
 import { dropFrom } from './arrows.js';
-import { onTearReq, onGateReq, onGone, onBst } from './build.js';
-import { player, enemies, spawnEnemy, hitEnemy, charm, scare, crateOpen, smashCrate, hurtPlayer, log, fireShot, deployTurret, slash, gameOver, startGame, isRunning, pickups, addPickup, scene3, gotPickup, turrets, applyUp, upBits } from './game.js';
+import { onTearReq, onGateReq, onGone, onBst, onFixReq } from './build.js';
+import { player, score, enemies, spawnEnemy, hitEnemy, charm, scare, crateOpen, smashCrate, hurtPlayer, log, fireShot, deployTurret, slash, gameOver, startGame, isRunning, pickups, addPickup, scene3, gotPickup, turrets, applyUp, upBits } from './game.js';
 
+export const RIVAL = '#ff5a48'; // (slice 33: a rival's name tag and score in free-for-all)
 export const others = new Map(); // id -> { id, c, name, x, y, z, f, hp, mx, down, out, rv, rt, mesh, seen }
 export const coop = () => others.size > 0;
 // a new game or the menu forgets the other players (a stale avatar kept its death pose into the next game: review, slice 10)
@@ -29,7 +30,7 @@ export function clearOthers() { for (const o of others.values()) { scene3()?.rem
 // a host with nobody joined sends nothing
 export function send(to, msg) { if (net.role === 'join' || others.size) post(to, msg); }
 export const joining = () => net.role === 'join';
-export const gone = (p) => !!(p.dead || p.down > 0 || p.out);
+export const gone = (p) => !!(p.dead || p.down > 0 || p.out); // (a hidden window's player is not gone: what is already on them still bites, so hiding is no pause; the hunt skips them: game.js)
 // the nearest player still on their feet (enemies hunt it), or null
 export function nearestP(x, z) { let best = null, bd = 1e9;
   for (const p of everyone()) { if (gone(p)) continue; const d = Math.hypot(p.x - x, p.z - z); if (d < bd) { bd = d; best = p; } } return best; }
@@ -41,6 +42,38 @@ const running = () => isRunning() && !!player.ch;
 export function hurt(p, dmg, by, from) { if (p === player) hurtPlayer(dmg, by, from); else send(p.id, { t: 'hurt', dmg, by, ...(from && { fx: +from.x.toFixed(1), fz: +from.z.toFixed(1) }) }); }
 export const salvaged = []; // [type, index] of every scrap pile and wreck salvaged, for players who join later
 export function salvagedProp(q) { const i = placed[q.type].indexOf(q); salvaged.push([q.type, i]); send('all', { t: 'salv', k: q.type, i }); }
+// ── The game's rules (slice 33, #63; Jared, 2026-11-14: "we should also have a co-op vs free for all (friendly fire on/off) mode
+// options"). The host picks them on its start menu or pause screen; every joined game plays by the host's (in the welcome, and
+// again whenever the host changes them). Co-op: players cannot hurt each other and revive a downed friend. Free-for-all
+// (Jared, the same day: "co-op and free for all should be the only modes. Friendly fire would be the same as free for all",
+// so co-op's quarter-damage friendly fire of the first build is gone): every weapon hurts everyone, nobody revives a rival, a knocked-out
+// player comes back at their bed or the camp, and each player scores (a creature 1, a rival knocked out 3)
+// Difficulty (beside the mode; a review of slice 21 found a night pack could surround the youngest players and kill the Charmer
+// in about 5 s): Easy is creatures' bites and pack sizes about 0.6 of Normal's, packs sent at a player half as often and none
+// at nightfall; Normal is slice 21's numbers; Hard is more of everything. The host's game applies it (it runs the creatures)
+export const LEVELS = { easy: { bite: 0.6, pack: 0.6, hunt: 1.6, night: false, label: 'Easy' }, normal: { bite: 1, pack: 1, hunt: 1, night: true, label: 'Normal' }, hard: { bite: 1.3, pack: 1.3, hunt: 0.75, night: true, label: 'Hard' } };
+export const rules = { ffa: false, lvl: 'normal' };
+const takeRules = (r) => { rules.ffa = !!r?.ffa; rules.lvl = LEVELS[r?.lvl] ? r.lvl : 'normal'; };
+const saved = () => { try { takeRules(JSON.parse(localStorage.getItem('iw2.rules') || '{}')); } catch { /* co-op, Normal */ } }; // (a host's last pick; a page with no server plays as before, review)
+export const level = () => LEVELS[rules.lvl] || LEVELS.normal;
+// the share of a blow one player's attack does to another
+export const pvp = () => rules.ffa ? 1 : 0;
+export const modeName = () => (rules.ffa ? 'Free-for-all' : 'Co-op') + ' · ' + level().label;
+export const modeKey = () => rules.ffa ? 'ffa' : 'coop';
+export function setRules(r) { if (joining()) return; Object.assign(rules, r); try { localStorage.setItem('iw2.rules', JSON.stringify(rules)); } catch { /* this game only */ }
+  showRules(); if (!isRunning()) return; send('all', { t: 'rules', ...rules }); logEvent('rules', { mode: modeKey(), lvl: rules.lvl }); log(`The game is now ${modeName()}.`); }
+const NOTE = { ffa: 'Every player for themselves: weapons hurt everyone, nobody revives a rival, and a knocked-out player is back at their bed or the camp. A creature scores 1, knocking out a rival 3.',
+  coop: 'A team against the wasteland: you cannot hurt each other, and you revive a friend who is down.' };
+function showRules() { const $ = (id) => document.getElementById(id);
+  for (const k in LEVELS) $('mode-' + k).classList.toggle('on', rules.lvl === k);
+  $('mode-coop').classList.toggle('on', !rules.ffa); $('mode-ffa').classList.toggle('on', rules.ffa);
+  $('modenote').textContent = NOTE[modeKey()];
+  $('pausemode').innerHTML = `Game: <b>${modeName()}</b>${joining() ? ' · the host\'s choice' : ''}`; $('pausemode').title = NOTE[modeKey()]; $('pausemode').classList.toggle('hidden', !net.role); }
+document.getElementById('mode-coop').onclick = () => setRules({ ffa: false });
+document.getElementById('mode-ffa').onclick = () => setRules({ ffa: true });
+for (const k in LEVELS) document.getElementById('mode-' + k).onclick = () => setRules({ lvl: k });
+netReady.then(() => { if (net.role === 'host' && !JOINER) saved(); document.getElementById('modes').classList.toggle('hidden', net.role !== 'host'); showRules(); }); showRules();
+
 function applySalvage(k, i) { const q = placed[k]?.[i]; if (!q) return; if (k === 'scrap') { q.gone = true; markDirty(); q.col.r = 0; q.col.vr = 0; } else q.salvaged = true; }
 
 // ── Joining: a joiner's WALK OUT asks the host first, and walks out when the host welcomes it ──
@@ -61,7 +94,7 @@ function onMsg(m, from) {
       if (!running()) { post(from, { t: 'wait' }); break; }
       post(from, { t: 'welcome', crates: caches.flatMap((c, i) => c.broken ? [[i, 2]] : c.opened ? [[i, 1]] : []), salv: salvaged, pickups: pickups.map(k => [k.id, k.kind, +k.mesh.position.x.toFixed(2), +k.mesh.position.z.toFixed(2)]),
         tur: turrets.map(q => [+q.x.toFixed(2), +q.z.toFixed(2), +q.head.rotation.y.toFixed(2), +q.life.toFixed(1)]), // turrets already out, so a late joiner sees them
-        fell: felled, built: builtMsg(), d: [day.t, day.n, day.speed], seed: SEED_TEXT }); break; // (slice 13: the time of day) // slice 11: trees felled, bushes picked, and what players built
+        fell: felled, built: builtMsg(), d: [day.t, day.n, day.speed], seed: SEED_TEXT, rules: { ...rules } }); break; // (slice 13: the time of day) // slice 11: trees felled, bushes picked, and what players built
     case 'wait': if (!waitLogged) { waitLogged = true; logEvent('join-wait'); } document.getElementById('loading').textContent = 'The host is still on the start menu: walk out there first.'; break;
     case 'welcome': if (!joinT || running()) break;
       // another world than this page built (the host rolled a new one after this page loaded): build the host's, then join
@@ -76,18 +109,19 @@ function onMsg(m, from) {
       for (const [i, s] of m.crates) { const c = caches[i]; if (!c) continue; s === 2 ? c.smash() : c.open(); }
       for (const [k, i] of m.salv) applySalvage(k, i);
       applyFelled(m.fell || []); for (const b of m.built || []) addBuilt(...b); if (m.d) setDay(...m.d);
+      takeRules(m.rules); showRules(); // (slice 33: the host's rules, before the start event logs them)
       startGame(wantCh); joinT = 0; for (const [id, kind, x, z] of m.pickups) addPickup(id, kind, x, z, true);
       for (const [x, z, f, life] of m.tur || []) { deployTurret(x, z, f, true); turrets.at(-1).life = life; } break;
     case 'p': { let o = others.get(from); // a player's state
       if (!o) { if (!running() && net.role === 'join') break; o = { id: from, c: m.c, x: m.x, y: m.y, z: m.z, f: m.f, mesh: buildCharacter(CHARS[m.c]), down: 0, out: 0 }; o.name = CHARS[m.c].player;
-        o.mesh.userData.ring.visible = false; scene3().add(o.mesh); others.set(from, o); log(from === net.host && net.role === 'join' ? `You joined ${o.name}'s game (${CHARS[m.c].title}).` : `${o.name} (${CHARS[m.c].title}) joined the game.`); logEvent('coop-in', { who: o.name, host: from === net.host || undefined }); }
+        o.mesh.userData.ring.visible = false; scene3().add(o.mesh); others.set(from, o); log(from === net.host && net.role === 'join' ? `You joined ${o.name}'s game (${CHARS[m.c].title}). ${modeName()}.` : `${o.name} (${CHARS[m.c].title}) joined the game.`); logEvent('coop-in', { who: o.name, host: from === net.host || undefined }); }
       if (o.c !== m.c) { scene3().remove(o.mesh); o.mesh = buildCharacter(CHARS[m.c]); o.mesh.userData.ring.visible = false; scene3().add(o.mesh); o.c = m.c; o.name = CHARS[m.c].player; o.u = 0; }
       if ((m.u || 0) !== (o.u || 0)) { o.u = m.u || 0; applyUp(o.mesh, CHARS[o.c].id, !!(o.u & (1 << o.c))); } // slice 12: their upgrade shows here too
       const wasDown = o.down > 0;
       track(o, from, m.ts ?? performance.now(), m.x, m.y, m.z, m.f);
-      Object.assign(o, { hp: m.hp, mx: m.mx, down: m.dn, out: m.out, rv: m.rv, rt: m.rt, sw: m.sw, g: m.g, ea: m.ea, dq: m.dq, sl: m.sl, seen: performance.now() });
-      if (m.dn > 0 && !wasDown) { o.mesh.userData.anim.die(); log(`${o.name} is down! Stand close and hold E (B on a pad) to revive them.`); }
-      if (!(m.dn > 0) && wasDown && !m.out) { o.mesh.userData.anim.revive(); log(`${o.name} is back up.`); }
+      Object.assign(o, { k: m.k || 0, pk: m.pk || 0, hp: m.hp, mx: m.mx, down: m.dn, out: m.out, rv: m.rv, rt: m.rt, sw: m.sw, g: m.g, ea: m.ea, dq: m.dq, sl: m.sl, seen: performance.now() });
+      if (m.dn > 0 && !wasDown) { o.mesh.userData.anim.die(); log(rules.ffa ? `${o.name} is knocked out.` : `${o.name} is down! Stand close and hold E (B on a pad) to revive them.`); }
+      if (!(m.dn > 0) && wasDown && !m.out) { o.mesh.userData.anim.revive(); log(rules.ffa ? `${o.name} is back in the game.` : `${o.name} is back up.`); }
       if (m.out && !o.wasOut) { o.wasOut = true; log(`${o.name} is out of the game.`); } o.mesh.visible = !m.out; break; }
     case 'left': { const o = others.get(from); clocks.delete(from); dropGhostDeep(from); if (o) { scene3().remove(o.mesh); others.delete(from); log(`${o.name} left the game.`); logEvent('coop-out', { who: o.name }); }
       if (from === net.host && running()) { net.host = null; gameOver('The host\'s game ended.'); } break; }
@@ -95,7 +129,9 @@ function onMsg(m, from) {
       if (m.r) slash(new THREE.Vector3(m.d[0], 0, m.d[1]), m.r, o); break; }
     case 'shot': { const s = fireShot(new THREE.Vector3(...m.o), new THREE.Vector3(...m.d), 0, m.k, !!m.h, false, m.u ? (m.k === 'ranger' ? 'boom' : 'aura') : true); s.owner = others.get(from); break; } // seen, not felt
     case 'tur': deployTurret(m.x, m.z, m.f, true); break;
-    case 'hurt': hurtPlayer(m.dmg, m.by, m.fx != null ? { x: m.fx, z: m.fz } : null); break;
+    case 'hurt': hurtPlayer(m.dmg, m.by, m.fx != null ? { x: m.fx, z: m.fz } : null, m.by === 'player' ? from : null); break; // (slice 33: another player's blow says whose)
+    case 'ko': logEvent('ko', { who: m.n, mode: modeKey() }); player.pk = (player.pk || 0) + 1; log(`You knocked out ${m.n}! (+3)`); sfx('rally', null, 0.6); break; // slice 33: a rival this game knocked out
+    case 'rules': if (from === net.host && joining()) { takeRules(m); showRules(); logEvent('rules', { mode: modeKey(), lvl: rules.lvl }); log(`The host changed the game: ${modeName()}.`); } break;
     case 'log': log(m.s); break;
     case 'gotc': crateOpen(null, null, m.got); break; // the host opened a crate for this player: its loot
     case 'got': gotPickup(m.kind); break;
@@ -104,6 +140,9 @@ function onMsg(m, from) {
     case 'crated': { const c = caches[m.i]; if (c && !c.opened) c.open(); break; }
     case 'smashed': { const c = caches[m.i]; if (c && !c.broken) c.smash(); break; }
     case 'loot': if (joining() && running()) addPickup(m.id, m.kind, m.x, m.z, false, m.v); break;
+    case 'claim': if (!joining()) { const i = pickups.findIndex(k => k.id === m.id), o = others.get(from); // (slice 21: a joined player touched it first)
+      if (i < 0) { send(from, { t: 'take', id: m.id }); break; } // (gone already: the claimer drops its copy)
+      if (o && !gone(o) && !(pickups[i].kind === 'ammo' && CHARS[o.c]?.id !== 'gunslinger')) { send(from, { t: 'got', kind: pickups[i].kind }); scene3().remove(pickups[i].mesh); pickups.splice(i, 1); send('all', { t: 'take', id: m.id }); } } break;
     case 'take': { const i = pickups.findIndex(k => k.id === m.id); if (i >= 0) { scene3().remove(pickups[i].mesh); pickups.splice(i, 1); } break; }
     case 'end': if (running()) gameOver(); break;
     // the host's side of another player's actions
@@ -117,8 +156,8 @@ function onMsg(m, from) {
     // a game whose window was hidden (a tab switch, a minimised window, a closed lid) stops: its browser stops drawing it.
     // The host's stopping holds the whole world (2026-11-04: the host's window went to the background and a joined
     // Gunslinger shot a frozen bog lurker 21 times for nothing), so every game says when it goes and comes back.
-    case 'away': { const o = others.get(from); if (!o || !!o.away === !!m.on) break; o.away = !!m.on;
-      log(m.on ? `${o.name}'s game went into the background${from === net.host ? ': the world waits until it is back.' : '.'}` : `${o.name}'s game is back${from === net.host ? ': the world moves again.' : '.'}`); break; }
+    case 'away': { const o = others.get(from); if (!o || !!o.away === !!m.on) break; o.away = !!m.on; logEvent('away', { who: o.name, on: m.on ? 1 : 0, host: from === net.host || undefined }); // (slice 21: a joined player's world stood still unrecorded)
+      log(m.on ? `${o.name}'s game went into the background.` : `${o.name}'s game is back.`); break; } // (slice 21: a hidden host's world runs on, main.js bgClock)
     // slice 11: trees, bushes and what players build are the host's (harvest.js, craft.js)
     case 'chop': if (net.role === 'host') onChop(m); break;
     case 'fell': onFell(m); break;
@@ -129,13 +168,14 @@ function onMsg(m, from) {
     // slice 12: tearing down, gates and the pieces' health and state (build.js)
     case 'tear': if (net.role === 'host') onTearReq(m, from); break;
     case 'gate': if (net.role === 'host') onGateReq(m); break;
+    case 'fix': onFixReq(m); break; // slice 32: a joined player mends a wall
     case 'gone': onGone(m); break;
     case 'bst': onBst(m); break;
   }
 }
 
 // ── The world from the host, on a joined game ──
-const ST = ['idle', 'lurk', 'emerge', 'chase', 'windup', 'recover', 'flee', 'charmed', 'siege'];
+const ST = ['idle', 'lurk', 'emerge', 'chase', 'windup', 'recover', 'flee', 'charmed', 'siege', 'drop']; // (drop: a spider on its thread, slice 22)
 function applyWorld(m, from) { const seen = new Set(); if (m.d) setDay(...m.d); // the host's clock (slice 13)
   for (const [id, type, x, z, yaw, s, hp, maxHp] of m.e) { seen.add(id); let e = enemies.find(q => q.id === id);
     if (!e) { if (hp <= 0) continue; spawnEnemy(x, z, type); e = enemies.at(-1); e.id = id; e.yaw = yaw; } // a corpse this game already cleared stays gone
@@ -168,7 +208,7 @@ function playback(q, from) { const b = q.buf, c0 = clocks.get(from); if (!b?.len
   const u = Math.min((t - a[0]) / (c[0] - a[0]), 1 + 100 / (c[0] - a[0])); let d = c[4] - a[4]; d = Math.atan2(Math.sin(d), Math.cos(d));
   return [a[1] + (c[1] - a[1]) * u, a[2] + (c[2] - a[2]) * u, a[3] + (c[3] - a[3]) * u, a[4] + d * u]; }
 // a hidden window says so, and says when it is back (see 'away' above); the play log notes both
-document.addEventListener('visibilitychange', () => { logEvent(document.hidden ? 'hidden' : 'shown'); if (net.role && running()) { send('all', { t: 'away', on: document.hidden ? 1 : 0 }); flush(); } });
+document.addEventListener('visibilitychange', () => { logEvent(document.hidden ? 'hidden' : 'shown'); player.away = document.hidden && !!net.role; if (net.role && running()) { send('all', { t: 'away', on: document.hidden ? 1 : 0 }); flush(); } });
 export const deliver = (m, from) => onMsg(m, from); // (for the checks: a message as if it came over the network)
 
 // ── Every frame: other players move smoothly to where they were a moment ago; this game sends its own ──
@@ -183,13 +223,14 @@ export function tickCoop(dt) {
     eatPose(o.mesh, o.ea ? 0.9 : 0); // a friend eating (slice 12)
     tickGhostDeep(o.id, o.out ? null : o.dq, dt); // the serpent hunting them, if one is (slice 13)
     // the tag sits just over the head, or just over the body while they are down, with the revive's progress as its bar
-    const dn = o.down > 0; if (!o.out) tags.push({ p: new THREE.Vector3(o.x, o.y + (dn ? 0.75 : 2.02), o.z), text: dn ? `${o.name} · DOWN ${Math.ceil(o.down)} s${o.rt ? ' · reviving' : ' · hold E to revive'}` : o.name + (o.sl ? ' · asleep' : ''),
-      color: dn ? '#ff8a6a' : '#' + CHARS[o.c].color.toString(16).padStart(6, '0'), frac: dn ? (o.rt || 0) / 100 : Math.max(0, o.hp / o.mx), bar: true, fill: dn ? 'linear-gradient(#ffd27a,#e08a2a)' : null }); }
+    // (slice 33: in free-for-all a rival's tag is in the rivals' red, with their score, and nobody revives them)
+    const dn = o.down > 0; if (!o.out) tags.push({ p: new THREE.Vector3(o.x, o.y + (dn ? 0.75 : 2.02), o.z), text: rules.ffa ? `${o.name} · ${dn ? 'KNOCKED OUT' : '★ ' + score(o)}` : dn ? `${o.name} · DOWN ${Math.ceil(o.down)} s${o.rt ? ' · reviving' : ' · hold E to revive'}` : o.name + (o.sl ? ' · asleep' : ''),
+      color: rules.ffa ? (dn ? '#c86a5a' : RIVAL) : dn ? '#ff8a6a' : '#' + CHARS[o.c].color.toString(16).padStart(6, '0'), frac: dn ? (o.rt || 0) / 100 : Math.max(0, o.hp / o.mx), bar: true, fill: dn ? 'linear-gradient(#ffd27a,#e08a2a)' : null }); }
   nameTags(tags);
   if (!net.role || !running()) return;
   if ((sendT += dt) >= 1 / 15 && (coop() || joining())) { sendT = 0;
     send('all', { t: 'p', ts: Math.round(performance.now()), c: CHARS.indexOf(player.ch), x: +player.x.toFixed(2), y: +player.y.toFixed(2), z: +player.z.toFixed(2), f: +player.faceYaw.toFixed(2), hp: Math.round(player.hp), mx: player.maxHp,
-      dn: +(player.down || 0).toFixed(1), out: player.out ? 1 : 0, rv: player.rv ? 1 : 0, rt: Math.round((player.revT || 0) / 2.5 * 100), sw: player.swim ? 1 : 0, g: player.onGround ? 1 : 0, u: upBits(), ea: player.eat ? 1 : 0, dq: deepMsg(), sl: player.sleep ? 1 : 0 }); }
+      dn: +(player.down || 0).toFixed(1), out: player.out ? 1 : 0, k: player.kills, pk: player.pk || 0, rv: player.rv ? 1 : 0, rt: Math.round((player.revT || 0) / 2.5 * 100), sw: player.swim ? 1 : 0, g: player.onGround ? 1 : 0, u: upBits(), ea: player.eat ? 1 : 0, dq: deepMsg(), sl: player.sleep ? 1 : 0 }); }
   if (net.role === 'host' && coop() && (worldT += dt) >= 1 / 12) { worldT = 0; send('all', worldMsg()); }
   if (net.role === 'host' && coop() && (chkT += dt) >= 10) { chkT = 0; send('all', checkMsg()); } // slice 13d: drift (watch.js)
   flush();
