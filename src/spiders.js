@@ -15,7 +15,7 @@
 import * as THREE from 'three';
 import { SEED, HALF, SAFE_R, WATER_Y, ENEMY } from './config.js';
 import { groundY, biomeAt, slopeAt } from './world.js';
-import { nearColliders, colR, placed, addCollider } from './props.js';
+import { nearColliders, colR, placed, addCollider, floorY } from './props.js';
 import { buildings } from './plan.js';
 import { day, DAY_S, nightK } from './daynight.js';
 import { sfx } from './audio.js';
@@ -52,8 +52,8 @@ function webMat() { if (WM) return WM;
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
   return (WM = new THREE.MeshStandardMaterial({ map: t, color: 0xf2f0e8, transparent: true, depthWrite: false, side: THREE.DoubleSide, roughness: 0.45, polygonOffset: true, polygonOffsetFactor: -4, emissive: 0x302e2a })); } // (a faint glow of its own, so a web still shows by moonlight)
 // draped over the ground: strung a hand's width up at its rim (on stalks and stones), sagging toward the hub
-function webGeo(x, z, r) { const g = new THREE.PlaneGeometry(r * 2, r * 2, 10, 10); g.rotateX(-Math.PI / 2); const p = g.attributes.position;
-  for (let i = 0; i < p.count; i++) { const vx = p.getX(i), vz = p.getZ(i), k = Math.min(1, Math.hypot(vx, vz) / r); p.setXYZ(i, x + vx, groundY(x + vx, z + vz) + 0.04 + k * k * 0.12, z + vz); }
+function webGeo(x, z, r) { const g = new THREE.PlaneGeometry(r * 2, r * 2, 10, 10); g.rotateX(-Math.PI / 2); const p = g.attributes.position, G = floorY(x, z) > groundY(x, z) + 0.05 ? floorY : groundY; // (on a floor only when its middle is: one beside a stoop stays on the dirt)
+  for (let i = 0; i < p.count; i++) { const vx = p.getX(i), vz = p.getZ(i), k = Math.min(1, Math.hypot(vx, vz) / r); p.setXYZ(i, x + vx, G(x + vx, z + vz) + 0.04 + k * k * 0.12, z + vz); } // (a house's floor, not the dirt under it: the quality pass)
   g.computeVertexNormals(); g.computeBoundingSphere(); return g; }
 export function addWeb(x, z, { r = 1.6, life = 40, key = null, perm = null } = {}) {
   if (!scene || (key && webs.some(w => w.key === key))) return null;
@@ -64,7 +64,7 @@ export function addWeb(x, z, { r = 1.6, life = 40, key = null, perm = null } = {
 function dropWeb(i) { const w = webs[i]; scene?.remove(w.mesh); w.mesh.geometry.dispose(); webs.splice(i, 1); }
 export function clearWebs() { while (webs.length) dropWeb(webs.length - 1); }
 // how much a web slows someone at (x, z) with their feet at y: 0.4 inside one (feet on the ground), else 1
-export function webSlow(x, z, y) { for (const w of webs) if (Math.hypot(x - w.x, z - w.z) < w.r * 0.92 && y < groundY(x, z) + 0.7) return 0.4; return 1; }
+export function webSlow(x, z, y) { for (const w of webs) if (Math.hypot(x - w.x, z - w.z) < w.r * 0.92 && y < floorY(x, z) + 0.7) return 0.4; return 1; }
 
 // ── Nests ──
 let SITES = null;
@@ -151,8 +151,8 @@ export function tickSpiders(dt, { scene: sc, enemies, players, host, spawn, log,
     if (e.state === 'drop' && !e.dead) { const H = e.dropTop ??= dropHeightAt(e.x, e.z); /* (a joined game is not sent the height: it finds the same tree or wall) */ e.dropT = (e.dropT ?? 0) + dt; let h = H;
       if (e.dropT > 0.35) { h = Math.max(1.3, H - (e.dropT - 0.35) * 9); if (h <= 1.3) { e.hangT = (e.hangT ?? 0) + dt; h = 1.3 + Math.sin(e.hangT * 13) * 0.07 * Math.max(0, 1 - e.hangT / 0.7); if (host && e.hangT > 0.75) { e.state = 'chase'; e.fallV = 0; } } }
       e.dropH = h; }
-    else if (e.dropH > 0) { e.fallV = (e.fallV ?? 0) + 9.8 * dt; e.dropH = Math.max(0, e.dropH - e.fallV * dt); if (e.dropH === 0) { dustPuff(new THREE.Vector3(e.x, groundY(e.x, e.z), e.z), 10); sfx('thud', e, 0.5); }
-      if (e.dead) e.mesh.position.y = groundY(e.x, e.z) + e.dropH; } // (killed on its thread: it falls; game.js does not move a corpse)
+    else if (e.dropH > 0) { e.fallV = (e.fallV ?? 0) + 9.8 * dt; e.dropH = Math.max(0, e.dropH - e.fallV * dt); if (e.dropH === 0) { dustPuff(new THREE.Vector3(e.x, floorY(e.x, e.z), e.z), 10); sfx('thud', e, 0.5); }
+      if (e.dead) e.mesh.position.y = floorY(e.x, e.z) + e.dropH; } // (killed on its thread: it falls; game.js does not move a corpse)
     const want = e.state === 'drop' && !e.dead && !e.gone && e.dropH > 0.05; let th = threads.get(e);
     if (want) { if (!th) { th = new THREE.Mesh(threadGeo(), threadMat()); threads.set(e, th); scene.add(th); }
       const a = e.mesh.userData.spinneret.getWorldPosition(new THREE.Vector3()), top = groundY(e.x, e.z) + e.dropTop + 0.8, L = Math.max(0.05, top - a.y);

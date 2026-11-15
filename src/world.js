@@ -333,13 +333,15 @@ export function canyonAt(x, z) { const i = Math.round((x + HALF) / CELL), j = Ma
 export function slopeAt(x, z) { const e = 1.5; return Math.hypot(groundY(x + e, z) - groundY(x - e, z), groundY(x, z + e) - groundY(x, z - e)) / (2 * e); }
 export function isWet(x, z) { const i = Math.round((x + HALF) / CELL), j = Math.round((z + HALF) / CELL);
   return WET[Math.min(SEG, Math.max(0, j)) * N + Math.min(SEG, Math.max(0, i))] === 1; }
-export function findBiome(b, minR = 0) { // a dry, walkable spot well inside a region of this biome, nearest the spawn (at least minR out)
+export function findBiome(b, minR = 0, edge = 120) { // a dry, walkable spot well inside a region of this biome, nearest the spawn (at least minR out)
   let best = null, bd = 1e9;
-  for (let z = -HALF + 120; z < HALF - 120; z += 8) for (let x = -HALF + 120; x < HALF - 120; x += 8) {
+  for (let z = -HALF + edge; z < HALF - edge; z += 8) for (let x = -HALF + edge; x < HALF - edge; x += 8) {
     if (biomeAt(x, z) !== b || groundY(x, z) < WATER_Y + 0.4 || slopeAt(x, z) > 0.3) continue;
     if (biomeAt(x + 30, z) !== b || biomeAt(x - 30, z) !== b || biomeAt(x, z + 30) !== b || biomeAt(x, z - 30) !== b) continue;
     const d = Math.hypot(x, z); if (d >= minR && d < bd && reachable(x, z)) { bd = d; best = { x, z }; } } // (slice 13c: never a plateau nobody can climb)
-  return best; }
+  // (the quality pass, November 15, 2026: none 120 m in from the world's edge, look again out to 40 m from it, the same test for a
+  // spot; silent-fox-76's only flat, reachable Frostline lies there. A world that found one finds the same one as before)
+  return best || (edge > 40 ? findBiome(b, minR, 40) : null); }
 // Forest stands: the same mask that lays forest floor in the terrain (grass biome), so trees stand on leaf litter.
 export function forestAt(x, z) { return smooth(0.42, 0.62, fbm(x * 0.012 + 40, z * 0.012, 3)); }
 // Ground a player can get to from the camp on foot (or swimming), slice 13c: a flood over the 2 m grid where each step

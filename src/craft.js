@@ -36,7 +36,7 @@ export const nextBuiltId = () => ++builtN;
 export const benchNear = (x, z) => built.some(b => b.key === 'craftbench' && Math.hypot(b.x - x, b.z - z) < BENCH_R);
 export const bedNear = (x, z, r = 2.4) => built.find(b => b.key === 'bed' && Math.hypot(b.x - x, b.z - z) < r);
 // the heal spots (built campfires mend like the camp's) and the light spots (slice 13 lights the night with them)
-export const fireSpots = () => built.filter(b => b.key === 'campfire').map(b => ({ x: b.x, z: b.z, r: 5 }));
+export const fireSpots = () => built.filter(b => b.key === 'campfire').map(b => ({ x: b.x, y: b.y, z: b.z, r: 5 })); // (y: an upstairs fire warms its own floor, the quality pass)
 export const lightSpots = () => built.filter(b => b.key === 'campfire' || b.key === 'torch' || b.key === 'wall_torch').map(b => ({ x: b.x, y: b.y + (b.key === 'torch' ? 1.55 : b.key === 'wall_torch' ? 0.35 : 0.9), z: b.z, key: b.key === 'campfire' ? 'campfire' : 'torch' }));
 
 // where a build goes and whether it fits there: build.js (the grid); re-exported for the test hooks

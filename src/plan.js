@@ -24,10 +24,10 @@ const deep = (x, z, b, r) => [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]].every(([
 // the nearest such spot to the centre, at least minR out, in biome b, well clear of everything planned so far
 // (slice 13c: a generated world with no such spot gets a second, looser look: nearer the biome's edge, closer to its
 // neighbours and 20 m nearer in; the classic world finds every site on the first)
-function findSite(b, minR, r, minY, loose = false) { let best = null, bd = 1e9; const edge = loose ? r + 4 : r + 12, gap = loose ? r + 14 : r + 30, mr = loose ? minR - 20 : minR;
+function findSite(b, minR, r, minY, loose = false, ok = null) { let best = null, bd = 1e9; const edge = loose ? r + 4 : r + 12, gap = loose ? r + 14 : r + 30, mr = loose ? minR - 20 : minR;
   for (let z = -HALF + 70; z < HALF - 70; z += 8) for (let x = -HALF + 70; x < HALF - 70; x += 8) { const d = Math.hypot(x, z);
-    if (d < mr || d >= bd || !deep(x, z, b, edge) || !clearOf(x, z, gap) || !level(x, z, r, minY)) continue; best = { x, z }; bd = d; }
-  return best || (loose ? null : findSite(b, minR, r, minY, true)); }
+    if (d < mr || d >= bd || !deep(x, z, b, edge) || !clearOf(x, z, gap) || !level(x, z, r, minY) || (ok && !ok(x, z))) continue; best = { x, z }; bd = d; }
+  return best || (loose ? null : findSite(b, minR, r, minY, true, ok)); }
 // a building record: its frame (heading a: local +x is world (cos a, sin a), local -z is its front), footprint and parts
 function bld(kind, x, z, a, o) { const b = { kind, x, z, a, ca: Math.cos(a), sa: Math.sin(a), y: groundY(x, z), seed: R() * 100, doors: [], walls: [], ...o };
   buildings.push(b); sites.push({ x, z, r: Math.hypot(b.w, b.d) / 2 + 1.5 }); return b; }
@@ -52,6 +52,18 @@ function kindAt(style, x, z, a, o = {}) { const [x0, x1, z0, z1] = KINDS[style],
   for (let u = 0; u <= 1; u += 0.25) for (let v = 0; v <= 1; v += 0.25) { const [wx, wz] = toW(b, x0 + 0.6 + (x1 - x0 - 1.2) * u, z0 + 0.6 + (z1 - z0 - 1.2) * v); g = Math.max(g, groundY(wx, wz)); }
   b.ground = g; b.y = g + (style === 'stilt' ? 1.9 : 0.15); return b; }
 
+// the quality pass (November 15, 2026): a kind at (x, z) heading a is not dug into a bank. Its floor as kindAt sets it, and out
+// from every wall (a door can be on any side) the ground rises at most 0.2 m plus 0.6 m a metre, to 2.4 m out: a slope walked up
+// with room to spare (salt-tor-85's townhouse opened its only door into a hillside 6 m above the doorstep). The stilt house
+// stands over the ground on its legs
+function opensOut(style, x, z, a) { if (style === 'stilt') return true; const [x0, x1, z0, z1] = KINDS[style], cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, ca = Math.cos(a), sa = Math.sin(a);
+  const bx = x - (cx * ca - cz * sa), bz = z - (cx * sa + cz * ca), W = (lx, lz) => groundY(bx + lx * ca - lz * sa, bz + lx * sa + lz * ca); let g = -1e9;
+  for (let u = 0; u <= 1; u += 0.25) for (let v = 0; v <= 1; v += 0.25) g = Math.max(g, W(x0 + 0.6 + (x1 - x0 - 1.2) * u, z0 + 0.6 + (z1 - z0 - 1.2) * v));
+  for (const o of [0.8, 1.6, 2.4]) { const top = g + 0.15 + 0.2 + 0.6 * o;
+    for (let u = x0; u <= x1; u += 0.5) if (W(u, z0 - o) > top || W(u, z1 + o) > top) return false;
+    for (let v = z0; v <= z1; v += 0.5) if (W(x0 - o, v) > top || W(x1 + o, v) > top) return false; }
+  return true; }
+
 export function planBuildings() { const adds = []; // props for props.js to place: [type, item]
   // the town: lots on the ruins' street grid (u along (0.92, 0.39)), each house facing its nearer street
   const T = findSite('ruins', 250, 30);
@@ -69,7 +81,7 @@ export function planBuildings() { const adds = []; // props for props.js to plac
       else if (n > 15) break;
       else if (R() < 0.2) { for (let k = 0; k < 4; k++) adds.push(['ruinwall', { x: L.x + (R() - 0.5) * 9, z: L.z + (R() - 0.5) * 9, s: 0.9 + R() * 0.3, ry: a + (k % 2) * Math.PI / 2, v: k % 2 }]); if (!CLASSIC) sites.push({ x: L.x, z: L.z, r: 7 }); continue; } // a lot gone to bare wall stubs (slice 36: kept clear of, in a random world, so no house's door opens onto them)
       else if (!CLASSIC && (() => { for (let j = 0; j < TOWN_KINDS.length; j++) { const k = TOWN_KINDS[(tk + j) % TOWN_KINDS.length], r = reach(k);
-        if (!level(L.x, L.z, r - 1.5, WATER_Y + 1, 0.25) || !clearOf(L.x, L.z, r + 2.0)) continue; /* (room between neighbours: no window looks onto a wall a hand's width away) */ kindAt(k, L.x, L.z, a); tk += j + 1; return true; } return false; })()) {} // (slice 36: a kind, the next in turn that fits the lot)
+        if (!level(L.x, L.z, r - 1.5, WATER_Y + 1, 0.25) || !clearOf(L.x, L.z, r + 2.0) || !opensOut(k, L.x, L.z, a)) continue; /* (room between neighbours: no window looks onto a wall a hand's width away) */ kindAt(k, L.x, L.z, a); tk += j + 1; return true; } return false; })()) {} // (slice 36: a kind, the next in turn that fits the lot)
       else { const intact = roofed < 2 || (roofed < 3 && R() < 0.3); if (intact) roofed++;
         bld('house', L.x, L.z, a, { w: 6.5 + R() * 2, d: 5.5 + R() * 1.6, h: 3 + R() * 0.6, mat: R() < 0.3 ? 'plaster' : 'wall', ruin: intact ? 0 : 0.35 + R() * 0.55, roof: intact ? 'gable' : 'fallen', furnish: intact ? 'home' : 'rubble' }); }
       n++; }
@@ -90,9 +102,10 @@ export function planBuildings() { const adds = []; // props for props.js to plac
   const LAND_KINDS = { grass: 'farmhouse', tundra: 'aframe', desert: 'courtyard', swamp: 'stilt' }; // (slice 36, random worlds; where a kind finds no room, the old house)
   // (a random world whose land has no level site at all, even at findSite's second look, gets the old house on the gentlest reachable ground
   // well inside it, as the frozen outpost does: jade-ember-89's Frostline pad sat on a mountain no one could climb, November 15, 2026)
-  for (const [bio, o] of LANDMARKS) { const k = !CLASSIC && LAND_KINDS[bio], ks = k && findSite(bio, 250, reach(k), o.minY),
-    s = ks || findSite(bio, 250, 7, o.minY) || (!CLASSIC && spot((x, z) => groundY(x, z) > (o.minY ?? WATER_Y + 1) && slopeAt(x, z) < 0.25 && deep(x, z, bio, 8), 220, 16));
-    if (ks) kindAt(k, s.x, s.z, R() * 6.283, { biome: bio }); else if (s) bld('house', s.x, s.z, R() * 6.283, { ...o, biome: bio }); }
+  // (the quality pass: a kind turned a quarter at a time until it is not dug into a bank; facing no way that is not, the old house)
+  for (const [bio, o] of LANDMARKS) { const k = !CLASSIC && LAND_KINDS[bio], ks = k && findSite(bio, 250, reach(k), o.minY), a = ks ? R() * 6.283 : 0, ka = ks ? [0, 1, 2, 3].map(q => a + q * Math.PI / 2).find(h => opensOut(k, ks.x, ks.z, h)) : undefined,
+    s = (ka !== undefined && ks) || findSite(bio, 250, 7, o.minY) || (!CLASSIC && spot((x, z) => groundY(x, z) > (o.minY ?? WATER_Y + 1) && slopeAt(x, z) < 0.25 && deep(x, z, bio, 8), 220, 16));
+    if (ka !== undefined) kindAt(k, s.x, s.z, ka, { biome: bio }); else if (s) bld('house', s.x, s.z, ks ? a : R() * 6.283, { ...o, biome: bio }); }
   // raider camps (IW1: brawlers, shooters and heavies round a fire, the cache locked while any of them lives)
   for (const [bio, crew] of [['waste', ['brawler', 'brawler', 'shooter']], ['ruins', ['brawler', 'shooter', 'heavy']], ['desert', ['shooter', 'brawler', 'heavy', 'shooter']]]) {
     // (slice 13c: if a generated world's own biome has no room left, even at a second look, one of the other dry lands)
@@ -122,22 +135,30 @@ const inPass = (x, z, w) => PASSES.some(q => { const along = x * Math.cos(q.a) +
 function spot(ok, minR, gap) { let best = null, bd = 1e9;
   for (let z = -HALF + 70; z < HALF - 70; z += 6) for (let x = -HALF + 70; x < HALF - 70; x += 6) { const d = Math.hypot(x, z);
     if (d < minR || d >= bd || !clearOf(x, z, gap) || inPass(x, z, gap) || !reachable(x, z) || !ok(x, z)) continue; best = { x, z }; bd = d; } return best; }
+// the quality pass (November 15, 2026): a place of radius r at (x, z) whose way in from the camp's side (kept clear of props, below)
+// walks back out, from 2 m inside its edge to 25 m beyond, by the walk's rule (no step up where the slope passes 1.05): a family that
+// walked down into quiet-fern-11's mushroom ring could not walk straight back out
+const wayOut = (r) => (x, z) => { const a = Math.atan2(CAMP.z - z, CAMP.x - x), c = Math.cos(a), s = Math.sin(a);
+  for (let t = r - 2; t < r + 25; t += 0.5) { const x1 = x + c * (t + 0.5), z1 = z + s * (t + 0.5); if (slopeAt(x1, z1) > 1.05 && groundY(x1, z1) > groundY(x + c * t, z + s * t) + 0.02) return false; } return true; };
 function planPlaces(adds) {
   const CLEAR = { radio: 20, plane: 27, shrooms: 13, outpost: 13, barge: 18, island: 11 }; // (props keep this far off the middle: no hoodoo hides the mast)
   const place = (kind, name, x, z, r, o = {}) => { const p = { kind, name, x, z, r, guards: [], seen: false, reached: false, heard: false, ...o }; places.push(p); if (CLEAR[kind]) sites.push({ x, z, r: CLEAR[kind] }); return p; };
   // the radio tower: a 30 m lattice mast on the Ruins' edge with the radio shack at its foot (IW1: hold Interact 10 s)
-  const rs = findSite('ruins', 260, 9) || findSite('waste', 260, 9) || findSite('desert', 260, 9);
+  const rs = findSite('ruins', 260, 9, undefined, false, wayOut(16)) || findSite('waste', 260, 9, undefined, false, wayOut(16)) || findSite('desert', 260, 9, undefined, false, wayOut(16))
+    || findSite('ruins', 260, 9) || findSite('waste', 260, 9) || findSite('desert', 260, 9); // (the quality pass: and only if none has a way back out, as before)
   if (rs) { const b = bld('radio', rs.x, rs.z, R() * 6.283, { w: 7, d: 7 }), [sx, sz] = toW(b, 0, 7.5); // the radio shack, its door toward the mast
     const sh = bld('house', sx, sz, b.a, { w: 4.4, d: 3.6, h: 2.6, mat: 'planks', ruin: 0, roof: 'gable', tint: 0x4e5a52, furnish: 'radio' }), [x, z] = toW(sh, 0, sh.d / 2 - 1);
     place('radio', 'The Radio Tower', rs.x, rs.z, 16, { b, shack: sh, radio: { x, z }, guards: SPIDER ? [SPIDER, SPIDER, SPIDER] : ['wolf', 'dust_hound', 'rat', 'rat'] }); }
   // the crashed plane: an airliner broken in three in the Waste or the Glass Desert, dust hounds nesting in the wreck (at real scale,
   // 38 m long with 34 m of wing: the footprint holds the pieces, the debris and the furrow's start; the furrow runs on back along
   // the frame's +z, kept clear of rocks too)
-  const ps = findSite('waste', 280, 18) || findSite('desert', 280, 18) || spot((x, z) => groundY(x, z) > WATER_Y + 1 && slopeAt(x, z) < 0.25 && ['waste', 'desert', 'ruins'].some(q => deep(x, z, q, 14)), 220, 32);
+  const ps = findSite('waste', 280, 18, undefined, false, wayOut(26)) || findSite('desert', 280, 18, undefined, false, wayOut(26)) || spot((x, z) => groundY(x, z) > WATER_Y + 1 && slopeAt(x, z) < 0.25 && ['waste', 'desert', 'ruins'].some(q => deep(x, z, q, 14)) && wayOut(26)(x, z), 220, 32)
+    || findSite('waste', 280, 18) || findSite('desert', 280, 18) || spot((x, z) => groundY(x, z) > WATER_Y + 1 && slopeAt(x, z) < 0.25 && ['waste', 'desert', 'ruins'].some(q => deep(x, z, q, 14)), 220, 32);
   if (ps) { const b = bld('plane', ps.x, ps.z, R() * 6.283, { w: 38, d: 50 }); place('plane', 'The Crashed Plane', ps.x, ps.z, 26, { b, guards: ['dust_hound', 'dust_hound', 'dust_hound', 'dust_hound'] });
     for (const lz of [36, 48, 60]) { const [x, z] = toW(b, -1 + 1.4 * Math.sin((lz - 8) / 30), lz); sites.push({ x, z, r: 6 }); } }
   // the frozen outpost: a snowed-in polar research station in the Frostline with a heater that mends, ice crawlers round it
-  const os = findSite('tundra', 250, 8) || spot((x, z) => groundY(x, z) > WATER_Y + 1 && slopeAt(x, z) < 0.3 && deep(x, z, 'tundra', 8), 220, 16);
+  const os = findSite('tundra', 250, 8, undefined, false, wayOut(14)) || spot((x, z) => groundY(x, z) > WATER_Y + 1 && slopeAt(x, z) < 0.3 && deep(x, z, 'tundra', 8) && wayOut(14)(x, z), 220, 16)
+    || findSite('tundra', 250, 8) || spot((x, z) => groundY(x, z) > WATER_Y + 1 && slopeAt(x, z) < 0.3 && deep(x, z, 'tundra', 8), 220, 16);
   if (os) { const b = bld('house', os.x, os.z, R() * 6.283, { w: 8, d: 6, h: 2.8, mat: 'paint', ruin: 0, roof: 'gable', tint: 0xeef3f7, furnish: 'outpost' }), [x, z] = toW(b, b.w / 2 - 1.6, b.d / 2 - 1.4); // (slice 23 polish: an 8 x 6 m red hut; the heater is buildings.js's stove, the same spot)
     place('outpost', 'The Frozen Outpost', os.x, os.z, 14, { b, heater: { x, z, r: 3.2 }, guards: ['ice_crawler', 'ice_crawler', 'ice_crawler'] }); }
   // the sunken barge: a 28 m river cargo barge run aground on the Bog's edge, its bow sunk in the water and its stern up the
@@ -150,15 +171,17 @@ function planPlaces(adds) {
       const sc = bow - 0.4 * Math.min(stern - y, 2.5) + cross + (stern - y > 3.2 ? 4 : 0); if (!best || sc < best.sc) best = { a, sc, bow, stern, cross, y }; } return best; };
   const fits = (x, z) => { const o = lie(x, z); return o.bow < WATER_Y + 0.4 && o.stern - o.y < 3.2 && o.cross < 2; };
   const shallow = (lo, hi) => (x, z) => { const y = groundY(x, z); return y >= WATER_Y + lo && y <= WATER_Y + hi && slopeAt(x, z) < 0.3; };
-  const bs = spot((x, z) => shallow(-0.5, 0.5)(x, z) && deep(x, z, 'swamp', 16) && fits(x, z), 250, 30) || spot((x, z) => shallow(-0.8, 0.9)(x, z) && deep(x, z, 'swamp', 6) && fits(x, z), 230, 24)
-    || spot((x, z) => shallow(-0.6, 0.4)(x, z) && biomeAt(x, z) !== 'swamp' && fits(x, z), 230, 24) // (a Bog with no shore: aground on a lake's edge)
-    || spot((x, z) => shallow(-0.8, 0.9)(x, z) && deep(x, z, 'swamp', 5), 230, 20) || spot((x, z) => shallow(-0.6, 0.4)(x, z), 230, 20); // (and if no shore fits it whole, any)
+  const bs = spot((x, z) => shallow(-0.5, 0.5)(x, z) && deep(x, z, 'swamp', 16) && fits(x, z) && wayOut(18)(x, z), 250, 30) || spot((x, z) => shallow(-0.8, 0.9)(x, z) && deep(x, z, 'swamp', 6) && fits(x, z) && wayOut(18)(x, z), 230, 24)
+    || spot((x, z) => shallow(-0.6, 0.4)(x, z) && biomeAt(x, z) !== 'swamp' && fits(x, z) && wayOut(18)(x, z), 230, 24) // (a Bog with no shore: aground on a lake's edge)
+    || spot((x, z) => shallow(-0.8, 0.9)(x, z) && deep(x, z, 'swamp', 5) && wayOut(18)(x, z), 230, 20) || spot((x, z) => shallow(-0.6, 0.4)(x, z) && wayOut(18)(x, z), 230, 20)
+    || spot((x, z) => shallow(-0.8, 0.9)(x, z) && deep(x, z, 'swamp', 5), 230, 20) || spot((x, z) => shallow(-0.6, 0.4)(x, z), 230, 20); // (the quality pass: and only if no shore has a way back out, the old two) // (and if no shore fits it whole, any)
   if (bs) { R(); const a = lie(bs.x, bs.z).a; // (its front, local -z, the bow down into the water; R() still drawn: what follows is as it was)
     const b = bld('barge', bs.x, bs.z, a, { w: 8, d: 30, wl: WATER_Y + (biomeAt(bs.x, bs.z) === 'swamp' ? 0.62 : 0) }); // (wl: the water it sinks in, the Bog's table or a lake's)
     place('barge', 'The Sunken Barge', bs.x, bs.z, 18, { b, guards: ['bog_lurker', 'bog_lurker', 'rat', 'rat'] }); }
   // the mushroom ring: giant glowing caps round a clearing in the Fungal Hollow, climbable as a stair; a spore cloud hangs in the
   // middle (it hurts on the ground) over the rare loot on the middle cap
-  const ms = findSite('fungal', 250, 12) || spot((x, z) => groundY(x, z) > WATER_Y + 1 && slopeAt(x, z) < 0.25 && deep(x, z, 'fungal', 12), 220, 20);
+  const ms = findSite('fungal', 250, 12, undefined, false, wayOut(13)) || spot((x, z) => groundY(x, z) > WATER_Y + 1 && slopeAt(x, z) < 0.25 && deep(x, z, 'fungal', 12) && wayOut(13)(x, z), 220, 20)
+    || findSite('fungal', 250, 12) || spot((x, z) => groundY(x, z) > WATER_Y + 1 && slopeAt(x, z) < 0.25 && deep(x, z, 'fungal', 12), 220, 20);
   if (ms) { const b = bld('shrooms', ms.x, ms.z, R() * 6.283, { w: 20, d: 20 }); place('shrooms', 'The Mushroom Ring', ms.x, ms.z, 13, { b, spore: 5, guards: ['bog_lurker', 'bog_lurker', 'rat'] }); }
   // the crater lakes (world.js shapes them): a chest at the bottom, the Thing in the deep in the water
   lakes.filter(l => l.crater).forEach((l, i) => place('crater', i ? 'The Little Crater' : 'The Crater Lake', l.x, l.z, l.rx * (1 + l.rw * 0.5), { lake: l, chest: { x: l.x, z: l.z } }));

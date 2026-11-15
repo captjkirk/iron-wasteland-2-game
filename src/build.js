@@ -19,7 +19,7 @@ import * as THREE from 'three';
 import { WATER_Y } from './config.js';
 import { RECIPES, BENCH_R } from './recipes.js';
 import { groundY, slopeAt } from './world.js';
-import { nearColliders, colR, standAt, STEP, addCollider } from './props.js';
+import { nearColliders, colR, standAt, STEP, addCollider, floorUnder } from './props.js';
 import { palisadeMesh, stoneMesh, rubbleMesh, postMesh, gateMesh, spikeMesh } from './buildmodels.js';
 import { benchMesh, bedMesh, torchMesh, wallTorchMesh } from './craftmodels.js';
 import { dustPuff, hitBurst, floatText } from './effects.js';
@@ -57,6 +57,9 @@ export function placeSpot(key, p = player, rot = mode?.rot || 0) { const aim = a
   if (isEdge(key)) [x, z] = alongX(f) ? [(Math.floor(aim.x / G) + 0.5) * G, Math.round(aim.z / G) * G] : [Math.round(aim.x / G) * G, (Math.floor(aim.z / G) + 0.5) * G];
   else [x, z] = [(Math.floor(aim.x / G) + 0.5) * G, (Math.floor(aim.z / G) + 0.5) * G];
   const y = isEdge(key) ? Math.min(...[-1, 0, 1].map(k => groundY(x + Math.cos(f) * k, z - Math.sin(f) * k))) : Math.max(groundY(x, z), standAt(x, z, p.y + STEP));
+  // (the quality pass, November 15, 2026: a wall or a gate stands on the ground; aimed at a house's floor or a deck, upstairs or down, it stood on the dirt under it)
+  if (isEdge(key) && [-1, 0, 1].some(k => { const px = x + Math.cos(f) * k, pz = z - Math.sin(f) * k; return floorUnder(px, pz, p.y) > groundY(px, pz) + 0.05; })) // (a house's floors and decks only: a low rock or rubble is spotFree's)
+    return { x, y, z, f: Math.atan2(Math.sin(f), Math.cos(f)), slot: slotOf(x, z), ...no('Walls and gates are built on open ground, not on a floor.') };
   return { x, y, z, f: Math.atan2(Math.sin(f), Math.cos(f)), slot: slotOf(x, z), ...spotFree(key, x, y, z, f) }; }
 
 // whether a piece fits there (every game checks its own ghost; the host re-checks a joined game's request with it)

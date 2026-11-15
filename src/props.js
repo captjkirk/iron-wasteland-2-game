@@ -79,6 +79,8 @@ export function standAt(x, z, y, step = STEP) { let s = -Infinity;
 const over = (x, z, fn) => { for (const f of surfaces) if (Math.abs(f.x - x) < f.r && Math.abs(f.z - z) < f.r) { const h = f.at(x, z); if (h != null) fn(h); } };
 export function headroom(x, z, y) { let s = Infinity; over(x, z, (h) => { if (h > y + 1.2 && h < s) s = h; }); return s; }
 export function slabAcross(x, z, y0, y1) { let hit = false; over(x, z, (h) => { if ((h - y0) * (h - y1) <= 0) hit = true; }); return hit; }
+export function floorUnder(x, z, y) { let s = -Infinity; over(x, z, (h) => { if (h <= y + STEP && h > s) s = h; }); return s; } // (a floor, stair or deck the feet at y stand on there; no rock or wall top)
+export const floorY = (x, z) => floorAt(x, z, groundY(x, z)); // (the ground, or a house's ground floor or deck over it: webs, falling spiders)
 export function floorAt(x, z, gy) { let s = gy; over(x, z, (h) => { if (h > s && h <= gy + 0.9) s = h; }); return s; }
 
 export const placed = {}; // type -> items (game.js salvages placed.scrap and placed.hulk)

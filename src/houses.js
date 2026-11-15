@@ -254,7 +254,7 @@ const KIND = {
   splitlevel(H, b) { const { D, W } = H, U = 2.6, M = 1.3;
     H.out('brick', [[-5, -3.8], [0, -3.8], [0, 3.8], [-5, 3.8]], U + 2.8, { 0: [D(-2.5, 2.6, 2.25, 0, { leaf: false, gaps: [[U + 0.9, U + 2.0]] }), W(-4.35, 0.7, [U + 0.9, U + 2.0]), W(-0.7, 0.7, [U + 0.9, U + 2.0])],
       1: [D(2.85, 1.2, 2.1, M, { int: true }), D(-1.35, 1.2, 2.1, U, { int: true })], 2: [W(-3.4, 1.2, [0.9, 2.05], [U + 0.9, U + 2.0]), W(-1.4, 0.9, [U + 0.9, U + 2.0])], 3: [W(2.0, 1.1, [0.9, 2.05], [U + 0.9, U + 2.0]), W(-2.0, 0.9, [1.4, 2.0], [U + 0.9, U + 2.0])] }, { inner: [1] });
-    H.out('planks', [[0, -3.8], [5, -3.8], [5, 3.8], [0, 3.8]], 2.9, { 0: [D(2.2), W(4.0, 1.4, [0.6, 2.1])], 1: [W(-1.5, 1.2), W(1.8)], 2: [W(3.5, 1.2)] }, { skip: [3], lv: M });
+    H.out('planks', [[0, -3.8], [5, -3.8], [5, 3.8], [0, 3.8]], 3.4, { 0: [D(2.2), W(4.0, 1.4, [0.6, 2.1])], 1: [W(-1.5, 1.2), W(1.8)], 2: [W(3.5, 1.2)] }, { skip: [3], lv: M });
     box(H.P, 'iron', 2.5, 1.0, 0.06, -2.5, b.y + 1.75, -3.86); // the garage's roll door, stuck half up
     H.floor([[-4.85, -0.15, -3.65, 0.15]], 0, { plinth: true, k: 'concrete' }); H.floor([[-4.85, -0.15, 0.15, 3.65]], 0, { plinth: true });
     H.floor([[0.15, 4.85, -3.65, 3.65]], M, { plinth: 0.15 });
@@ -265,7 +265,7 @@ const KIND = {
     H.stair(0.8, 0.9, '-z', 1.3, M, U, { sides: [1], landing: 1.25 }); H.floor([[-0.16, 1.45, -1.95, -0.72]], U); // half a flight up, its landing at the bedrooms' door
     box(H.P, 'inwall', 0.06, U - M - 0.22, 1.25, 1.45, b.y + (M + U - 0.22) / 2, -1.335); box(H.P, 'inwall', 1.3, U - M - 0.22, 0.06, 0.8, b.y + (M + U - 0.22) / 2, -1.95); H.rail(0.15, -1.95, 1.45, -1.95, U); // (the cupboard under the landing, closed)
     H.floor([[-4.85, -0.15, -3.65, 3.65]], U + 2.8, { k: 'ceil', th: 0.12 }); b.floors.pop();
-    H.gable(-2.5, 0, 7.6, 5, U + 2.8, 1.7, 'z', 'brick'); H.gable(2.5, 0, 7.6, 5, M + 2.9, 1.7, 'z', 'planks', { over: [-0.3, 0.45] }); // (its west side stops at the brick wing's face)
+    H.gable(-2.5, 0, 7.6, 5, U + 2.8, 1.7, 'z', 'brick'); H.gable(2.5, 0, 7.6, 5, M + 3.4, 1.7, 'z', 'planks', { over: [-0.15, 0.45] }); // (its west side stops at the brick wing's face. The quality pass: walls 0.5 m taller, so the half flight's landing under these eaves has a grown-up's headroom, and the roof meets the brick, no gap showing its tiles' edge inside)
     H.room('garage', -4.85, -0.15, -3.65, 0.15, 0); H.room('den', -4.85, -0.15, 0.45, 3.65, 0); H.room('living', 1.6, 4.85, -3.65, 0.6, M, { no: ['-x', '+z'] }); H.room('kitchen', 1.6, 4.85, 0.9, 3.65, M, { no: ['-x', '-z'] });
     H.room('bedroom', -4.85, -0.15, -3.65, 0.15, U); H.room('bedroom', -4.85, -0.15, 0.45, 3.65, U); H.cache(-4.2, 3.0, 0); },
 
