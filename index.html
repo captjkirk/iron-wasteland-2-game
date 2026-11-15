@@ -51,13 +51,6 @@
     background: radial-gradient(ellipse at center, rgba(40,28,16,.55), rgba(10,8,6,.8)); padding: 16px; box-sizing: border-box; overflow-y: auto; justify-content: safe center; }
   .overlay h1 { font-size: clamp(26px, 5vw, 46px); letter-spacing: .12em; margin: 0 0 4px; color: var(--accent); text-align: center; }
   .overlay .sub { color: var(--dim); margin-bottom: 16px; text-align: center; }
-  #cards { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; max-width: 1120px; }
-  .card { width: 168px; background: var(--panel); border: 2px solid var(--edge); border-radius: 6px; padding: 10px 12px; cursor: pointer; }
-  .card.sel { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(224,160,64,.35); }
-  .card .sw { height: 5px; border-radius: 3px; margin-bottom: 8px; }
-  .card b { display: block; font-size: 15px; }
-  .card small { color: var(--dim); display: block; margin: 2px 0 8px; }
-  .card p { margin: 0; font-size: 12px; line-height: 1.4; }
   .keys { margin-top: 12px; color: var(--dim); font-size: 12px; line-height: 1.7; text-align: center; max-width: 760px; }
   .keys kbd { color: var(--ink); border: 1px solid var(--edge); border-radius: 3px; padding: 0 4px; }
   button.go { margin-top: 14px; font: inherit; font-size: 16px; padding: 10px 28px; background: var(--accent); color: #1a120a;
@@ -69,7 +62,6 @@
   #quality { display: flex; gap: 6px; } #sens { width: 150px; accent-color: var(--accent); } #sensv { color: var(--ink); min-width: 34px; }
   .srow label { display: flex; gap: 5px; align-items: center; cursor: pointer; } .srow input[type=checkbox] { accent-color: var(--accent); }
   button.go.alt { background: var(--panel); color: var(--ink); border: 1px solid var(--edge); }
-  .card canvas.pv { width: 144px; height: 176px; margin-left: auto; margin-right: auto; display: block; border-radius: 4px; margin-bottom: 8px; background: #2a2118; }
   .qrow { margin-top: 14px; display: flex; gap: 8px; align-items: center; color: var(--dim); font-size: 12px; }
   button.q { font: inherit; font-size: 12px; padding: 4px 12px; background: var(--panel); color: var(--ink); border: 1px solid var(--edge); border-radius: 4px; cursor: pointer; }
   button.q.on { border-color: var(--accent); color: var(--accent); }
@@ -78,9 +70,7 @@
   #pause-chars { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 8px; } #pause-chars button { font-size: 14px; padding: 7px 14px; }
   #pause-chars i { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 7px; vertical-align: -1px; }
   #pause-chars button.on:disabled { opacity: 1; background: var(--accent); color: #1a120a; border-color: var(--accent); } #pause-chars button.on::after { content: ' ✓'; }
-  /* slice 33: the game's rules, the host's to pick (start menu and pause screen) */
-  #modes { margin-top: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center; color: var(--dim); font-size: 13px; max-width: 760px; }
-  #modes > span { color: var(--ink); } #modes > span.gap { margin-left: 14px; } #modes small { flex-basis: 100%; text-align: center; } #pausemode { margin: 0; } #pausemode b { color: var(--accent); font-weight: 600; }
+  #pausemode { margin: 0; } #pausemode b { color: var(--accent); font-weight: 600; }
   /* the world's seed (slice 13c): its name, a new roll, or a typed one */
   #world { margin-top: 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: center; color: var(--dim); font-size: 13px; max-width: 760px; }
   #world > span:first-child { color: var(--ink); } #world b, #pauseworld b { color: var(--accent); font-size: 18px; letter-spacing: .04em; font-weight: 600; }
@@ -123,6 +113,82 @@
   #sleep.on { opacity: 1; } #sleep div { color: var(--ink); font-size: 18px; letter-spacing: .04em; text-align: center; padding: 0 20px; }
   @media (prefers-reduced-motion: reduce) { #sleep { transition: none; } }
   @media (prefers-reduced-motion: reduce) { .chip.bump { animation: none; } #veil.show { animation-duration: 2s; } }
+  /* ── The start menu's three screens (menu.js; Jared, 2026-11-14): the world flies past behind dark glass ── */
+  #menu { display: block; padding: 0; overflow: hidden; }
+  #menu[data-step="title"] { background: radial-gradient(ellipse at 50% 45%, rgba(10,8,6,.3), rgba(10,8,6,.9)); }
+  #menu[data-step="setup"] { background: linear-gradient(90deg, rgba(10,8,6,.2) 0%, rgba(10,8,6,.45) 42%, rgba(10,8,6,.92) 60%); }
+  #menu[data-step="chars"] { background: radial-gradient(ellipse at 50% 50%, rgba(10,8,6,.3), rgba(10,8,6,.93) 72%); }
+  .step { position: absolute; inset: 0; box-sizing: border-box; padding: clamp(18px, 4vh, 40px) clamp(16px, 4vw, 48px); }
+  #menu .logo { margin: 0; font-size: clamp(44px, 9vw, 96px); line-height: .95; letter-spacing: .1em; text-align: center; color: var(--accent); text-shadow: 0 4px 24px rgba(0,0,0,.7); }
+  #menu .logo.small { font-size: clamp(32px, 5vw, 52px); text-align: left; }
+  #menu h2 { margin: 0; font-size: 13px; letter-spacing: .16em; color: var(--dim); font-weight: 600; }
+  #menu button { font: inherit; cursor: pointer; }
+  #menu button:focus-visible, #menu input:focus-visible, dialog button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .ghost { min-height: 44px; padding: 0 16px; border-radius: 8px; border: 1px solid var(--edge); background: rgba(28,22,16,.6); color: var(--ink); font-size: 14px; }
+  .ghost:hover { border-color: var(--accent); }
+  .glass { background: rgba(28,22,16,.62); -webkit-backdrop-filter: blur(14px) saturate(1.3); backdrop-filter: blur(14px) saturate(1.3); border: 1px solid rgba(240,200,140,.22); }
+  /* 1. the title */
+  #step-title { display: flex; flex-direction: column; }
+  .tcenter { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+  #title-sub { margin: 18px 0 0; color: #e8dcc0; text-shadow: 0 1px 6px #000; font-size: 16px; max-width: 760px; }
+  .press { margin-top: 40px; min-height: 60px; padding: 0 44px; border-radius: 999px; border: 1px solid rgba(240,200,140,.5); background: rgba(28,22,16,.55); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); color: var(--ink); font-size: 20px; letter-spacing: .2em; transition: transform .15s, background-color .15s; }
+  .press:hover:not(:disabled) { background: rgba(224,160,64,.22); transform: translateY(-2px); }
+  .press:disabled { opacity: .45; cursor: wait; }
+  .loadline { margin-top: 12px; min-height: 18px; color: var(--dim); font-size: 13px; }
+  .tfoot { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
+  .netline { color: #e0d2b4; font-size: 13px; max-width: 560px; line-height: 1.5; text-shadow: 0 1px 4px #000; }
+  .tbtns { display: flex; gap: 8px; margin-left: auto; }
+  /* 2. what are we playing? (ready-made nights, or set it yourself) */
+  #step-setup { display: flex; justify-content: space-between; align-items: stretch; gap: 32px; }
+  .sbrand { align-self: flex-end; display: flex; flex-direction: column; gap: 14px; max-width: 520px; } .sbrand #world { background: rgba(28,22,16,.72); }
+  .spanel { width: min(520px, 100%); display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+  #nights { display: flex; flex-direction: column; gap: 8px; }
+  .night { text-align: left; padding: 9px 14px; border-radius: 12px; color: var(--ink); background: rgba(28,22,16,.66); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); border: 2px solid rgba(240,200,140,.18); display: grid; grid-template-columns: 1fr auto; column-gap: 12px; row-gap: 3px; transition: border-color .15s, transform .15s; }
+  .night b { font-size: 16px; } .night span { grid-column: 1 / span 2; grid-row: 2; color: #d8c8a6; font-size: 12px; line-height: 1.4; } .night em { grid-column: 2; grid-row: 1; align-self: center; font-style: normal; font-size: 12px; color: var(--ink); border: 1px solid rgba(240,200,140,.35); border-radius: 999px; padding: 4px 9px; white-space: nowrap; }
+  .night:hover { border-color: rgba(240,200,140,.5); } .night.on { border-color: var(--accent); background: rgba(60,44,24,.88); box-shadow: 0 0 0 3px rgba(224,160,64,.2); }
+  .night.own span { grid-column: 1 / span 2; }
+  #modes { display: flex; flex-direction: column; gap: 8px; }
+  .mrow { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; background: rgba(28,22,16,.66); border: 1px solid rgba(240,200,140,.18); }
+  .mrow > span { width: 92px; font-size: 12px; letter-spacing: .12em; color: var(--dim); text-transform: uppercase; }
+  .seg { flex: 1; display: flex; border: 1px solid var(--edge); border-radius: 8px; overflow: hidden; }
+  .seg button { flex: 1; min-height: 40px; border: 0; background: transparent; color: var(--ink); font-size: 14px; } .seg button + button { border-left: 1px solid var(--edge); }
+  .seg button.on { background: var(--accent); color: #1a120a; font-weight: 700; }
+  #modenote { color: var(--dim); font-size: 12px; line-height: 1.5; padding: 0 4px; }
+  #pause-modes #modes { width: min(520px, 90vw); margin-top: 10px; }
+  #world { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 10px 12px; border-radius: 12px; background: rgba(28,22,16,.66); border: 1px solid rgba(240,200,140,.18); color: var(--dim); font-size: 12px; }
+  #world > span:first-child { width: 92px; letter-spacing: .12em; text-transform: uppercase; } #world b, #pauseworld b { color: var(--accent); font-size: 18px; letter-spacing: .04em; font-weight: 600; }
+  #seedtools { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; } #world small { flex-basis: 100%; }
+  #seedin { font: inherit; font-size: 13px; width: 180px; min-height: 36px; padding: 0 8px; box-sizing: border-box; background: rgba(20,16,12,.8); color: var(--ink); border: 1px solid var(--edge); border-radius: 6px; }
+  #seedin:focus { outline: none; border-color: var(--accent); } button.q:disabled { opacity: .4; cursor: default; }
+  #world button.q { min-height: 36px; }
+  .snav { display: flex; gap: 10px; margin-top: auto; padding-top: 8px; position: sticky; bottom: 0; } #step-setup #seedin { width: 170px; } .sbrand #world { justify-content: flex-start; max-width: none; margin-top: 0; }
+  @media (max-height: 700px) { .night span { display: none; } .night { padding: 7px 14px; } .spanel { gap: 9px; } } /* (a short screen keeps the names and their tags, and the Back and Next row in view) */
+  .next { flex: 1; min-height: 64px; border: 0; border-radius: 10px; background: var(--accent); color: #1a120a; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; transition: transform .15s; }
+  .next b { font-size: 17px; letter-spacing: .08em; } .next span { font-size: 12px; } .next:hover { transform: translateY(-2px); }
+  /* 3. who walks out? (the carousel: the chosen one large, the others smaller to the sides, moved by transform only) */
+  #step-chars { display: flex; flex-direction: column; align-items: center; }
+  .ctop { width: 100%; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 16px; } .ctop .ghost { justify-self: start; } .ctop .pill { justify-self: end; }
+  .pill { font-size: 13px; color: #e0d2b4; padding: 8px 14px; border-radius: 999px; background: rgba(28,22,16,.62); border: 1px solid rgba(240,200,140,.22); max-width: 42vw; }
+  #cards { position: relative; width: 100%; height: min(310px, 44vh); margin-top: auto; }
+  .card { position: absolute; left: 50%; top: 0; width: 240px; height: 300px; margin-left: -120px; padding: 0; border-radius: 16px; overflow: hidden; border: 2px solid rgba(240,200,140,.22); background: #2a2118;
+    transform-origin: 50% 0; transform: translateX(var(--x, 0)) scale(var(--s, 1)); opacity: var(--a, 1); transition: transform .25s ease, opacity .25s ease; }
+  .card canvas.pv { display: block; width: 240px; height: 300px; }
+  .card .nm { position: absolute; left: 0; right: 0; bottom: 0; padding: 22px 8px 8px; font-size: 20px; color: var(--ink); background: linear-gradient(transparent, rgba(10,8,6,.85)); text-align: center; }
+  .card.sel { border-color: var(--accent); box-shadow: 0 0 0 5px rgba(224,160,64,.2), 0 24px 50px rgba(0,0,0,.6); } .card.sel .nm { display: none; }
+  @media (max-height: 640px) { #cards { height: 230px; } .card { transform: translateX(var(--x, 0)) scale(calc(var(--s, 1) * .75)); } }
+  .chosen { display: flex; flex-direction: column; align-items: center; gap: 4px; margin-top: 10px; text-align: center; }
+  #chosen-of { font-size: 12px; letter-spacing: .2em; color: var(--dim); } #chosen-desc { font-size: 13px; color: #d8c8a6; }
+  .cname { display: flex; align-items: center; gap: 18px; } #chosen-name { font-size: 32px; letter-spacing: .04em; min-width: 260px; }
+  .arrow { width: 48px; height: 48px; border-radius: 50%; border: 1px solid var(--edge); background: rgba(28,22,16,.7); color: var(--ink); font-size: 22px; }
+  .arrow:hover { border-color: var(--accent); }
+  #go { margin-top: auto; min-height: 64px; width: min(420px, 100%); border: 0; border-radius: 10px; background: var(--accent); color: #1a120a; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; box-shadow: 0 8px 30px rgba(224,160,64,.3); transition: transform .15s; }
+  #go b { font-size: 19px; letter-spacing: .1em; } #go span { font-size: 12px; } #go:hover:not(:disabled) { transform: translateY(-2px); } #go:disabled { opacity: .45; cursor: wait; }
+  /* Settings and How to play, over the title */
+  dialog { max-width: min(760px, 92vw); border: 1px solid rgba(240,200,140,.3); border-radius: 14px; background: rgba(24,18,12,.96); color: var(--ink); padding: 20px 24px; font-family: inherit; }
+  dialog::backdrop { background: rgba(5,4,3,.6); } dialog h2 { margin: 0 0 12px; } dialog form { margin-top: 14px; text-align: right; }
+  dialog #settings { margin-top: 0; } table.keys { border-collapse: collapse; font-size: 13px; color: #d8c8a6; text-align: left; }
+  table.keys th, table.keys td { padding: 5px 14px 5px 0; border-bottom: 1px solid rgba(240,200,140,.12); vertical-align: top; } table.keys thead th { color: var(--dim); font-weight: 600; font-size: 12px; letter-spacing: .1em; } table.keys tbody th { color: var(--ink); font-weight: 400; max-width: 300px; } table.keys td { color: #f0d9a8; }
+  @media (prefers-reduced-motion: reduce) { .card, .press, .next, #go, .night { transition: none; } }
   .hidden { display: none !important; }
   body.freecam .hud, body.freecam #cross, body.freecam #log, body.freecam #craft, body.freecam #fx { display: none !important; }
 </style>
@@ -142,27 +208,52 @@
 <div id="log"></div>
 <div id="hurt"></div>
 
-<div id="menu" class="overlay">
-  <h1>IRON WASTELAND 2</h1>
-  <div class="sub">A kilometre of wasteland, three cameras. Pick who walks out first.</div>
-  <div id="cards"></div>
-  <button class="go" id="go" disabled>WALK OUT</button>
-  <div id="loading" class="sub" style="margin:10px 0 0">Shaping the world…</div>
-  <div id="netinfo" class="sub hidden" style="margin:6px 0 0"></div>
-  <div id="menu-modes"><div id="modes" class="hidden"><span>Game</span><button class="q" id="mode-coop">Co-op</button><button class="q" id="mode-ffa">Free-for-all</button><span class="gap">Creatures</span><button class="q" id="mode-easy">Easy</button><button class="q" id="mode-normal">Normal</button><button class="q" id="mode-hard">Hard</button><small id="modenote"></small></div></div>
-  <div id="world"><span>World</span><b id="seedname">—</b><span id="seedtools"><button class="q" id="newworld" title="Roll a new world (the page reloads)">New world</button>
-    <input id="seedin" maxlength="40" spellcheck="false" autocomplete="off" placeholder="or type a world's name"><button class="q" id="playseed" disabled>Play it</button></span><small id="seednote">Each new game is a new world. Tell someone its name to share it.</small></div>
-  <div id="menu-settings"><div id="settings">
+<div id="menu" class="overlay" data-step="title">
+  <!-- the start menu's three screens (menu.js; Jared, 2026-11-14) -->
+  <section id="step-title" class="step" aria-label="Title">
+    <div class="tcenter">
+      <h1 class="logo">IRON<br>WASTELAND 2</h1>
+      <p class="sub" id="title-sub">A kilometre of wasteland. Survive it together, or race each other for it.</p>
+      <button class="press" id="title-go" type="button" disabled>PRESS ENTER</button>
+      <div id="loading" class="loadline">Shaping the world…</div>
+    </div>
+    <div class="tfoot">
+      <div id="netinfo" class="netline hidden"></div>
+      <div class="tbtns"><button class="ghost" id="open-help" type="button">How to play</button><button class="ghost" id="open-settings" type="button">Settings</button></div>
+    </div>
+  </section>
+  <section id="step-setup" class="step hidden" aria-label="What are we playing?">
+    <div class="sbrand"><h1 class="logo small">IRON<br>WASTELAND 2</h1>
+      <div id="world"><span>World</span><b id="seedname">—</b><span id="seedtools"><button class="q" id="newworld" title="Roll a new world (the page reloads)">New world</button>
+    <input id="seedin" aria-label="World name" maxlength="40" spellcheck="false" autocomplete="off" placeholder="or type a world's name"><button class="q" id="playseed" disabled>Play it</button></span><small id="seednote">Each new game is a new world. Tell someone its name to share it.</small></div></div>
+    <div class="spanel">
+      <h2>WHAT ARE WE PLAYING?</h2>
+      <div id="nights" role="group" aria-label="Ready-made games"></div>
+      <div id="modes-wrap" class="hidden"><div id="menu-modes"><div id="modes" class="hidden">
+        <div class="mrow" id="mode-game-row"><span>Game</span><div class="seg"><button id="mode-coop" type="button">Co-op</button><button id="mode-ffa" type="button">Free-for-all</button></div></div>
+        <div class="mrow"><span>Creatures</span><div class="seg"><button id="mode-easy" type="button">Easy</button><button id="mode-normal" type="button">Normal</button><button id="mode-hard" type="button">Hard</button></div></div>
+        <small id="modenote"></small>
+      </div></div></div>
+
+      <div class="snav"><button class="ghost" id="setup-back" type="button">‹ Back</button><button class="next" id="setup-next" type="button"><b>WHO WALKS OUT? ›</b><span></span></button></div>
+    </div>
+  </section>
+  <section id="step-chars" class="step hidden" aria-label="Who walks out?">
+    <div class="ctop"><button class="ghost" id="chars-back" type="button">‹ Back</button><h2>WHO WALKS OUT?</h2><span id="chars-summary" class="pill"></span></div>
+    <div id="cards" role="group" aria-label="Characters"></div>
+    <div class="chosen">
+      <span id="chosen-of"></span>
+      <div class="cname"><button class="arrow" id="prev-ch" type="button" aria-label="Previous character">‹</button><b id="chosen-name"></b><button class="arrow" id="next-ch" type="button" aria-label="Next character">›</button></div>
+      <span id="chosen-desc"></span>
+    </div>
+    <button class="go" id="go" type="button" disabled>WALK OUT</button>
+  </section>
+  <dialog id="dlg-settings" aria-label="Settings"><h2>SETTINGS</h2><div id="menu-settings"><div id="settings">
     <div class="srow"><span>Quality</span><span id="quality"></span><small id="qnote">Low for older laptops; a change reloads.</small></div>
-    <div class="srow"><span>Look sensitivity</span><input type="range" id="sens" min="0.3" max="3" step="0.1"><output id="sensv"></output>
+    <div class="srow"><span>Look sensitivity</span><input type="range" id="sens" aria-label="Look sensitivity" min="0.3" max="3" step="0.1"><output id="sensv"></output>
       <label><input type="checkbox" id="invy"> Invert up/down</label><label><input type="checkbox" id="snd"> Sound</label><label>Music <input type="range" id="music" min="0" max="1" step="0.05"></label></div>
-  </div></div>
-  <div class="keys">
-    <kbd>WASD</kbd> move · <kbd>Mouse</kbd> look (click to lock, or right-drag) · <kbd>←→↑↓</kbd> look · <kbd>Click</kbd> attack · <kbd>F</kbd>/right click special · <kbd>Z</kbd> pistol-whip (Gunslinger) · <kbd>Space</kbd> jump ·
-    <kbd>E</kbd> search, salvage, sleep in a bed · hold <kbd>E</kbd> by a tree or bush: chop it, or revive a downed friend · <kbd>Tab</kbd> craft · <kbd>T</kbd> put away or take out a hand torch · hold <kbd>E</kbd> by a stump: dig it up · hold <kbd>H</kbd> by a damaged wall or gate: repair it · hold <kbd>X</kbd> by what you built: tear it down · <kbd>V</kbd> camera: first person / angled / top-down · <kbd>Q</kbd><kbd>E</kbd> turn the top-down view ·
-    <kbd>P</kbd>/<kbd>Esc</kbd> pause and settings · <kbd>M</kbd> sound<br>
-    Controller: left stick move · right stick look · <kbd>RT</kbd>/<kbd>X</kbd> attack · <kbd>LB</kbd>/<kbd>LT</kbd> special · right stick click pistol-whip · <kbd>A</kbd> jump · <kbd>B</kbd> search (hold: chop, revive) · <kbd>View</kbd> craft · hold d-pad right: repair · d-pad left: hand torch (top-down: turn the view) · hold <kbd>RB</kbd>: tear down · <kbd>Y</kbd> camera
-  </div>
+  </div></div><form method="dialog"><button class="ghost">Close</button></form></dialog>
+  <dialog id="dlg-help" aria-label="How to play"><h2>HOW TO PLAY</h2><table class="keys"><thead><tr><th scope="col">To</th><th scope="col">Keyboard and mouse</th><th scope="col">Controller</th></tr></thead><tbody><tr><th scope="row">Move</th><td>W A S D</td><td>Left stick</td></tr><tr><th scope="row">Look</th><td>Mouse (click to lock, or right-drag) · arrow keys</td><td>Right stick</td></tr><tr><th scope="row">Attack</th><td>Click</td><td>RT or X</td></tr><tr><th scope="row">Special</th><td>F or right click</td><td>LB or LT</td></tr><tr><th scope="row">Pistol-whip (Gunslinger)</th><td>Z</td><td>Right stick click</td></tr><tr><th scope="row">Jump</th><td>Space</td><td>A</td></tr><tr><th scope="row">Search, salvage, sleep in a bed, change character at the camp tent</th><td>E</td><td>B</td></tr><tr><th scope="row">Chop, pick, dig up a stump, revive a friend, cook at a fire</th><td>Hold E</td><td>Hold B</td></tr><tr><th scope="row">Repair a damaged wall or gate</th><td>Hold H</td><td>Hold d-pad right</td></tr><tr><th scope="row">Tear down what you built</th><td>Hold X</td><td>Hold RB</td></tr><tr><th scope="row">Put away or take out a hand torch</th><td>T</td><td>D-pad left (top-down: turns the view)</td></tr><tr><th scope="row">Eat</th><td>Hold G</td><td>Hold d-pad down</td></tr><tr><th scope="row">Craft and build</th><td>Tab</td><td>View</td></tr><tr><th scope="row">Camera: first person, angled, top-down</th><td>V (Q and E turn the top-down view)</td><td>Y</td></tr><tr><th scope="row">Pause and settings</th><td>P or Esc</td><td>Menu</td></tr><tr><th scope="row">Sound on or off</th><td>M</td><td></td></tr></tbody></table><form method="dialog"><button class="ghost">Close</button></form></dialog>
 </div>
 <div id="pause" class="overlay hidden"><h1>PAUSED</h1><div class="sub">P or Esc to resume</div><div id="pauseworld" class="sub"></div><div id="pausemode" class="sub"></div><div id="pause-modes"></div><div id="pause-settings"></div>
   <div id="pause-switch" class="sub hidden"><span>Pick who walks out of the tent</span><small>You keep your pack and your share of health</small><div id="pause-chars"></div></div>

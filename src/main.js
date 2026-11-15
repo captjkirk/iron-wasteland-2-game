@@ -18,9 +18,10 @@ import { buildGrass, updateGrass, grassStats } from './grass.js';
 import { wind } from './trees.js';
 import { loadCharacters } from './characters.js';
 import { loadCreatures, eyeShine } from './creatures.js';
-import { initPortraits, drawPortraits, endPortraits } from './menu3d.js';
+import { initPortraits, drawPortraits, endPortraits, portraitStats } from './menu3d.js';
+import { menuStep, leaveSeedBox } from './menu.js';
 import { net, netReady } from './net.js';
-import { others, deliver, coop, joining } from './coop.js';
+import { others, deliver, coop, joining, rules } from './coop.js';
 import { craft, built, toggleCraft, craftOpen, placeSpot, sleep, bedNear, bedRespawn, lightSpots } from './craft.js';
 import { day, nightK, DAY_S, setDay } from './daynight.js';
 import { buildWeather, tickWeather } from './weather.js';
@@ -60,7 +61,8 @@ for (const [k, v] of Object.entries(QUALITY)) { const b = document.createElement
   else { document.getElementById('newworld').onclick = () => go(null);
     inp.addEventListener('input', () => { play.disabled = !cleanSeed(inp.value) || cleanSeed(inp.value) === SEED_TEXT; });
     // (the menu's own keys, 1 to 5 and Enter, must not fire while a name is typed)
-    inp.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter' && !play.disabled) go(cleanSeed(inp.value)); });
+    // (Esc, Up and Down leave the box for the menu, so a keyboard is never trapped in it; Left and Right still edit the name)
+    inp.addEventListener('keydown', (e) => { if (/^(Escape|ArrowUp|ArrowDown)$/.test(e.code)) return leaveSeedBox(e); e.stopPropagation(); if (e.key === 'Enter' && !play.disabled) go(cleanSeed(inp.value)); });
     inp.addEventListener('keyup', (e) => e.stopPropagation()); play.onclick = () => go(cleanSeed(inp.value)); } }
 const env = buildEnvironment(scene, renderer, camera);
 const charsLoading = Promise.all([loadCharacters(), loadCreatures()]); // in parallel with the terrain and trees
@@ -78,13 +80,13 @@ initGame({ scene, camera, renderer, env }); initPortraits(scene); stage('init');
 await warmCreatures(); stage('warm'); // (issue #44: every creature's shaders compiled now, not on its first sight in play)
 // the offline cache (sw.js) keeps everything this load fetched, the CDN's Three.js too (slice 13a)
 navigator.serviceWorker?.ready.then(r => r.active?.postMessage(performance.getEntriesByType('resource').map(e => e.name)));
-status.textContent = ''; document.getElementById('go').disabled = false;
+status.textContent = ''; document.getElementById('go').disabled = false; document.getElementById('title-go').disabled = false; document.getElementById('title-go').focus({ preventScroll: true });
 // LAN co-op (slice 10): the menu says how to play together
 netReady.then(() => { const el = document.getElementById('netinfo'); if (!net.role) return; el.classList.remove('hidden');
   // this page was reloaded to build the host's world (coop.js): join as the player already asked
   let again = null; try { again = sessionStorage.getItem('iw2.rejoin'); sessionStorage.removeItem('iw2.rejoin'); } catch { /* no storage: press JOIN again */ }
   if (net.role === 'join' && again !== null && CHARS[+again]) startGame(+again);
-  if (net.role === 'join') { el.textContent = `Playing together: this joins the game hosted at ${location.host}. Pick who walks out.`; document.getElementById('go').textContent = 'JOIN THE GAME'; }
+  if (net.role === 'join') { el.textContent = `Playing together: this joins the game hosted at ${location.host}.`; }
   else el.textContent = net.info.lan ? `Play together: on the family's other computers, open ${net.info.addr} in a browser and press JOIN.` : 'Play together on the home network: start the server with  python3 scripts/serve.py --lan'; }); logEvent('loaded', { seed: SEED_TEXT, quality: QUALITY_KEY, ms: Math.round(performance.now()), w: innerWidth, h: innerHeight, ...device(), stages });
 // which graphics chip and screen this is, and how many pixels each frame draws (the play log's loaded event)
 function device() { const gl = renderer.getContext(), x = gl.getExtension('WEBGL_debug_renderer_info');
@@ -110,7 +112,8 @@ function frame(now) {
   frameTime(now - last, isRunning()); const dt = Math.max(0, Math.min(0.05, (now - last) / 1000)); last = now; clock += dt;
   frames++; fpsT += dt; if (fpsT > 0.5) { fps = Math.round(frames / fpsT); frames = 0; fpsT = 0; }
   if (isRunning()) { update(dt, clock); placeCamera(dt); hud(fps, dt); autoScale(dt); }
-  else { menuPad(); drawPortraits(renderer, dt, selected()); menuCam.a += dt * 0.03; const x = 20 + Math.cos(menuCam.a) * 150, z = Math.sin(menuCam.a) * 150;
+  else { menuPad(); if (menuStep() === 'chars') drawPortraits(renderer, dt, selected()); // (only while the carousel shows)
+    menuCam.a += dt * 0.03; const x = 20 + Math.cos(menuCam.a) * 150, z = Math.sin(menuCam.a) * 150;
     camera.position.set(x, Math.max(groundY(x, z), WATER_Y) + 55, z); camera.lookAt(40, 8, 0); env.follow(new THREE.Vector3(40, groundY(40, 0), 0)); }
   if (freeCam) { camera.position.copy(freeCam.pos); camera.lookAt(freeCam.target); camera.fov = freeCam.fov; camera.updateProjectionMatrix(); env.follow(freeCam.target); }
   // slice 13: the hour lights the world: sky, sun or moon, fog, the far trees; fires and torches light the night
@@ -134,7 +137,7 @@ if (bgClock) bgClock.onmessage = () => { const now = performance.now(); if (!doc
 addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
 
 // Test hooks for the headless check (scripts/shots.js): not used by play.
-window.__iw = { fireflies: fireflyStats, explored: exploredStats, others, net, built, deliver, /* the gate of slice 12 */ logEvent, playlogState, tickWatch, checkCrates, checkMsg, solidAt, pickups, HALF, /* slice 13d */
+window.__iw = { selected, portraits: portraitStats, get rules() { return rules; }, /* the start menu (menu.js) */ fireflies: fireflyStats, explored: exploredStats, others, net, built, deliver, /* the gate of slice 12 */ logEvent, playlogState, tickWatch, checkCrates, checkMsg, solidAt, pickups, HALF, /* slice 13d */
   // a build recipe opens build mode; for the checks, craft() of one places it at once where the ghost stands (slice 12)
   craft: (key) => { const r = RECIPES.find(q => q.key === key); if (r.type !== 'build') return craft(r); if (!craft(r)) return false; const ok = placeNow(); endBuild(); return ok; },
   lightSpots: () => [...torchLights(), ...lightSpots()], fireCount, hasFlame, saplingStats, setDay, /* slice 26 */ startBuild: (key) => startBuild(RECIPES.find(q => q.key === key)), placeNow, endBuild, building, rotateBuild, damageBuilt, toggleGate, tearTarget, repairTarget, pieceBars, refundOf, clearBuilt, wallAhead, PIECE, putPiece, liveShots, ammo, clipSize, gotPickup, spreadAt, upgraded, aimGround, /* slice 12 */ toggleCraft, craftOpen, placeSpot, sleep, bedNear, bedRespawn, felled, fell, harvestTarget, quiver, stuckArrows, // slice 11

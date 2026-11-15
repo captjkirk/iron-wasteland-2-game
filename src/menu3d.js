@@ -6,7 +6,8 @@ import * as THREE from 'three';
 import { CHARS } from './config.js';
 import { buildCharacter } from './characters.js';
 
-const W = 144, H = 176; // card portrait size in CSS pixels
+const W = 240, H = 300; // portrait size in CSS pixels (the start menu's carousel shows the chosen one at this size, the others scaled down)
+export const portraitStats = { draws: 0 }; // portraits drawn so far (the walk test: none while the carousel is hidden)
 let pscene = null, pcam = null, figs = [], canvases = [], t = 0, tick = 0, ready = false;
 
 export function initPortraits(mainScene) {
@@ -34,7 +35,7 @@ export function drawPortraits(renderer, dt, sel) {
     if (i !== sel && !(tick <= 2 || (tick + i * 8) % 40 === 0)) return;
     f.visible = true; f.userData.anim.update(i === sel ? dt : 0);
     f.rotation.y = i === sel ? Math.sin(t * 0.6) * 0.7 : 0.35;
-    renderer.render(pscene, pcam); f.visible = false;
+    renderer.render(pscene, pcam); portraitStats.draws++; f.visible = false;
     const c = canvases[i], g = c.getContext('2d'); if (c.width !== Math.round(W * pr)) { c.width = Math.round(W * pr); c.height = Math.round(H * pr); }
     g.drawImage(cv, 0, cv.height - c.height, c.width, c.height, 0, 0, c.width, c.height);
   });

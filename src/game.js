@@ -22,6 +22,7 @@ const BIOME_WIND = { tundra: 0.03, waste: 0.025, desert: 0.02 };
 import { buildCharacter, buildViewModel } from './characters.js';
 import { logEvent, tickLog, savePlayLog, startVideo, recording } from './playlog.js';
 import { tickWatch, watchStart, solidAt } from './watch.js';
+import { buildMenu, menuKey, showStep } from './menu.js';
 import { others, coop, joining, gone, nearestP, everyone, hurt, salvagedProp, requestJoin, tickCoop, followHost, net, send, clearOthers, rules, pvp, modeKey, modeName, RIVAL, level } from './coop.js';
 import { craftOpen, toggleCraft, craftKey, craftPad, renderMenu, bedNear, sleep, wake, tickSleep, bedRespawn, fireSpots, benchNear } from './craft.js';
 import { tickHarvest, harvestTarget, harvestName, harvestDoing, prepHarvest } from './harvest.js';
@@ -227,8 +228,8 @@ export function setCam(m) { camMode = m; snapCam = true; if (running) logEvent('
 // ── Input: keyboard and mouse, plus the Gamepad API (Xbox and PlayStation pads on a Mac) ──
 function bindInput() {
 addEventListener('pointerdown', unlockAudio);
-addEventListener('keydown', e => { if (e.code === 'Tab') { e.preventDefault(); if (e.repeat) return; } if (running && !paused && (craftKey(e) || buildKey(e))) { relock(); return; } // the craft menu's keys (slice 11), build mode's (slice 12)
-  if (!paused || e.code === 'KeyP' || e.code === 'Escape') keys.add(e.code); unlockAudio(); if (!running) { const n = Number(e.key); if (n >= 1 && n <= 5) selectCard(n - 1); if (e.code === 'Enter') startGame(sel); return; }
+addEventListener('keydown', e => { if (e.code === 'Tab' && running) { e.preventDefault(); if (e.repeat) return; } if (running && !paused && (craftKey(e) || buildKey(e))) { relock(); return; } // (off play Tab moves focus: the menu screens, How to play, Settings); the craft menu's keys (slice 11), build mode's (slice 12)
+  if (!paused || e.code === 'KeyP' || e.code === 'Escape') keys.add(e.code); unlockAudio(); if (!running) { menuKey(e); return; } // (the start menu's keys: menu.js)
   if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
   if (e.code === 'F9') { logEvent('mark', { x: +player.x.toFixed(1), z: +player.z.toFixed(1), y: +player.y.toFixed(1), biome: biomeAt(player.x, player.z) });
     // (slice 13d: a game that records sends the mark with a picture, and the findings report lists it; a download only where nothing records)
@@ -534,7 +535,7 @@ export function gameOver(why = null) { clearPoison(); toggleCraft(false); runnin
   logEvent('game-over', { by: player.killedBy, secs: t, kills: player.kills, ...player.inv });
   if (document.pointerLockElement) document.exitPointerLock(); for (const id of ['hud-tl', 'hud-tr', 'hud-b', 'cross', 'pause', 'breath', 'prompt']) document.getElementById(id).classList.add('hidden');
   document.querySelector('#menu .sub').textContent = why || `${player.ch.player} fell to ${/^[AEIOU]/.test(by) ? 'an' : 'a'} ${by.toLowerCase()} after ${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}, with ${player.kills} kills. No bed to wake in: next time build a craftbench, then a bed, and sleep in it (Tab crafts, E sleeps). Pick who walks out next.`;
-  document.getElementById('go').textContent = 'WALK OUT AGAIN'; document.getElementById('menu').classList.remove('hidden'); }
+  document.getElementById('menu').classList.remove('hidden'); showStep('title'); }
 // a few passes: pushing out of one circle can push into its neighbour; feet at or above a solid's top pass over it
 // (slice 12: a gate lets players through; enemies only while it is held open. Only the player's own move passes feet.)
 // (slice 36: an upper floor's wall has a bottom, bot: a head below it walks on under it; creatures, which keep to the ground, always)
@@ -956,20 +957,12 @@ function prompt(dt) { const c = player.chop || player.tear || player.fix || play
   if (promptEl.firstChild.textContent !== t) promptEl.firstChild.textContent = t; promptEl.classList.toggle('hidden', !t); }
 
 // ── Menu ─────────────────────────────────────────────────────────────
-let sel = 0; const cards = document.getElementById('cards');
-function buildMenu() {
-CHARS.forEach((c, i) => { const d = document.createElement('div'); d.className = 'card'; d.innerHTML = `<canvas class="pv"></canvas><div class="sw" style="background:#${c.color.toString(16).padStart(6, '0')}"></div><b>${c.title}</b><small>${c.player} · ${i + 1}</small><p>${c.desc}<br>${c.maxHp} HP · ${c.atk}</p>`;
-  d.onclick = () => selectCard(i); d.ondblclick = () => startGame(i); cards.appendChild(d); });
-selectCard(0);
-document.getElementById('go').onclick = () => startGame(sel);
-}
-function selectCard(i) { if (i !== sel) logEvent('menu-pick', { ch: CHARS[i].id }); sel = i; [...cards.children].forEach((c, k) => c.classList.toggle('sel', k === i)); }
-export function menuPad() { const p = readPad(); if (!p) return; if (p.left) selectCard((sel + 4) % 5); if (p.right) selectCard((sel + 1) % 5); if (p.jump) startGame(sel); }
+// the start menu's three screens, its cards and its keys: menu.js (Jared, 2026-11-14)
+export { selected, menuPad } from './menu.js';
 
 export const isRunning = () => running;
 export const scene3 = () => scene;
 export { log };
-export const selected = () => sel;
 export const getCamMode = () => camMode;
 export const isPadActive = () => padActive;
 export const liveShots = () => shots; // (for the checks)

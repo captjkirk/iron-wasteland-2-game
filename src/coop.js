@@ -73,7 +73,8 @@ function showRules() { const $ = (id) => document.getElementById(id);
 document.getElementById('mode-coop').onclick = () => setRules({ ffa: false });
 document.getElementById('mode-ffa').onclick = () => setRules({ ffa: true });
 for (const k in LEVELS) document.getElementById('mode-' + k).onclick = () => setRules({ lvl: k });
-netReady.then(() => { if (net.role === 'host' && !JOINER) saved(); document.getElementById('modes').classList.toggle('hidden', net.role !== 'host'); showRules(); }); showRules();
+// (the creatures are every host's and every lone player's to set; the mode only where others can join; a joining game sets nothing)
+netReady.then(() => { if (net.role === 'host' && !JOINER) saved(); document.getElementById('modes').classList.toggle('hidden', joining() || JOINER); document.getElementById('mode-game-row').classList.toggle('hidden', net.role !== 'host'); showRules(); }); showRules();
 
 function applySalvage(k, i) { const q = placed[k]?.[i]; if (!q) return; if (k === 'scrap') { q.gone = true; markDirty(); q.col.r = 0; q.col.vr = 0; } else q.salvaged = true; }
 
