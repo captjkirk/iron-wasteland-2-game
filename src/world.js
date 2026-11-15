@@ -117,7 +117,7 @@ for (let k = 0, tries = 0; k < SHAPE.ponds && tries < 60; tries++) { const a = V
   if (Math.abs(x) > HALF - 70 || Math.abs(z) > HALF - 70 || b === 'swamp' || (b === 'desert' && !oasis) || riverDist(x, z) < rx + 50) continue;
   if (lakes.some(l => Math.hypot(l.x - x, l.z - z) < Math.max(l.rx, l.rz) + rx + 60) || PADS.some(p => Math.hypot(p.x - x, p.z - z) < rx + p.outer + 30 || underBanks(p.x, p.z, p.inner, [{ x, z, rx, rz, a: turnA }]) < p.h)) continue;
   lakes.push({ x, z, rx, rz, a: turnA, pond: b }); k++; }
-// ── Crater lakes and islands (slice 23, #52; random worlds only, so the classic world stands as it was). Jared, November 14,
+// ── Crater lakes and islands (slice 23, #52; in the classic world one of each, on the ground Jared allowed, below). Jared, November 14,
 // 2026: a lake "that looked like it was a crater, and it was awesome!", and "some lakes that were larger had something like
 // small islands in them". A crater: a round rim of rock 6 m above water 8 m deep at its middle (the Thing in the deep's), out
 // beyond the ring off the mountains (its rim stands above everything round it), never in the Bog, off every pad, pass, lake and
@@ -136,9 +136,14 @@ if (!CLASSIC) for (const loose of [0, 1]) { if (lakes.some(l => l.crater)) break
     hs.sort((a, q) => a - q); const mid = hs[12];
     if (hs[0] < WATER_Y + 0.6 || mid > WATER_Y + 18 + loose * 8 || hs[22] > mid + 12 + loose * 6) continue; // dry ground, not mountains: the rim stands 1.5 m over the ground's middle height, at least 6 m over the water
     const crest = Math.max(6, mid - WATER_Y + 1.5); lakes.push({ x, z, rx, rz: rx, a: 0, crater: true, crest, rw: 0.5 * crest / 6 }); } } // (a higher rim is wider, so no wall is steeper)
+// The classic world's one crater, on the open Fungal Hollow ground Jared allowed (November 15, 2026, Decision 2 of
+// docs/decisions/2026-11-15-classic-update.md): its rim from the ground there, as a random world's is; nothing else in its land changes
+const CLASSIC_CRATER = []; if (CLASSIC) { const x = -280, z = 128, rx = 26, hs = []; for (let q = 0; q < 25; q++) { const t = q / 12 * Math.PI * 2, e = q ? (q > 12 ? 2.6 : 1.8) : 0; hs.push(craterBare(x + Math.cos(t) * rx * e, z + Math.sin(t) * rx * e)); }
+  const crest = Math.max(6, hs.sort((a, q) => a - q)[12] - WATER_Y + 1.5); CLASSIC_CRATER.push({ x, z, rx, rz: rx, a: 0, crater: true, crest, rw: 0.5 * crest / 6 }); }
 const IS = mulberry32(SEED ^ 0x15a7d5);
-if (!CLASSIC) for (const l of [...lakes].sort((p, q) => q.rx * q.rz - p.rx * p.rz)) { if (l.crater || Math.min(l.rx, l.rz) < 40) continue;
-  const ca = Math.cos(l.a), sa = Math.sin(l.a), want = 1 + Math.floor(IS() * 3);
+// (the classic world: one island, the hermit's, in its smaller lake, the north-west one, Jared's Decision 2; its river lake stays as it was)
+for (const l of CLASSIC ? [lakes.reduce((p, q) => p.rx * p.rz < q.rx * q.rz ? p : q)] : [...lakes].sort((p, q) => q.rx * q.rz - p.rx * p.rz)) { if (l.crater || Math.min(l.rx, l.rz) < 40) continue;
+  const ca = Math.cos(l.a), sa = Math.sin(l.a), want = CLASSIC ? 1 : 1 + Math.floor(IS() * 3);
   for (let t = 0, made = 0; t < 30 && made < want; t++) { const r = !islands.length ? 9 : 4.5 + IS() * 4, sk = r + (6.2 / 0.42), ang = IS() * Math.PI * 2, e = IS() * 0.6;
     const lx = Math.cos(ang) * e * Math.max(0, l.rx - sk), lz = Math.sin(ang) * e * Math.max(0, l.rz - sk), x = l.x + lx * ca - lz * sa, z = l.z + lx * sa + lz * ca;
     if (islands.some(o => Math.hypot(o.x - x, o.z - z) < o.r + r + 22)) continue; islands.push({ x, z, r, lake: lakes.indexOf(l) }); made++; } }
@@ -206,6 +211,9 @@ const craterRock = (x, z, h, n2) => { let k = 0; for (const l of lakes) if (l.cr
 // ── The grid: heights, best biome, normals, texture-layer weights ──
 export const H = new Float32Array(N * N), BI = new Uint8Array(N * N), WET = new Uint8Array(N * N);
 const BW = new Float32Array(N * N * NB), RD = new Float32Array(N * N), CAN = new Float32Array(N * N);
+// (the classic world's crater and island wait until after the erosion below and are then cut in as a change to the ground they
+// cover alone: erosion's droplets run across the whole map, so with them in place it re-ran gullies 300 m away, up to 3 m deep)
+const LATE = CLASSIC ? { lakes: CLASSIC_CRATER, islands: islands.splice(0) } : null;
 for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const x = -HALF + i * CELL, z = -HALF + j * CELL, k = j * N + i;
   const { best, w } = biomeWeights(x, z), r = heightAt(x, z, w);
   H[k] = r.h; BI[k] = BIOME_NAMES.indexOf(best); WET[k] = r.rd < r.halfW + 6 ? 1 : 0; RD[k] = r.rd - r.halfW; CAN[k] = r.canyon;
@@ -238,6 +246,13 @@ for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const x = -HALF + i * 
     const r = Math.hypot(x, z), pass = CLASSIC ? 0 : passK(x, z, r, 14) * smooth(100, 130, r) * smooth(300, 265, r);
     const mask = smooth(95, 125, r) * smooth(-2, 10, RD[k]) * (1 - CAN[k]) * smooth(1.5, 6, Math.min(H[k], E[k])) * (1 - padK(x, z)) * (1 - pass);
     H[k] += (E[k] - H[k]) * mask; } }
+// lateGround: the circles they change (props.js scatters them apart, so its stream draws everywhere else as on main); withoutLate(fn)
+// runs fn on the land as it was before them
+export const lateGround = LATE ? [...LATE.lakes.map(l => [l.x, l.z, l.rx * (2 + l.rw)]), ...LATE.islands.map(q => [q.x, q.z, q.r + 18])] : [];
+if (LATE) { const at = (k) => { const x = -HALF + (k % N) * CELL, z = -HALF + Math.floor(k / N) * CELL; return heightAt(x, z, biomeWeights(x, z).w).h; }, raw = [];
+  for (let k = 0; k < N * N; k++) { const x = -HALF + (k % N) * CELL, z = -HALF + Math.floor(k / N) * CELL; if (lateGround.some(([cx, cz, r]) => Math.hypot(x - cx, z - cz) < r)) raw.push([k, at(k)]); }
+  lakes.push(...LATE.lakes); islands.push(...LATE.islands); LATE.cells = raw.map(([k, h0]) => [k, H[k], H[k] + at(k) - h0]); for (const [k, , h] of LATE.cells) H[k] = h; }
+export function withoutLate(fn) { if (!LATE) return fn(); for (const [k, h] of LATE.cells) H[k] = h; try { return fn(); } finally { for (const [k, , h] of LATE.cells) H[k] = h; } }
 // A beach under the river's lake's steep banks (random worlds): the river and the land round its lake (a gorge wall, a Waste mesa's
 // edge) can meet its water steeper than a player climbs out (tawny-pike-74: a mesa edge, 1.09 at the waterline; the lake's bank cap
 // only holds ground down, it cannot soften what lies under it). So round that lake, ground below 2.5 m is filled up to a slope of 0.6

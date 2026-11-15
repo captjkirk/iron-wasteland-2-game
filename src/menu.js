@@ -8,6 +8,7 @@
 import { CHARS, JOINER, SEED_TEXT } from './config.js';
 import { logEvent } from './playlog.js';
 import { startGame, readPad, isRunning } from './game.js';
+import { armTour } from './tour.js';
 import { rules, setRules, modeName, net } from './coop.js';
 
 const $ = (id) => document.getElementById(id), menu = $('menu'), cards = $('cards');
@@ -38,7 +39,7 @@ export function buildMenu() {
   own.innerHTML = '<b>Set it yourself</b><span>Pick the game and the creatures below.</span>'; own.onclick = () => { custom = true; showNights(); $('mode-coop').focus(); };
   list.appendChild(own);
   for (const id of ['mode-coop', 'mode-ffa', 'mode-easy', 'mode-normal', 'mode-hard']) $(id).addEventListener('click', () => queueMicrotask(showNights)); // (set it yourself stays open while its rows are changed)
-  $('title-go').onclick = next; $('setup-next').onclick = next; $('setup-back').onclick = back; $('chars-back').onclick = back; $('go').onclick = () => startGame(sel);
+  $('title-go').onclick = next; $('setup-next').onclick = next; $('setup-back').onclick = back; $('chars-back').onclick = back; $('go').onclick = () => walkOut();
   $('prev-ch').onclick = () => selectCard((sel + CHARS.length - 1) % CHARS.length); $('next-ch').onclick = () => selectCard((sel + 1) % CHARS.length);
   $('open-settings').onclick = () => $('dlg-settings').showModal(); $('open-help').onclick = () => $('dlg-help').showModal();
   selectCard(0); showStep('title');
@@ -56,7 +57,9 @@ export function showStep(s) { if (s === 'setup' && joiner()) s = 'chars'; step =
   if (s === 'chars') { place(); $('chars-summary').textContent = joiner() ? 'Joining the host\'s game: the host chose what you play' : `${modeName()} · World ${SEED_TEXT}`; }
   if (menu.classList.contains('hidden')) return; logEvent('menu-step', { step: s });
   const first = s === 'title' ? $('title-go') : s === 'setup' ? $('nights').querySelector('.on') : $('go'); if (first && !first.disabled) first.focus({ preventScroll: true }); }
-function next() { if (step === 'title') showStep('setup'); else if (step === 'setup') showStep('chars'); else if (!$('go').disabled) startGame(sel); }
+function next() { if (step === 'title') showStep('setup'); else if (step === 'setup') showStep('chars'); else if (!$('go').disabled) walkOut(); }
+// walking out from the menu starts the first-time tour on a computer that has not had it (#16; games the checks start directly have none)
+function walkOut() { armTour(); startGame(sel); }
 function back() { if (step === 'chars') showStep(joiner() ? 'title' : 'setup'); else if (step === 'setup') showStep('title'); }
 
 export function selectCard(i) { if (i !== sel) logEvent('menu-pick', { ch: CHARS[i].id }); sel = i; place(); }

@@ -34,6 +34,7 @@ import { built } from './craft.js';
 import { attachGear, eatPose } from './characters.js';
 import { startSpiders, tickSpiders, webSlow, spit, holdK, held } from './spiders.js';
 import { poison, tickPoison, clearPoison } from './poison.js';
+import { tourTick, capLine, kc, endTour } from './tour.js'; // #16: key caps and the first-time tour
 import { ammo, resetSupplies, tickSupplies, fought, useRound, useFlower, reload, addRounds, clipSize, foodCount, fireNear, HEAL, MAX_ROUNDS } from './supplies.js';
 
 let scene, camera, renderer, env, viewModel;
@@ -62,6 +63,9 @@ export async function warmCreatures() {
   const g = new THREE.Group(); camera.updateMatrixWorld(); g.position.copy(camera.position).add(camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(9)); g.quaternion.copy(camera.quaternion);
   Object.keys(ENEMY).forEach((type, i) => { const m = buildCreature(type); m.scale.setScalar(ENEMY[type].scale); m.add(...threatMarks(type)); m.userData.setDetail?.(true);
     const ring = m.getObjectByName('threat'); ring.visible = true; ring.material.opacity = 0.5; m.position.set((i - 4) * 1.8, -1, 0); g.add(m); });
+  // (none culled: at load the camera is far from the sun's shadow box (40 m round the start), so the shadow pass skipped every
+  // culled piece and the raiders' double-sided gear built its shadow program on the first raider in view, November 15, 2026)
+  g.traverse(o => { o.frustumCulled = false; });
   scene.add(g); scene.updateMatrixWorld(); try { await renderer.compileAsync(g, camera, scene); } catch { /* (compiled by the draw below) */ } renderer.render(scene, camera); scene.remove(g); WARM = g; }
 let WARM = null;
 // Under every creature: a soft dark contact blob (it grounds them and lifts them off bright ground at range), and a
@@ -254,8 +258,8 @@ export function setCam(m) { camMode = m; snapCam = true; if (running) logEvent('
 
 // ── Input: keyboard and mouse, plus the Gamepad API (Xbox and PlayStation pads on a Mac) ──
 function bindInput() {
-addEventListener('pointerdown', unlockAudio);
-addEventListener('keydown', e => { if (e.code === 'Tab' && running && !paused) { e.preventDefault(); if (e.repeat) return; } if (running && !paused && (craftKey(e) || buildKey(e))) { relock(); return; } // (off play Tab moves focus: the menu screens, How to play, Settings); the craft menu's keys (slice 11), build mode's (slice 12)
+addEventListener('pointerdown', () => { unlockAudio(); padActive = false; }); // (#16: a click or a key means the keyboard is in use)
+addEventListener('keydown', e => { padActive = false; if (e.code === 'Tab' && running && !paused) { e.preventDefault(); if (e.repeat) return; } if (running && !paused && (craftKey(e) || buildKey(e))) { relock(); return; } // (off play Tab moves focus: the menu screens, How to play, Settings); the craft menu's keys (slice 11), build mode's (slice 12)
   if (!paused || e.code === 'KeyP' || e.code === 'Escape') keys.add(e.code); unlockAudio(); if (!running) { menuKey(e); return; } // (the start menu's keys: menu.js)
   if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
   if (e.code === 'F9') { logEvent('mark', { x: +player.x.toFixed(1), z: +player.z.toFixed(1), y: +player.y.toFixed(1), biome: biomeAt(player.x, player.z) });
@@ -288,7 +292,11 @@ let padPrev = [], lockFailed = false; document.addEventListener('pointerlockerro
 export function readPad() { const p = [...(navigator.getGamepads?.() || [])].find(Boolean); if (!p) return null;
   const dz = v => Math.abs(v) < 0.15 ? 0 : v, b = i => p.buttons[i]?.pressed, edge = i => b(i) && !padPrev[i];
   const out = { mx: dz(p.axes[0]), mz: dz(p.axes[1]), lx: dz(p.axes[2]), ly: dz(p.axes[3]), atk: b(7) || b(2), jump: edge(0), jumpHeld: b(0), dive: b(10), use: edge(1), useHeld: b(1), sec: edge(4) || edge(6), cam: edge(3), pause: edge(9), left: edge(14), right: edge(15), menu: edge(8), up: edge(12), down: edge(13), downHeld: b(13), rb: edge(5), tearHeld: b(5), fixHeld: b(15), close: edge(11) };
+  // (#16: a new press or a stick that moves means the pad is in use, on the menus too; a held trigger or a resting stick does not take
+  // the hints back from a key just pressed, the review)
+  const moved = p.axes.some((v, i) => Math.abs(v - (axPrev[i] ?? 0)) > 0.15); if (moved) axPrev = [...p.axes]; if (moved || p.buttons.some((x, i) => x.pressed && !padPrev[i])) padActive = true;
   padPrev = p.buttons.map(x => x.pressed); return out; }
+let axPrev = [];
 export function togglePause(on = !paused, tent = false) { if (!running) return; paused = on; windLevel(windNow() * hush()); riverLevel(riverNow() * hush()); if (on) pauseChars(tent); setMusicPaused(on); if (on) { keys.clear(); mouseDown = false; } logEvent(on ? 'pause' : 'resume'); document.getElementById('pause').classList.toggle('hidden', !paused); syncCursor();
   homePanels();
   if (paused && document.pointerLockElement) document.exitPointerLock?.();
@@ -571,9 +579,9 @@ function fallHurt(h, gy) { const d = Math.round((h - FALL_SAFE) * FALL_HP); if (
   if (WATER_Y - groundY(player.x, player.z) > 0.4 && gy < WATER_Y) { logEvent('fall', { h: +h.toFixed(1), dmg: 0, water: true }); return; }
   logEvent('fall', { h: +h.toFixed(1), dmg: d }); floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `-${d}`, '#ff8a6a', d >= 20); hurtPlayer(d, 'fall'); }
 // no bed, no respawn (the owner's ruling, 2026-11-03; IW1 respawns you only at a bed you built): death ends the game
-export function gameOver(why = null) { clearPoison(); riverLevel(0); /* (the quality pass: the rush played on under the start menu) */ toggleCraft(false); running = false; paused = false; homePanels(); syncCursor(); /* (Settings and the game rows go back to the menu even when the game ends paused, the quality pass) */ net.host = null; clearOthers(); nameTags([]); const t = Math.round((performance.now() - player.startT) / 1000), by = LABEL[player.killedBy] || 'the wasteland';
+export function gameOver(why = null) { clearPoison(); riverLevel(0); /* (the quality pass: the rush played on under the start menu) */ toggleCraft(false); endTour(); running = false; paused = false; homePanels(); syncCursor(); /* (Settings and the game rows go back to the menu even when the game ends paused, the quality pass) */ net.host = null; clearOthers(); nameTags([]); const t = Math.round((performance.now() - player.startT) / 1000), by = LABEL[player.killedBy] || 'the wasteland';
   logEvent('game-over', { by: player.killedBy, secs: t, kills: player.kills, ...player.inv });
-  if (document.pointerLockElement) document.exitPointerLock(); for (const id of ['hud-tl', 'hud-tr', 'hud-b', 'cross', 'pause', 'breath', 'prompt', 'downed']) document.getElementById(id).classList.add('hidden');
+  if (document.pointerLockElement) document.exitPointerLock(); for (const id of ['hud-tl', 'hud-tr', 'hud-b', 'cross', 'pause', 'breath', 'prompt', 'downed', 'tour']) document.getElementById(id).classList.add('hidden');
   const fallen = document.getElementById('fallen'); fallen.classList.remove('hidden'); fallen.querySelector('h2').textContent = why ? 'GAME OVER' : 'FALLEN'; // (a plate on the title; the tagline stays)
   fallen.querySelector('p').textContent = why || `${player.ch.player} fell to ${/^[AEIOU]/.test(by) ? 'an' : 'a'} ${by.toLowerCase()} after ${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}, with ${player.kills} kill${player.kills === 1 ? '' : 's'}. Next time: build a craftbench, then a bed, and sleep in it to wake there.`;
   document.getElementById('menu').classList.remove('hidden'); showStep('title'); }
@@ -596,12 +604,13 @@ let padActive = false; const breathEl = document.getElementById('breath');
 export function update(dt, t) {
   const rawPad = readPad(), was = paused; if (rawPad?.pause) togglePause(); if (was && paused && rawPad) { if (rawPad.use) togglePause(false); else padIn(pauseBox, { ...rawPad, pause: false }); } // (the pause screen by pad: the d-pad moves, A presses, B resumes)
   if (paused && !coop()) return; // in co-op the world goes on behind the pause screen
+  if (!paused) tourTick(dt); // #16: the first-time tour, before the craft menu's early return (opening it is a step)
   // the craft menu (slice 11): View on a pad opens and closes it; while it is open the pad drives it, and alone the world waits
   if (rawPad?.menu && !paused && !player.dead && !(player.down > 0)) toggleCraft(); const inMenu = craftOpen(); if (inMenu) { craftPad(paused || was ? null : rawPad); /* (a press on the pause screen does not also craft behind it in co-op, review) */ renderMenu(); if (!coop()) return; }
   // (the press that closed the menu does nothing else; that comment used to sit mid-line here and swallowed the padActive
   // line after it, so the prompts never showed pad buttons: found in slice 12)
   const pad = paused || was || inMenu ? null : rawPad; // (the press that closed the pause screen does nothing else: B there, at the tent, used to open it again)
-  if (pad && (pad.mx || pad.mz || pad.lx || pad.ly || pad.atk)) padActive = true; if (keys.size || mouseDown) padActive = false;
+  if (keys.size || mouseDown) padActive = false; // (a pad's new press or move is seen in readPad, #16)
   // build mode (slice 12): A places, B ends it, RB and the d-pad turn the piece; those presses do nothing else
   if (pad && building()) { buildPad(pad); pad.jump = pad.use = pad.atk = pad.sec = pad.rb = pad.left = pad.right = false; pad.useHeld = pad.tearHeld = pad.fixHeld = false; }
   if (pad?.cam) setCam(CAMS[(CAMS.indexOf(camMode) + 1) % 3]);
@@ -997,7 +1006,7 @@ export function hud(fps, dt = 0) { perfHint(fps, dt); lastFps = fps; if (paused)
   const team = [...others.values()].map(o => { const dn = o.down > 0 && !o.out, f = o.out ? 0 : dn ? o.down / 15 : Math.max(0, o.hp) / (o.mx || 1);
     return `<div class="mate"><span style="color:${rules.ffa ? RIVAL : '#' + CHARS[o.c].color.toString(16).padStart(6, '0')}">${o.name}</span>${rules.ffa ? ` ★ ${score(o)} ·` : ''} ${o.out ? 'out' : o.away ? 'away (window hidden)' : performance.now() - o.seen > 3000 ? 'no word…' : dn ? (rules.ffa ? 'knocked out' : `DOWN ${Math.ceil(o.down)} s`) : `${Math.max(0, o.hp)}/${o.mx}`}<i><b style="width:${(f * 100).toFixed(0)}%${dn ? ';background:#ff8a6a' : ''}"></b></i></div>`; }).join(''), tEl = document.getElementById('team');
   if (tEl.innerHTML !== team) tEl.innerHTML = team; tEl.classList.toggle('hidden', !team);
-  const sec = document.getElementById('sec'); sec.textContent = `F · ${player.ch.sec}${upgraded(player.ch.id) ? ' ★' : ''}` + (player.secT > 0 ? ` ${Math.ceil(player.secT)} s` : ''); sec.style.opacity = player.secT > 0 ? 0.55 : 1;
+  const sec = document.getElementById('sec'), sh = `${kc('special')} ${player.ch.sec}${upgraded(player.ch.id) ? ' ★' : ''}` + (player.secT > 0 ? ` ${Math.ceil(player.secT)} s` : ''); if (chipV.sec !== sh) sec.innerHTML = chipV.sec = sh; /* (#16: the key cap for the keyboard or the pad) */ sec.style.opacity = player.secT > 0 ? 0.55 : 1;
   document.getElementById('cross').style.opacity = player.atkT > 0 ? 0.35 : 1; // dim while the attack recovers
   document.getElementById('fps').textContent = fps ? fps + ' fps' : ''; // (not "0 fps" before the first count: round 1 of 13d)
   const list = []; for (const e of enemies) { if (e.dead || e.state === 'lurk') continue; const d = Math.hypot(e.x - player.x, e.z - player.z);
@@ -1036,7 +1045,8 @@ function prompt(dt) { const c = player.chop || player.tear || player.fix || play
   if (!t && running && !player.dead && !building() && foodCount() && player.hp < player.maxHp) { const G = padActive ? 'd-pad down' : 'G', w = player.inv.cooked ? `roast meat, +${HEAL.cooked}` : `raw meat, +${HEAL.food}`;
     t = player.fightT > 0 ? `In a fight · you can eat (${G}) ${Math.ceil(player.fightT)} s after the last blow` : `Hold ${G} · eat (${w})`; }
   if (!t && running && !player.dead && !building() && !craftOpen()) { const b = tearTarget(x, z); if (b) { const back = Object.entries(refundOf(b.key)).map(([k, v]) => `${v} ${k}`).join(', '); t = `Hold ${padActive ? 'RB' : 'X'} · tear down the ${pieceName(b)}${back ? ` (${back} back)` : ''}`; } }
-  if (promptEl.firstChild.textContent !== t) promptEl.firstChild.textContent = t; promptEl.classList.toggle('hidden', !t); }
+  const h = capLine(t); if (promptH !== h) promptEl.firstChild.innerHTML = promptH = h; promptEl.classList.toggle('hidden', !t); } // (#16: its key as a key cap)
+let promptH = '';
 
 // ── Menu ─────────────────────────────────────────────────────────────
 // the start menu's three screens, its cards and its keys: menu.js (Jared, 2026-11-14)

@@ -6,9 +6,14 @@ import { HALF, WATER_Y, SEED, CLASSIC, ENEMY, CAMP } from './config.js';
 import { mulberry32 } from './noise.js';
 import { groundY, biomeAt, slopeAt, isWet, canyonAt, street, reachable, lakes, islands, PASSES } from './world.js';
 
-export const buildings = [], raiderCamps = [], places = [];
+export const buildings = [], raiderCamps = [], places = [], newSites = []; // (newSites: the ground the classic world's new things took, for the checks)
 const sites = [];
-export const R = mulberry32(SEED ^ 0x8b1d5); // its own stream: the props' layout stays as it was (buildings.js draws on after the plan)
+let RS = mulberry32(SEED ^ 0x8b1d5);
+export const R = () => RS(); // its own stream: the props' layout stays as it was (buildings.js draws on after the plan)
+// The classic world's new things (November 15, 2026, docs/decisions/2026-11-15-classic-update.md) plan and build on a stream of their
+// own, so every number its old town, houses, crates and rubble drew on main is drawn as it was
+const NEW = CLASSIC && mulberry32(SEED ^ 0x2c1a55);
+export function apart(fn) { if (!NEW) return fn(); const keep = RS; RS = NEW; try { return fn(); } finally { RS = keep; } }
 export const clearOf = (x, z, pad = 0) => sites.every(s => Math.hypot(x - s.x, z - s.z) > s.r + pad);
 // inside a building's walls (the gas station: its forecourt too), where no grass grows
 export function indoors(x, z) { for (const b of buildings) { if (Math.abs(x - b.x) + Math.abs(z - b.z) > b.w + b.d) continue;
@@ -29,14 +34,14 @@ function findSite(b, minR, r, minY, loose = false, ok = null) { let best = null,
     if (d < mr || d >= bd || !deep(x, z, b, edge) || !clearOf(x, z, gap) || !level(x, z, r, minY) || (ok && !ok(x, z))) continue; best = { x, z }; bd = d; }
   return best || (loose ? null : findSite(b, minR, r, minY, true, ok)); }
 // a building record: its frame (heading a: local +x is world (cos a, sin a), local -z is its front), footprint and parts
-function bld(kind, x, z, a, o) { const b = { kind, x, z, a, ca: Math.cos(a), sa: Math.sin(a), y: groundY(x, z), seed: R() * 100, doors: [], walls: [], ...o };
+function bld(kind, x, z, a, o) { const b = { kind, x, z, a, ca: Math.cos(a), sa: Math.sin(a), y: groundY(x, z), seed: R() * 100, doors: [], walls: [], isNew: !!NEW && RS === NEW, ...o };
   buildings.push(b); sites.push({ x, z, r: Math.hypot(b.w, b.d) / 2 + 1.5 }); return b; }
 export const toW = (b, lx, lz) => [b.x + lx * b.ca - lz * b.sa, b.z + lx * b.sa + lz * b.ca];
 export const toL = (b, x, z) => { const dx = x - b.x, dz = z - b.z; return [dx * b.ca + dz * b.sa, -dx * b.sa + dz * b.ca]; };
 
 // ── House kinds (slice 36, #68 and #71). Jared, November 14, 2026: "I feel like there needs to start with like 10 different kinds
 // of houses, whether they are multiple stories or by levels or split levels or different layouts or whatever". Random worlds
-// only: the classic world (seed 20261103) keeps its houses. Each kind's footprint in its frame (x0..x1, z0..z1, its front at -z:
+// only until November 15, 2026, when the classic world (seed 20261103) got them too. Each kind's footprint in its frame (x0..x1, z0..z1, its front at -z:
 // porch, steps and carport included); houses.js builds them. The town takes the town kinds in turn, the biggest first, each where
 // it fits; the Greenbelt, Frostline, Glass Desert and Bog landmarks are the farmhouse, the A-frame, the courtyard house and the
 // stilt house
@@ -52,6 +57,17 @@ function kindAt(style, x, z, a, o = {}) { const [x0, x1, z0, z1] = KINDS[style],
   for (let u = 0; u <= 1; u += 0.25) for (let v = 0; v <= 1; v += 0.25) { const [wx, wz] = toW(b, x0 + 0.6 + (x1 - x0 - 1.2) * u, z0 + 0.6 + (z1 - z0 - 1.2) * v); g = Math.max(g, groundY(wx, wz)); }
   b.ground = g; b.y = g + (style === 'stilt' ? 1.9 : 0.15); return b; }
 
+// The classic world's house kinds (Jared, November 15, 2026, Decision 1: "Yes, the whole ones"): each on an old one-room house's
+// centre, facing its way (the house's record kept as was: buildings.js builds it unseen so the stream draws as on main), or on a lot of
+// wall stubs (the stubs go). Its town has no empty level lot; nine ruined houses and the Fungal Hollow ruin stay as they were. Each
+// kind passes the quality pass's bank rule (opensOut) where it stands: the third wall-stub lot (405, 329) holds none, so it keeps its
+// stubs, and the town has room for five kinds, not six: the L ranch, the plainest, is the one left out (nine kinds in all)
+const stubLots = [], CLASSIC_KINDS = [[345, 340, 'rowhouses'], [347, 378, 'townhouse'], [374, 315, 'splitlevel'], [367, 331, 'trailer'], [325, 387, 'shop'],
+  [-250, -2, 'aframe'], [174, -194, 'stilt'], [14, -274, 'farmhouse'], [-90, 238, 'courtyard']];
+function classicKinds(adds) {
+  for (const [x, z, style] of CLASSIC_KINDS) { const i = buildings.findIndex(b => b.kind === 'house' && !b.style && Math.hypot(b.x - x, b.z - z) < 3), L = stubLots.find(q => Math.hypot(q.x - x, q.z - z) < 3);
+    if (i >= 0) { const was = buildings[i], k = kindAt(style, was.x, was.z, was.a, was.biome ? { biome: was.biome } : {}); buildings.pop(); buildings[i] = Object.assign(k, { was, isNew: true }); }
+    else if (L) { kindAt(style, L.x, L.z, L.a).isNew = true; for (const s of L.stubs) adds.splice(adds.indexOf(s), 1); } } }
 // the quality pass (November 15, 2026): a kind at (x, z) heading a is not dug into a bank. Its floor as kindAt sets it, and out
 // from every wall (a door can be on any side) the ground rises at most 0.2 m plus 0.6 m a metre, to 2.4 m out: a slope walked up
 // with room to spare (salt-tor-85's townhouse opened its only door into a hillside 6 m above the doorstep). The stilt house
@@ -79,7 +95,7 @@ export function planBuildings() { const adds = []; // props for props.js to plac
       const D = alongU ? [0.92 * s, 0.39 * s] : [-0.39 * s, 0.92 * s], a = Math.atan2(D[0], -D[1]);
       if (n === 0) bld('tower', L.x, L.z, a, { w: 6, d: 6, h: 11.5, t: 0.7, mat: 'brick', ruin: 0.3 });
       else if (n > 15) break;
-      else if (R() < 0.2) { for (let k = 0; k < 4; k++) adds.push(['ruinwall', { x: L.x + (R() - 0.5) * 9, z: L.z + (R() - 0.5) * 9, s: 0.9 + R() * 0.3, ry: a + (k % 2) * Math.PI / 2, v: k % 2 }]); if (!CLASSIC) sites.push({ x: L.x, z: L.z, r: 7 }); continue; } // a lot gone to bare wall stubs (slice 36: kept clear of, in a random world, so no house's door opens onto them)
+      else if (R() < 0.2) { for (let k = 0; k < 4; k++) adds.push(['ruinwall', { x: L.x + (R() - 0.5) * 9, z: L.z + (R() - 0.5) * 9, s: 0.9 + R() * 0.3, ry: a + (k % 2) * Math.PI / 2, v: k % 2 }]); if (!CLASSIC) sites.push({ x: L.x, z: L.z, r: 7 }); else stubLots.push({ x: L.x, z: L.z, a, stubs: adds.slice(-4) }); continue; } // a lot gone to bare wall stubs (slice 36: kept clear of, in a random world, so no house's door opens onto them)
       else if (!CLASSIC && (() => { for (let j = 0; j < TOWN_KINDS.length; j++) { const k = TOWN_KINDS[(tk + j) % TOWN_KINDS.length], r = reach(k);
         if (!level(L.x, L.z, r - 1.5, WATER_Y + 1, 0.25) || !clearOf(L.x, L.z, r + 2.0) || !opensOut(k, L.x, L.z, a)) continue; /* (room between neighbours: no window looks onto a wall a hand's width away) */ kindAt(k, L.x, L.z, a); tk += j + 1; return true; } return false; })()) {} // (slice 36: a kind, the next in turn that fits the lot)
       else { const intact = roofed < 2 || (roofed < 3 && R() < 0.3); if (intact) roofed++;
@@ -115,15 +131,15 @@ export function planBuildings() { const adds = []; // props for props.js to plac
     for (let k = 0; k < 11; k++) { const a = c.a0 + k * 0.57; if (k === 3 || k === 8) continue; // a scrap barricade with two ways in
       adds.push(['scrap', { x: s.x + Math.cos(a) * 11.5, z: s.z + Math.sin(a) * 11.5, s: 1 + R() * 0.3, ry: a, v: k % 6 }]); }
     adds.push(['hulk', { x: s.x + Math.cos(c.a0 + 1.71) * 15.5, z: s.z + Math.sin(c.a0 + 1.71) * 15.5, s: 1, ry: c.a0, v: 0 }]); }
-  if (!CLASSIC) planPlaces(adds);
+  if (CLASSIC) { const n0 = sites.length; apart(() => { planPlaces(adds); classicKinds(adds); }); newSites.push(...sites.slice(n0)); } else planPlaces(adds);
   for (const [, it] of adds) it.y = groundY(it.x, it.z) - 0.1;
   return adds;
 }
 
 // ── Places worth going to (slice 23, #52). Jared, November 14, 2026: "there really weren't many unique points of interest (like
 // IW1 had the radio tower for instance)". Each has something to see, something guarding it and something to win, names itself
-// on screen the first time a player arrives, and is logged then (src/places.js runs them). Random worlds only: the classic
-// world (the checks' own) stays as it was. A place: { kind, name, x, z, r (you have arrived inside r), guards (creature
+// on screen the first time a player arrives, and is logged then (src/places.js runs them). In the classic world too, since
+// November 15, 2026 (Jared: "it needs to get the new stuff"), where its own finder puts them, in ground nothing used. A place: { kind, name, x, z, r (you have arrived inside r), guards (creature
 // types that keep to it), and what its kind needs }; the meshes, colliders and crates are buildings.js's
 // The radio tower's guards are spiders (IW1's, slice 22, #51): until that creature is in the game the Ruins' own stand in,
 // and the moment it is (any creature whose name says spider), they are spiders, with no change here

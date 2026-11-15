@@ -20,6 +20,7 @@ import { loadCharacters } from './characters.js';
 import { loadCreatures, eyeShine } from './creatures.js';
 import { initPortraits, drawPortraits, endPortraits, portraitStats } from './menu3d.js';
 import { menuStep, leaveSeedBox } from './menu.js';
+import { hintsTick, bindTour, armTour } from './tour.js'; // #16
 import { net, netReady } from './net.js';
 import { others, deliver, coop, joining, rules } from './coop.js';
 import { craft, built, toggleCraft, craftOpen, placeSpot, sleep, bedNear, bedRespawn, lightSpots } from './craft.js';
@@ -80,12 +81,12 @@ initGame({ scene, camera, renderer, env }); initPortraits(scene); stage('init');
 await warmCreatures(); stage('warm'); // (issue #44: every creature's shaders compiled now, not on its first sight in play)
 // the offline cache (sw.js) keeps everything this load fetched, the CDN's Three.js too (slice 13a)
 navigator.serviceWorker?.ready.then(r => r.active?.postMessage(performance.getEntriesByType('resource').map(e => e.name)));
-status.textContent = ''; document.getElementById('go').disabled = false; document.getElementById('title-go').disabled = false; document.getElementById('title-go').focus({ preventScroll: true });
+bindTour(); status.textContent = ''; document.getElementById('go').disabled = false; document.getElementById('title-go').disabled = false; document.getElementById('title-go').focus({ preventScroll: true });
 // LAN co-op (slice 10): the menu says how to play together
 netReady.then(() => { const el = document.getElementById('netinfo'); if (!net.role) return; el.classList.remove('hidden');
   // this page was reloaded to build the host's world (coop.js): join as the player already asked
   let again = null; try { again = sessionStorage.getItem('iw2.rejoin'); sessionStorage.removeItem('iw2.rejoin'); } catch { /* no storage: press JOIN again */ }
-  if (net.role === 'join' && again !== null && CHARS[+again]) startGame(+again);
+  if (net.role === 'join' && again !== null && CHARS[+again]) { armTour(); startGame(+again); } // (#16: the walk-out that reloaded this page keeps its first-time tour)
   if (net.role === 'join') { el.textContent = `Playing together: this joins the game hosted at ${location.host}.`; }
   else el.textContent = net.info.lan ? `Play together: on the family's other computers, open ${net.info.addr} in a browser and press JOIN.` : 'Play together on the home network: start the server with  python3 scripts/serve.py --lan'; }); logEvent('loaded', { seed: SEED_TEXT, quality: QUALITY_KEY, ms: Math.round(performance.now()), w: innerWidth, h: innerHeight, ...device(), stages });
 // which graphics chip and screen this is, and how many pixels each frame draws (the play log's loaded event)
@@ -111,6 +112,7 @@ function frame(now) {
   if (now < nextFrameAt - 2) return; nextFrameAt = Math.max(nextFrameAt + 1000 / 60, now - 1000 / 60);
   frameTime(now - last, isRunning()); const dt = Math.max(0, Math.min(0.05, (now - last) / 1000)); last = now; clock += dt;
   frames++; fpsT += dt; if (fpsT > 0.5) { fps = Math.round(frames / fpsT); frames = 0; fpsT = 0; }
+  hintsTick(); // #16: the hints outside play follow the keyboard or the pad, whichever was used last
   if (isRunning()) { update(dt, clock); placeCamera(dt); hud(fps, dt); autoScale(dt); }
   else { menuPad(); if (menuStep() === 'chars') drawPortraits(renderer, dt, selected()); // (only while the carousel shows)
     menuCam.a += dt * 0.03; const x = 20 + Math.cos(menuCam.a) * 150, z = Math.sin(menuCam.a) * 150;

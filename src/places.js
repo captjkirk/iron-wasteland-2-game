@@ -1,5 +1,5 @@
 // Places worth going to (slice 23, #52): what happens at them. Jared, November 14, 2026: "there really weren't many unique points
-// of interest (like IW1 had the radio tower for instance)". src/plan.js puts them on every random world; buildings.js builds them.
+// of interest (like IW1 had the radio tower for instance)". src/plan.js puts them on every world (the classic one too since November 15, 2026); buildings.js builds them.
 // Here: each names itself on screen the first time you arrive (and the play log notes it), is noted when first seen, and the
 // pause screen lists what you know of them (with where they lie from you), so the family can pick where to go next. The
 // radio tower's radio, held 10 s (IW1), lifts the fog by half and names every place on the radio; the mushroom ring's spores

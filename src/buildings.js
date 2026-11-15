@@ -8,13 +8,13 @@
 // lifts the roof off the building the player is in (third-person cameras) and hides far buildings.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { Q, SEED, DEFAULT_SEED, WATER_Y, CAMP } from './config.js';
+import { Q, SEED, DEFAULT_SEED, CLASSIC, WATER_Y, CAMP } from './config.js';
 import { vnoise, mulberry32 } from './noise.js';
 import { groundY, biomeAt } from './world.js';
-import { buildings, raiderCamps, places, R, toW, toL } from './plan.js';
+import { buildings, raiderCamps, places, R, apart, toW, toL } from './plan.js';
 import { islands } from './world.js';
 import { mushroomParts } from './landmarks.js';
-import { addCollider, surfaces, colliders } from './props.js';
+import { addCollider, surfaces, colliders, dropColliders } from './props.js';
 import { buildKind, dressDoor, dressWindow, porchOn } from './houses.js';
 import { pbr, boxUV, loadMesh, canvasTex, rockMat, glowcapParts } from './propmodels.js';
 import { buildFire, buildTent } from './camp.js';
@@ -65,7 +65,9 @@ export function ladderAt(x, z, y) { for (const l of ladders) { if (y < l.y0 - 0.
 // doorway at a half-landing). A house kind (b.dress) gets frames, sills, glass and doors in its openings)
 export function wall(b, P, k, x0, z0, x1, z1, h, holes = [], o = {}) {
   const L = Math.hypot(x1 - x0, z1 - z0), ux = (x1 - x0) / L, uz = (z1 - z0) / L, along = Math.abs(ux) > 0.5, t = b.t || 0.45, ruin = b.ruin || 0, lv = o.lv || 0, base = b.y + lv;
-  const bot = lv > 0.05 ? base : o.bot, kind = !!b.style;
+  // (o.footed: walls raised on a solid footing, the split-level's upper half, have no bottom to walk under: on ground falling 2 m away,
+  // the classic town's, a player walked under them into the stone, November 15, 2026)
+  const bot = o.footed ? undefined : lv > 0.05 ? base : o.bot, kind = !!b.style;
   const hs = holes.map(o => ({ ...o, s0: L / 2 + o.at - o.w / 2, s1: L / 2 + o.at + o.w / 2 })).sort((p, q) => p.s0 - q.s0);
   const piece = (s0, s1, y0, y1) => { if (s1 - s0 < 0.02 || y1 - y0 < 0.02) return; const c = (s0 + s1) / 2;
     box(P, k, along ? s1 - s0 : t, y1 - y0, along ? t : s1 - s0, x0 + ux * c, (y0 + y1) / 2, z0 + uz * c);
@@ -163,8 +165,8 @@ function buildHouse(b, P, g) { const { w, d, h } = b, k = b.moss ? 'moss' : b.ma
       box(P, 'beam', 0.14, 0.18, len, x, b.y + 0.05 + len * Math.sin(a) / 2, d / 2 - 0.2 - len * Math.cos(a) / 2, 0, -a); }
     box(P, 'roof', w * 0.45, 0.14, d * 0.4, w * 0.15, gAt(b, w * 0.15, -d * 0.05) + 0.55, -d * 0.05, 0.3, 0.32, 0.12); }
   // a porch (issue #17): a deck, two posts and a lean-to roof in front of the door of about a third of the intact gable houses; it is
-  // picked from the house's place, never from the world's random stream (nothing else moves), and never in the classic world
-  if (b.roof === 'gable' && SEED !== DEFAULT_SEED && ((Math.round(b.x * 10) * 73856093 ^ Math.round(b.z * 10) * 19349663) >>> 0) % 3 === 0 && (() => { const pz = -d / 2 - 1.1, ys = [-1.6, 1.6].flatMap(x => [pz - 0.9, pz + 0.9].map(z => gAt(b, x, z))); return Math.max(...ys) - Math.min(...ys) < 0.3; })()) { b.porch = true; // (only on level ground: on a slope the deck would hover or sink)
+  // picked from the house's place, never from the world's random stream (nothing else moves), and in the classic world only on what is new there
+  if (b.roof === 'gable' && (SEED !== DEFAULT_SEED || b.isNew) && ((Math.round(b.x * 10) * 73856093 ^ Math.round(b.z * 10) * 19349663) >>> 0) % 3 === 0 && (() => { const pz = -d / 2 - 1.1, ys = [-1.6, 1.6].flatMap(x => [pz - 0.9, pz + 0.9].map(z => gAt(b, x, z))); return Math.max(...ys) - Math.min(...ys) < 0.3; })()) { b.porch = true; // (only on level ground: on a slope the deck would hover or sink)
     porchOn(b, P, g); } // (slice 36, Jared, November 14, 2026: "the porches don't look like they are actually touching structurally": now a ledger on the wall, posts on piers, the deck at the sill)
   furnish(b, P, g, w, d); }
 
@@ -344,6 +346,15 @@ function buildGas(b, P, g) { floor(b, P, 'concrete', 16, 11, 0, -3, 0.06);
 function gasFlush(b, G) { const M = gasMats(); for (const k in G) { if (!G[k].length) continue; const geo = mergeGeometries(G[k].map(q => q.index ? q.toNonIndexed() : q)); if (['body', 'band', 'white', 'hazard', 'lens', 'steel', 'steelIn', 'whiteIn', 'bodyIn'].includes(k)) boxUV(geo, k === 'hazard' ? 0.5 : 1);
   const m = new THREE.Mesh(geo, k === 'hose' ? placeMats().cable : M[k]); m.castShadow = !['oil', 'crack', 'arrow', 'streak', 'glow'].includes(k); m.receiveShadow = true; b.group.add(m); } }
 
+// the classic world's new things build on their own stream (plan.js apart), their crates marked, so housecheck can show every old one
+// is where it was on main
+const fresh = (make) => { const c0 = caches.length; apart(make); if (CLASSIC) for (const c of caches.slice(c0)) c.isNew = true; };
+const pools = () => Object.fromEntries(Object.keys(TILE).concat('cloth', 'glow', 'glass', 'pane', ...PLANE_KEYS).map(k => [k, []]));
+// the classic one-room house a kind stands in for (plan.js classicKinds), built and thrown away so the world's stream draws what it drew
+// on main and every crate and ruin built after it is as it was; its colliders, surfaces, crate and lamps go with it
+function unseen(was) { const n = [colliders.length, surfaces.length, caches.length, ladders.length, LAMPS.length]; Object.assign(was, { place: null, group: new THREE.Group(), PR: pools() });
+  buildHouse(was, pools(), was.group); dropColliders(n[0]); surfaces.length = n[1]; caches.length = n[2]; ladders.length = n[3]; LAMPS.length = n[4]; delete was.group; delete was.PR; } // (and its lamps: no light where no house is)
+
 // the places' lit lanterns, hanging lamps and stove fires: each a spot the few real fire lights can go to (environment.js
 // fireLights: the nearest flames in view get them), with a shorter, softer, warmer light than a torch's (Jared, 2026-11-15:
 // "lanterns in the POI don't actually put off any light?"). A marker on the building's group, its world spot worked out once
@@ -356,8 +367,9 @@ export async function buildBuildings(scene) { LAMPS.length = 0; SPOTS = null;
   { const need = places.length || buildings.some(b => b.style) ? Object.keys(KITS) : buildings.some(b => b.kind === 'gas') ? GAS_KIT : []; if (need.some(k => !KIT?.[k])) KIT = await loadKit(need, KIT || {}); } // (and for the house kinds, slice 36) // (slice 23 polish: the interiors' scanned props, only for a world with places)
   const M = mats(), root = new THREE.Group(); root.name = 'buildings'; scene.add(root);
   for (const b of buildings) { const g = new THREE.Group(); g.position.set(b.x, 0, b.z); g.rotation.y = -b.a; root.add(b.group = g);
-    const P = Object.fromEntries(Object.keys(TILE).concat('cloth', 'glow', 'glass', 'pane', ...PLANE_KEYS).map(k => [k, []])); b.place = places.find(q => q.b === b || q.shack === b) || null; b.PR = Object.fromEntries(Object.keys(TILE).map(k => [k, []]));
-    if (b.style) buildKind(b, P, root); else if (b.kind === 'house') buildHouse(b, P, root); else if (b.kind === 'tower') buildTower(b, P, root); else if (PLACE_BUILD[b.kind]) PLACE_BUILD[b.kind](b, P, root); else buildGas(b, P, root);
+    const P = pools(); b.place = places.find(q => q.b === b || q.shack === b) || null; b.PR = Object.fromEntries(Object.keys(TILE).map(k => [k, []]));
+    const make = () => { if (b.style) buildKind(b, P, root); else if (b.kind === 'house') buildHouse(b, P, root); else if (b.kind === 'tower') buildTower(b, P, root); else if (PLACE_BUILD[b.kind]) PLACE_BUILD[b.kind](b, P, root); else buildGas(b, P, root); };
+    if (b.was) unseen(b.was); if (b.isNew) fresh(make); else make();
     const roof = new THREE.Group(); g.add(roof); b.roofGroup = roof;
     for (const [parts, into] of [[P, g], [b.PR, roof]]) for (const k in parts) { if (!parts[k].length) continue;
       const geo = mergeGeometries(parts[k].map(q => q.index ? q.toNonIndexed() : q)); if (TILE[k]) boxUV(geo, TILE[k]);
@@ -375,10 +387,10 @@ export async function buildBuildings(scene) { LAMPS.length = 0; SPOTS = null;
       root.add(tent); Object.assign(addCollider(c.x + dx, c.z + dz, 1.5, c), { vr: 0, top: tent.position.y + 1.5 }); }
     cache(t, root, 2.6, 0.4, c); }
   // (slice 23) the crater lakes' chests, at the bottom, and a crate on every island but the hermit's (his is in his shack)
-  const W0 = { x: 0, z: 0, a: 0, ca: 1, sa: 0 };
+  const W0 = { x: 0, z: 0, a: 0, ca: 1, sa: 0 }; fresh(() => {
   for (const q of places) { if (q.kind === 'crater') { q.chest = cache(W0, root, q.x + 0.6, q.z - 0.4, null, { k: 4, ammo: 6, sunk: true }); buildCrater(q, root); } // (its rim rocks, mist, glow, wreck and bones)
     if (q.kind === 'plane' || q.kind === 'barge' || q.kind === 'shrooms' || q.kind === 'outpost') q.crate = caches.find(c => c.camp === q) || null; }
-  for (const s of islands) if (s.crate) cache(W0, root, s.crate.x, s.crate.z, null, { k: 2 });
+  for (const s of islands) if (s.crate) cache(W0, root, s.crate.x, s.crate.z, null, { k: 2 }); });
 }
 
 // ── Places worth going to (slice 23, #52): the radio tower's mast, the crashed plane, the sunken barge, the mushroom ring ──

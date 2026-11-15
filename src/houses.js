@@ -8,7 +8,7 @@
 // the trailer. Every floor and stair is walked on (surfaces), every outside door has its step or stoop, a porch hangs off a ledger
 // bolted to the wall and stands on posts on piers, and the rooms are furnished with scanned props (buildings.js's KITS) placed
 // against the walls clear of doors, windows and stairs. Their plan (where they stand, their footprints) is plan.js's; damage
-// levels come later, with Jared (#68 part 2). Random worlds only: the classic world keeps its houses.
+// levels come later, with Jared (#68 part 2). In every world, the classic one too since November 15, 2026 (plan.js classicKinds).
 import * as THREE from 'three';
 import { box, gAt, collideRun, surface, wall, cache, kitRoom, kit, ladders, bar, hangLamp, stock, shelfAt, mats } from './buildings.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -67,7 +67,7 @@ function mk(b, P, g) { const t = b.t, H = { b, P, g, wins: [], segs: [], rooms: 
   // the outside walls round a polygon (corners in order: along the front (-z) first, so every wall's outward side is its
   // (uz, -ux)); holes[i] are edge i's; o.skip lists edges another part builds; lined inside with o.line (plaster)
   H.out = (k, pts, h, holes = {}, o = {}) => { for (let i = 0; i < pts.length; i++) { if (o.skip?.includes(i)) continue; const [x0, z0] = pts[i], [x1, z1] = pts[(i + 1) % pts.length], L = Math.hypot(x1 - x0, z1 - z0), ux = (x1 - x0) / L, uz = (z1 - z0) / L;
-    H.wall(k, x0 - ux * t / 2, z0 - uz * t / 2, x1 + ux * t / 2, z1 + uz * t / 2, h, holes[i] || [], { ext: !o.inner?.includes(i), line: o.line === undefined ? 'inwall' : o.line, lv: o.lv || 0, stone: o.stone, foot: o.foot, bot: o.bot }); } }; // (o.inner: edges shared with another wing, inside walls; o.foot, o.bot: walls standing on a raised floor, below)
+    H.wall(k, x0 - ux * t / 2, z0 - uz * t / 2, x1 + ux * t / 2, z1 + uz * t / 2, h, holes[i] || [], { ext: !o.inner?.includes(i), line: o.line === undefined ? 'inwall' : o.line, lv: o.lv || 0, stone: o.stone, footed: o.footed, foot: o.foot, bot: o.bot }); } }; // (o.inner: edges shared with another wing, inside walls; o.footed: raised walls on a solid footing; o.foot, o.bot: walls standing on a raised floor, below)
   // an inside wall between two walls' inner faces, standing on the floor at lv
   H.part = (x0, z0, x1, z1, lv, h, holes = [], k = 'inwall', o = {}) => H.wall(k, x0, z0, x1, z1, h, holes, { lv, ...o });
   const inR = (r, x, z) => x >= r[0] && x <= r[1] && z >= r[2] && z <= r[3];
@@ -78,7 +78,7 @@ function mk(b, P, g) { const t = b.t, H = { b, P, g, wins: [], segs: [], rooms: 
       const zs = [...new Set([r[2], r[3], ...holes.flatMap(h => [h[2], h[3]]).filter(v => v > r[2] && v < r[3])])].sort((p, q) => p - q);
       for (let i = 0; i + 1 < xs.length; i++) for (let j = 0; j + 1 < zs.length; j++) { const cx = (xs[i] + xs[i + 1]) / 2, cz = (zs[j] + zs[j + 1]) / 2; if (holes.some(h => inR(h, cx, cz))) continue;
         box(P, k, xs[i + 1] - xs[i], 0.05, zs[j + 1] - zs[j], cx, Y - 0.025, cz); if (lv > 0.5 && !o.plinth) box(P, 'ceil', xs[i + 1] - xs[i], th - 0.05, zs[j + 1] - zs[j], cx, Y - 0.05 - (th - 0.05) / 2, cz); }
-      if (o.plinth) { const e = o.plinth === true ? t / 2 : o.plinth, y0 = (b.ground ?? b.y) - 0.5; box(P, o.pk || 'wall', r[1] - r[0] + 2 * e, Y - 0.05 - y0, r[3] - r[2] + 2 * e, (r[0] + r[1]) / 2, (Y - 0.05 + y0) / 2, (r[2] + r[3]) / 2); } }
+      if (o.plinth) { const e = o.plinth === true ? t / 2 : o.plinth, y0 = (b.ground ?? b.y) - 0.5; box(P, o.pk || 'wall', r[1] - r[0] + 2 * e, Y - 0.05 - y0, r[3] - r[2] + 2 * e, (r[0] + r[1]) / 2, (Y - 0.05 + y0) / 2, (r[2] + r[3]) / 2);} }
     for (const h of holes) H.holes.push([...h, lv]);
     surface(b, (lx, lz) => rects.some(r => inR(r, lx, lz)) && !holes.some(h => inR(h, lx, lz)) ? Y : null); if (lv > 0.5) b.floors.push(lv); };
   // a straight flight of stairs from its first riser at (x, z), climbing along d ('x', '-x', 'z', '-z'), w wide, from lv0 to lv1;
@@ -97,7 +97,7 @@ function mk(b, P, g) { const t = b.t, H = { b, P, g, wins: [], segs: [], rooms: 
       if (o.rail !== false) { const [a0, c0] = at(0.1, s * (w / 2 - 0.05)), [a1, c1] = at(run + (o.landing || 0) - 0.05, s * (w / 2 - 0.05)); bar(P, 'beam', a0, Y + r + 0.9, c0, a1, Y + n * r + 0.9, c1, 0.06);
         for (let q = 0.1; q <= run + (o.landing || 0); q += 0.9) { const [px, pz] = at(q, s * (w / 2 - 0.05)), y = Y + (q >= run ? n : Math.min(n - 1, Math.floor(q / TREAD) + 1)) * r; box(P, 'beam', 0.06, 0.9, 0.06, px, y + 0.45, pz); } } }
     const [ax0, az0] = at(-0.9, 0), [ax1, az1] = at(run + (o.landing ? o.landing / 2 + 0.1 : 0.9), 0); // (the top: on the floor past it, or its landing's middle)
-    if (o.check !== false) b.stairs.push({ a: [ax0, az0], lv0, z: [ax1, az1], lv1 });
+    if (o.check !== false) b.stairs.push({ a: [ax0, az0], lv0, z: [ax1, az1], lv1 }); else (b.steps ||= []).push({ a: [ax0, az0], lv0, z: [ax1, az1], lv1 }); // (steps: a porch's or a stoop's, outside: the walk test climbs them to a raised door)
     H.occ.push([Math.min(ax0, ax1) - (AX ? 0 : w / 2), Math.max(ax0, ax1) + (AX ? 0 : w / 2), Math.min(az0, az1) - (AX ? w / 2 : 0), Math.max(az0, az1) + (AX ? w / 2 : 0), lv0, lv1]);
     return { run, n, r }; };
   // a railing (posts, handrail, mid rail) along a floor's edge at lv: solid to a walker on that floor, passed under from below
@@ -150,10 +150,23 @@ function mk(b, P, g) { const t = b.t, H = { b, P, g, wins: [], segs: [], rooms: 
     for (const [xa, xb] of [[o.x0 + 0.1, st.c - st.w / 2], [st.c + st.w / 2, o.x1 - 0.1]]) if (xb - xa > 0.3) H.rail(xa, zb, xb, zb, o.lv);
     for (const x of [o.x0 + 0.08, o.x1 - 0.08]) H.rail(x, zb, x, o.z1 - 0.2, o.lv);
     if (n >= 2) H.stair(st.c, o.z0 - (n - 1) * TREAD, 'z', st.w, o.lv - n * ((o.lv - g) / n), o.lv, { base: b.y + g - 0.3, check: false }); };
+  // a landing 2.1 m deep outside door d (the houses check stands a player 2 m out at the door's level), on posts, railed, with its flight down along the wall to whichever side the ground is higher
+  H.landing = (d) => { const ux = -d.nz, uz = d.nx, D = 2.1, wl = d.w + 0.6, Y = b.y + d.lv, at = (u, v) => [d.lx + ux * u + d.nx * (t / 2 + v), d.lz + uz * u + d.nz * (t / 2 + v)];
+    const side = gAt(b, ...at(4, D / 2)) > gAt(b, ...at(-4, D / 2)) ? 1 : -1, [ax, az] = at(-wl / 2, 0), [bx, bz] = at(wl / 2, D), R = [Math.min(ax, bx), Math.max(ax, bx), Math.min(az, bz), Math.max(az, bz)];
+    box(P, 'planks', R[1] - R[0], 0.06, R[3] - R[2], (R[0] + R[1]) / 2, Y - 0.03, (R[2] + R[3]) / 2); surface(b, (lx, lz) => lx >= R[0] && lx <= R[1] && lz >= R[2] && lz <= R[3] ? Y : null); H.decks.push(R);
+    for (const u of [-wl / 2 + 0.1, wl / 2 - 0.1]) { const [x, z] = at(u, D - 0.1), g0 = gAt(b, x, z); box(P, 'beam', 0.14, Y - g0 + 0.3, 0.14, x, (Y + g0 - 0.3) / 2, z); collideRun(b, x, z, x, z, 0.1); }
+    H.rail(...at(-wl / 2, D), ...at(wl / 2, D), d.lv); H.rail(...at(-side * wl / 2, 0.15), ...at(-side * wl / 2, D), d.lv); // (the outer edge, and the end away from the flight)
+    const [fx, fz] = at(side * wl / 2, D / 2); let g = gAt(b, fx + ux * side * 0.4, fz + uz * side * 0.4) - b.y, n = Math.max(2, Math.round((d.lv - g) / RISE));
+    for (let k = 0; k < 8; k++) { g = gAt(b, fx + ux * side * (n * TREAD + 0.3), fz + uz * side * (n * TREAD + 0.3)) - b.y; n = Math.max(2, Math.round((d.lv - g) / RISE)); } // (running uphill: its foot on the ground where it ends)
+    const run = (n - 1) * TREAD; H.stair(fx + ux * side * run, fz + uz * side * run, Math.abs(ux) > 0.5 ? (-side * ux > 0 ? 'x' : '-x') : (-side * uz > 0 ? 'z' : '-z'), 1.1, d.lv - n * ((d.lv - g) / n), d.lv, { base: b.y + g - 0.3, check: false, rail: n > 3 }); };
   // a stoop up to each outside door that stands above the ground outside it (not one on a porch or a landing)
   H.stoops = () => { for (const d of b.doors) { const px = d.lx + d.nx * (t / 2 + 0.6), pz = d.lz + d.nz * (t / 2 + 0.6); if (H.decks.some(r => inR(r, px, pz))) continue;
     let g = gAt(b, px, pz) - b.y, n = Math.round((d.lv - g) / RISE); for (let k = 0; k < 3; k++) { g = Math.min(g, gAt(b, d.lx + d.nx * (t / 2 + n * TREAD + 0.3), d.lz + d.nz * (t / 2 + n * TREAD + 0.3)) - b.y); n = Math.round((d.lv - g) / RISE); } // (its foot on the ground where the stoop ends: on a slope that is lower)
-    if (n < 2) continue; const run = (n - 1) * TREAD, dir = Math.abs(d.nx) > 0.5 ? (d.nx > 0 ? '-x' : 'x') : (d.nz > 0 ? '-z' : 'z');
+    if (n < 2) continue; const axis = (vx, vz) => Math.abs(vx) > 0.5 ? (vx > 0 ? 'x' : '-x') : (vz > 0 ? 'z' : '-z');
+    // ground falling away faster than a stair can (the classic world's farmhouse, its back door 2 m over a hillside, November 15, 2026):
+    // its foot would hang in the air, so a landing at the door instead and the flight down along the wall, toward the higher side
+    if (gAt(b, d.lx + d.nx * (t / 2 + n * TREAD + 0.3), d.lz + d.nz * (t / 2 + n * TREAD + 0.3)) - b.y < g - 0.3) { H.landing(d); continue; }
+    const run = (n - 1) * TREAD, dir = axis(-d.nx, -d.nz);
     const sx = d.lx + d.nx * (t / 2 + run), sz = d.lz + d.nz * (t / 2 + run); H.stair(sx, sz, dir, d.w + 0.5, d.lv - n * ((d.lv - g) / n), d.lv, { base: b.y + g - 0.3, k: 'concrete', check: false, rail: n > 3 }); } };
   // furniture: put(k, x, lv, z, ry) stands one (solid when it is big), a room is furnished when the house is done
   // (its foot on the floor: a mesh whose lowest point is above or below its origin is set down onto it; b.items records where each went)
@@ -292,7 +305,7 @@ const KIND = {
   splitlevel(H, b) { const { D, W } = H, U = 2.6, M = 1.3;
     H.out('brick', [[-5, -3.8], [0, -3.8], [0, 3.8], [-5, 3.8]], U + 2.8, { 0: [D(-2.5, 2.6, 2.25, 0, { leaf: false, gaps: [[U + 0.9, U + 2.0]] }), W(-4.35, 0.7, [U + 0.9, U + 2.0]), W(-0.7, 0.7, [U + 0.9, U + 2.0])],
       1: [D(2.85, 1.2, 2.1, M, { int: true }), D(-1.35, 1.2, 2.1, U, { int: true })], 2: [W(-3.4, 1.2, [0.9, 2.05], [U + 0.9, U + 2.0]), W(-1.4, 0.9, [U + 0.9, U + 2.0])], 3: [W(2.0, 1.1, [0.9, 2.05], [U + 0.9, U + 2.0]), W(-2.0, 0.9, [1.4, 2.0], [U + 0.9, U + 2.0])] }, { inner: [1] });
-    H.out('planks', [[0, -3.8], [5, -3.8], [5, 3.8], [0, 3.8]], 3.4, { 0: [D(2.2), W(4.0, 1.4, [0.6, 2.1])], 1: [W(-1.5, 1.2), W(1.8)], 2: [W(3.5, 1.2)] }, { skip: [3], lv: M });
+    H.out('planks', [[0, -3.8], [5, -3.8], [5, 3.8], [0, 3.8]], 3.4, { 0: [D(2.2), W(4.0, 1.4, [0.6, 2.1])], 1: [W(-1.5, 1.2), W(1.8)], 2: [W(3.5, 1.2)] }, { skip: [3], lv: M, footed: true });
     box(H.P, 'iron', 2.5, 1.0, 0.06, -2.5, b.y + 1.75, -3.86); // the garage's roll door, stuck half up
     H.floor([[-4.85, -0.15, -3.65, 0.15]], 0, { plinth: true, k: 'concrete' }); H.floor([[-4.85, -0.15, 0.15, 3.65]], 0, { plinth: true });
     H.floor([[0.15, 4.85, -3.65, 3.65]], M, { plinth: 0.15 });

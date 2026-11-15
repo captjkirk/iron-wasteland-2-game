@@ -29,7 +29,7 @@
   button { font: inherit; color: inherit; }
 
   /* the plates: every panel is smoked glass with a light rim on its top edge */
-  #hud-tl, #log, .chip, #prompt, #build, #craft, .glass, dialog, .night, .mrow, #world, .pill, #downed, #fallen, .pplate, #poison, #place-title {
+  #hud-tl, #log, .chip, #prompt, #build, #tour, #craft, .glass, dialog, .night, .mrow, #world, .pill, #downed, #fallen, .pplate, #poison, #place-title {
     background: var(--glass); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); border: 1px solid var(--rim);
     box-shadow: inset 0 1px 0 var(--rim-top), var(--shadow); border-radius: var(--radius); }
   /* buttons: solid amber for the main action, glass for the rest; a chosen one fills amber and gets a check mark */
@@ -131,6 +131,23 @@
   #sleep { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, rgba(5,4,14,.7), rgba(3,2,8,.93)); opacity: 0; transition: opacity 1.2s ease; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 22vh; z-index: 3; }
   #sleep.on { opacity: 1; } #sleep div { color: var(--ink); font-size: 18px; letter-spacing: .04em; text-align: center; padding: 0 20px; }
   @media (prefers-reduced-motion: reduce) { #sleep { transition: none; } .chip.bump { animation: none; } #veil.show { animation-duration: 2s; } }
+
+  /* ── key caps and the first-time tour (#16; docs/decisions/2026-11-15-tutorial.md): a key's name on a small glass key, or a drawing of the
+     pad's buttons with the one to press lit (solid) and the rest in outline, so the difference is brightness and shape, never colour ── */
+  .kc { display: inline-flex; align-items: center; justify-content: center; min-width: 1.5em; padding: 1px 7px; margin: 0 2px; vertical-align: middle; box-sizing: border-box; font: inherit; font-weight: 700; line-height: 1.3;
+    color: var(--ink); background: rgba(255, 240, 214, .12); border: 1px solid var(--rim-top); border-bottom-width: 2px; border-radius: var(--r-s); }
+  .kc.pad { padding: 1px 3px; } .kc svg { width: 2.6em; height: 1.8em; display: block; } .kc svg.ms { width: 1.3em; height: 1.05em; margin-right: 5px; } #prompt .kc.pad svg, #sec .kc.pad svg { width: 3.2em; height: 2.2em; } /* (the prompt line's and chip's drawings at about 48 px, critic round 2) */
+  .kc svg [data-b] { fill: none; stroke: currentColor; stroke-width: 1.1; opacity: .4; } .kc svg .on { fill: currentColor; stroke: currentColor; stroke-width: 1.8; opacity: 1; } .kc svg.ms [data-b] { opacity: 1; stroke-width: 1.5; } /* (lit: solid and a thicker edge; the rest thin and faint, critic round 1) */ .kc svg .body { fill: none; stroke: currentColor; stroke-width: 1; opacity: .35; }
+  .press .kc, .go .kc { color: inherit; background: transparent; border-color: currentColor; } .press .kc svg { width: 2.6em; height: 1.8em; }
+  #tour { position: fixed; left: 14px; top: 26%; width: 220px; box-sizing: border-box; padding: 14px 16px 12px; text-align: center; font-size: 15px; line-height: 1.4; }
+  #tour .tk { font-size: 22px; min-height: 44px; display: flex; align-items: center; justify-content: center; gap: 4px; color: var(--dim); }
+  #tour .tk .kc { font-size: 26px; padding: 3px 12px; } #tour .tk .kc.pad { padding: 4px 8px; } #tour .tk .kc.pad svg { width: 3em; height: 2.06em; } /* (a picture a non-reader can match: about 78 px wide) */
+  #tour .tw { margin-top: 8px; font-weight: 700; color: var(--ink); }
+  #tour .td { display: flex; justify-content: center; gap: 7px; margin-top: 10px; } #tour .td i { width: 11px; height: 11px; border-radius: 50%; border: 1.5px solid var(--dim); box-sizing: border-box; }
+  #tour .td i.on { background: var(--ink); border-color: var(--ink); }
+  #tour small { display: block; margin-top: 8px; font-size: 13px; color: var(--dim); }
+  #tour.tick .tw::before { content: '✓ '; } #tour.tick { animation: tick var(--dur) var(--ease); } @keyframes tick { 50% { transform: scale(1.05); } } /* (a fixed top: the card no longer shifts as its height changes, critic round 2) */
+  @media (max-height: 640px) { #tour { top: 22%; padding: 10px 14px; } #tour .tk { min-height: 36px; } }
 
   /* ── overlays: the start menu and the pause screen ── */
   .overlay { position: fixed; inset: 0; display: flex; align-items: center; flex-direction: column; justify-content: safe center;
@@ -254,6 +271,7 @@
 <div id="hud-tl" class="hud hidden"><div id="name">—</div><div id="hpbar"><div id="hpfill"></div><span id="hpnum"></span></div><div id="team" class="hidden" style="margin-top:6px;color:var(--dim)"></div></div>
 <div id="hud-tr" class="hud hidden"><div id="biome" class="chip">—</div><div id="cam" class="chip">—</div><div id="fps">—</div></div>
 <div id="hud-b" class="hud hidden"><span class="chip res wood" id="inv-wood"><i></i><span>Wood 0</span></span><span class="chip res metal" id="inv-metal"><i></i><span>Metal 0</span></span><span class="chip res fiber" id="inv-fiber"><i></i><span>Fiber 0</span></span><span class="chip res food" id="inv-food"><i></i><span>Food 0</span></span><span class="chip res cooked" id="inv-cooked"><i></i><span>Cooked 0</span></span><span class="chip res arrows hidden" id="inv-arrows"><i></i><span>Arrows 0</span></span><span class="chip" id="inv-kills"><span>Kills 0</span></span><span class="chip" id="sec">—</span></div>
+<div id="tour" class="hud hidden" role="status"></div>
 <div id="prompt" class="hud hidden"><span></span><i><b></b></i></div>
 <div id="build" class="hud hidden"></div>
 <div id="downed" class="hud hidden" role="status"></div>
@@ -311,12 +329,13 @@
     <div class="srow"><span>Look sensitivity</span><input type="range" id="sens" aria-label="Look sensitivity" min="0.3" max="3" step="0.1"><output id="sensv"></output>
       <label><input type="checkbox" id="invy"> Invert up/down</label></div>
     <div class="srow"><span>Sound</span><label><input type="checkbox" id="snd"> Sound on</label><label>Music <input type="range" id="music" min="0" max="1" step="0.05"></label></div>
+    <div class="srow"><span>First-time tour</span><label><input type="checkbox" id="tourrep"> Show the tour next game</label></div>
   </div></div><form method="dialog"><button class="ghost">Close</button></form></dialog>
   <dialog id="dlg-help" aria-label="How to play"><h2>HOW TO PLAY</h2><div class="dbody"><table class="keys"><thead><tr><th scope="col">To</th><th scope="col">Keyboard and mouse</th><th scope="col">Controller</th></tr></thead><tbody><tr><th scope="row">Move</th><td>W A S D</td><td>Left stick</td></tr><tr><th scope="row">Look</th><td>Mouse (click to lock, or right-drag) · arrow keys</td><td>Right stick</td></tr><tr><th scope="row">Attack</th><td>Click</td><td>RT or X</td></tr><tr><th scope="row">Special</th><td>F or right click</td><td>LB or LT</td></tr><tr><th scope="row">Pistol-whip (Gunslinger)</th><td>Z</td><td>Right stick click</td></tr><tr><th scope="row">Jump</th><td>Space</td><td>A</td></tr><tr><th scope="row">Search, salvage, sleep in a bed, change character at the camp tent</th><td>E</td><td>B</td></tr><tr><th scope="row">Chop, pick, dig up a stump, revive a friend, cook at a fire</th><td>Hold E</td><td>Hold B</td></tr><tr><th scope="row">Repair a damaged wall or gate</th><td>Hold H</td><td>Hold d-pad right</td></tr><tr><th scope="row">Tear down what you built</th><td>Hold X</td><td>Hold RB</td></tr><tr><th scope="row">Put away or take out a hand torch</th><td>T</td><td>D-pad left (top-down: turns the view)</td></tr><tr><th scope="row">Eat</th><td>Hold G</td><td>Hold d-pad down</td></tr><tr><th scope="row">Craft and build</th><td>Tab</td><td>View</td></tr><tr><th scope="row">Camera: first person, angled, top-down</th><td>V (Q and E turn the top-down view)</td><td>Y</td></tr><tr><th scope="row">Pause and settings</th><td>P or Esc</td><td>Menu</td></tr><tr><th scope="row">Sound on or off</th><td>M</td><td></td></tr></tbody></table></div><form method="dialog"><button class="ghost">Close</button></form></dialog>
 </div>
 <div id="pause" class="overlay hidden"><div class="pplate"><h1>PAUSED</h1><div class="sub">P or Esc to resume</div><div class="pcols"><div class="pcol"><div id="pauseworld" class="sub"></div></div><div class="pcol"><div id="pausemode" class="sub"></div><div id="pause-modes"></div><div id="pause-settings"></div></div></div>
   <div id="pause-switch" class="sub hidden"><span>Pick who walks out of the tent</span><small>You keep your pack and your share of health</small><div id="pause-chars"></div></div>
-  <div class="prow"><button class="go" id="resume" type="button">RESUME</button><button class="go alt" id="tomenu" type="button">LEAVE THE GAME</button></div></div></div>
+  <div class="prow"><button class="go" id="resume" type="button">RESUME</button><button class="go alt" id="tour-skip" type="button" hidden>SKIP THE TOUR</button><button class="go alt" id="tomenu" type="button">LEAVE THE GAME</button></div></div></div>
 
 <script type="importmap">
 { "imports": {
