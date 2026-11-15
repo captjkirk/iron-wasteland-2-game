@@ -18,7 +18,7 @@ import { checkMsg, onCheck } from './watch.js';
 import { deepMsg, tickGhostDeep, dropGhostDeep } from './water.js';
 import { day, setDay } from './daynight.js';
 import { builtMsg, addBuilt, onBuildReq, onBuilt, onNoBuild } from './craft.js';
-import { felled, applyFelled, onChop, onFell, onShake } from './harvest.js';
+import { felled, applyFelled, onChop, onFell, onShake, onDig, onDug, onGrew } from './harvest.js';
 import { dropFrom } from './arrows.js';
 import { onTearReq, onGateReq, onGone, onBst, onFixReq } from './build.js';
 import { player, score, enemies, spawnEnemy, hitEnemy, charm, scare, crateOpen, smashCrate, hurtPlayer, log, fireShot, deployTurret, slash, gameOver, startGame, isRunning, pickups, addPickup, scene3, gotPickup, turrets, applyUp, upBits } from './game.js';
@@ -95,7 +95,7 @@ function onMsg(m, from) {
       if (!running()) { post(from, { t: 'wait' }); break; }
       post(from, { t: 'welcome', crates: caches.flatMap((c, i) => c.broken ? [[i, 2]] : c.opened ? [[i, 1]] : []), salv: salvaged, pickups: pickups.map(k => [k.id, k.kind, +k.mesh.position.x.toFixed(2), +k.mesh.position.z.toFixed(2)]),
         tur: turrets.map(q => [+q.x.toFixed(2), +q.z.toFixed(2), +q.head.rotation.y.toFixed(2), +q.life.toFixed(1)]), // turrets already out, so a late joiner sees them
-        fell: felled, built: builtMsg(), d: [day.t, day.n, day.speed], seed: SEED_TEXT, rules: { ...rules }, radio: places.some(q => q.on) ? 1 : 0 }); /* (slice 23: the radio tower's radio, on) */ break; // (slice 13: the time of day) // slice 11: trees felled, bushes picked, and what players built
+        fell: felled, built: builtMsg(), d: [day.t, day.n, day.speed, day.g], seed: SEED_TEXT, rules: { ...rules }, radio: places.some(q => q.on) ? 1 : 0 }); /* (slice 23: the radio tower's radio, on) */ break; // (slice 13: the time of day) // slice 11: trees felled, bushes picked, and what players built
     case 'wait': if (!waitLogged) { waitLogged = true; logEvent('join-wait'); } document.getElementById('loading').textContent = 'The host is still on the start menu: walk out there first.'; break;
     case 'welcome': if (!joinT || running()) break; if (m.radio) radioLater();
       // another world than this page built (the host rolled a new one after this page loaded): build the host's, then join
@@ -109,7 +109,7 @@ function onMsg(m, from) {
       joinT = 0; net.host = from; logEvent('join-welcome', { ms: Math.round(performance.now() - joinAt), hellos });
       for (const [i, s] of m.crates) { const c = caches[i]; if (!c) continue; s === 2 ? c.smash() : c.open(); }
       for (const [k, i] of m.salv) applySalvage(k, i);
-      applyFelled(m.fell || []); for (const b of m.built || []) addBuilt(...b); if (m.d) setDay(...m.d);
+      if (m.d) setDay(...m.d); applyFelled(m.fell || []); for (const b of m.built || []) addBuilt(...b); // (the host's clock first: a new game count restarts this page's own stumps, not the host's)
       takeRules(m.rules); showRules(); // (slice 33: the host's rules, before the start event logs them)
       startGame(wantCh); joinT = 0; for (const [id, kind, x, z] of m.pickups) addPickup(id, kind, x, z, true);
       for (const [x, z, f, life] of m.tur || []) { deployTurret(x, z, f, true); turrets.at(-1).life = life; } break;
@@ -120,7 +120,7 @@ function onMsg(m, from) {
       if ((m.u || 0) !== (o.u || 0)) { o.u = m.u || 0; applyUp(o.mesh, CHARS[o.c].id, !!(o.u & (1 << o.c))); } // slice 12: their upgrade shows here too
       const wasDown = o.down > 0;
       track(o, from, m.ts ?? performance.now(), m.x, m.y, m.z, m.f);
-      Object.assign(o, { k: m.k || 0, pk: m.pk || 0, hp: m.hp, mx: m.mx, down: m.dn, out: m.out, rv: m.rv, rt: m.rt, sw: m.sw, g: m.g, ea: m.ea, dq: m.dq, sl: m.sl, seen: performance.now() });
+      Object.assign(o, { k: m.k || 0, pk: m.pk || 0, hp: m.hp, mx: m.mx, down: m.dn, out: m.out, rv: m.rv, rt: m.rt, sw: m.sw, g: m.g, ea: m.ea, dq: m.dq, sl: m.sl, tc: m.tc, seen: performance.now() });
       if (m.dn > 0 && !wasDown) { o.mesh.userData.anim.die(); log(rules.ffa ? `${o.name} is knocked out.` : `${o.name} is down! Stand close and hold E (B on a pad) to revive them.`); }
       if (!(m.dn > 0) && wasDown && !m.out) { o.mesh.userData.anim.revive(); log(rules.ffa ? `${o.name} is back in the game.` : `${o.name} is back up.`); }
       if (m.out && !o.wasOut) { o.wasOut = true; log(`${o.name} is out of the game.`); } o.mesh.visible = !m.out; break; }
@@ -163,6 +163,9 @@ function onMsg(m, from) {
     // slice 11: trees, bushes and what players build are the host's (harvest.js, craft.js)
     case 'chop': if (net.role === 'host') onChop(m); break;
     case 'fell': onFell(m); break;
+    case 'dig': if (net.role === 'host') onDig(m); break; // slice 26: a stump dug up
+    case 'dug': onDug(m); break;
+    case 'grew': onGrew(m); break; // the host says a stump is a tree again
     case 'shake': onShake(m); break;
     case 'build': if (net.role === 'host') onBuildReq(m, from); break;
     case 'built': onBuilt(m); break;
@@ -188,7 +191,7 @@ function applyWorld(m, from) { const seen = new Set(); if (m.d) setDay(...m.d); 
     track(e, from, m.ts ?? performance.now(), x, 0, z, yaw); Object.assign(e, { state: st, hp, maxHp });
     if (hp <= 0 && !e.dead) { e.dead = 5; u.anim.die(); u.flash(0); sfx(e.type, e, 0.8); sfx('thud', e, 0.6); } }
   for (const e of enemies) if (!seen.has(e.id) && !e.gone) { dropFrom(e); scene3().remove(e.mesh); e.gone = true; } }
-function worldMsg() { return { t: 'w', ts: Math.round(performance.now()), d: [+day.t.toFixed(5), day.n, day.speed], e: enemies.filter(e => !e.gone).map(e => [e.id, e.type, +e.x.toFixed(2), +e.z.toFixed(2), +e.yaw.toFixed(2), Math.max(0, ST.indexOf(e.state)), Math.max(0, e.hp), e.maxHp]) }; }
+function worldMsg() { return { t: 'w', ts: Math.round(performance.now()), d: [+day.t.toFixed(5), day.n, day.speed, day.g], e: enemies.filter(e => !e.gone).map(e => [e.id, e.type, +e.x.toFixed(2), +e.z.toFixed(2), +e.yaw.toFixed(2), Math.max(0, ST.indexOf(e.state)), Math.max(0, e.hp), e.maxHp]) }; }
 
 // ── Smooth playback (the gate of slice 12, from the family's LAN play of 2026-11-04, "working but a little choppy") ──
 // Each 'p' and 'w' carries its sender's clock (ms). Over Wi-Fi they arrive unevenly (two or three at once, then none), and
@@ -232,7 +235,7 @@ export function tickCoop(dt) {
   if (!net.role || !running()) return;
   if ((sendT += dt) >= 1 / 15 && (coop() || joining())) { sendT = 0;
     send('all', { t: 'p', ts: Math.round(performance.now()), c: CHARS.indexOf(player.ch), x: +player.x.toFixed(2), y: +player.y.toFixed(2), z: +player.z.toFixed(2), f: +player.faceYaw.toFixed(2), hp: Math.round(player.hp), mx: player.maxHp,
-      dn: +(player.down || 0).toFixed(1), out: player.out ? 1 : 0, k: player.kills, pk: player.pk || 0, rv: player.rv ? 1 : 0, rt: Math.round((player.revT || 0) / 2.5 * 100), sw: player.swim ? 1 : 0, g: player.onGround ? 1 : 0, u: upBits(), ea: player.eat ? 1 : 0, dq: deepMsg(), sl: player.sleep ? 1 : 0 }); }
+      dn: +(player.down || 0).toFixed(1), out: player.out ? 1 : 0, k: player.kills, pk: player.pk || 0, rv: player.rv ? 1 : 0, rt: Math.round((player.revT || 0) / 2.5 * 100), sw: player.swim ? 1 : 0, g: player.onGround ? 1 : 0, u: upBits(), ea: player.eat ? 1 : 0, dq: deepMsg(), sl: player.sleep ? 1 : 0, tc: player.torch?.on ? 1 : 0 }); }
   if (net.role === 'host' && coop() && (worldT += dt) >= 1 / 12) { worldT = 0; send('all', worldMsg()); }
   if (net.role === 'host' && coop() && (chkT += dt) >= 10) { chkT = 0; send('all', checkMsg()); } // slice 13d: drift (watch.js)
   flush();

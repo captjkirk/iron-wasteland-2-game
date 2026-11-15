@@ -21,17 +21,18 @@ import { RECIPES, BENCH_R } from './recipes.js';
 import { groundY, slopeAt } from './world.js';
 import { nearColliders, colR, standAt, STEP, addCollider } from './props.js';
 import { palisadeMesh, stoneMesh, rubbleMesh, postMesh, gateMesh, spikeMesh } from './buildmodels.js';
-import { benchMesh, bedMesh, torchMesh } from './craftmodels.js';
+import { benchMesh, bedMesh, torchMesh, wallTorchMesh } from './craftmodels.js';
 import { dustPuff, hitBurst, floatText } from './effects.js';
 import { sfx } from './audio.js';
 import { logEvent } from './playlog.js';
 import { player, log, scene3, enemies, hitEnemy, getCamMode, aimGround, isPadActive } from './game.js';
 import { send, joining, net, others } from './coop.js';
 import { built, addBuilt, spend, short, FOOT, nextBuiltId, benchNear, toggleCraft } from './craft.js';
+import { removeFlame } from './camp.js';
 
 export const G = 2; // the grid's cell (m): a wall is one cell long
 export const PIECE = { wall: { edge: 1, hp: 200, name: 'wall', top: 2.4 }, reinforced_wall: { edge: 1, hp: 300, name: 'stone wall', top: 2.35, stone: 1 }, gate: { edge: 1, hp: 200, name: 'gate', top: 2.9 },
-  spike_trap: { name: 'spike trap' }, campfire: { name: 'campfire' }, torch: { name: 'torch', keep: 1 }, craftbench: { name: 'craftbench' }, bed: { name: 'bed' } };
+  spike_trap: { name: 'spike trap' }, wall_torch: { name: 'wall torch', keep: 1 }, campfire: { name: 'campfire' }, torch: { name: 'torch', keep: 1 }, craftbench: { name: 'craftbench' }, bed: { name: 'bed' } };
 export const isEdge = (k) => !!PIECE[k]?.edge;
 const QT = Math.PI / 2, snapF = (a) => Math.round(a / QT) * QT, alongX = (f) => Math.abs(Math.cos(f)) > 0.5;
 const axis = (f) => [Math.cos(f), -Math.sin(f)]; // a piece's local x axis in the world
@@ -42,7 +43,16 @@ const no = (why) => ({ ok: false, why });
 const players = () => [player, ...others.values()].filter(p => p && !p.out && p.ch !== null);
 
 // ── Where a piece goes: the grid slot nearest where the player aims, turned to face them plus `rot` quarter turns ──
+// slice 26: a wall torch hangs on the wall or the gate post nearest where you aim (a wall's middle or either end post; a gate's
+// posts only), on your side of it, 1.6 m up, leaning out
+const segD = (b, x, z) => { const [ax, az] = axis(b.f), t = Math.max(-1, Math.min(1, (x - b.x) * ax + (z - b.z) * az)); return { t, d: Math.hypot(x - b.x - ax * t, z - b.z - az * t) }; };
+export const mountOf = (x, z) => built.find(b => isEdge(b.key) && b.hp > 0 && segD(b, x, z).d < 0.45);
+export function wallMount(x, z, from) { let w = null, bd = 1.6; for (const b of built) if (isEdge(b.key) && b.hp > 0) { const d = segD(b, x, z).d; if (d < bd) { bd = d; w = b; } } if (!w) return null;
+  const [ax, az] = axis(w.f), nx = Math.sin(w.f), nz = Math.cos(w.f), t0 = segD(w, x, z).t, t = w.key === 'gate' ? Math.sign(t0) || 1 : Math.round(t0), side = Math.sign((from.x - w.x) * nx + (from.z - w.z) * nz) || 1, off = Math.abs(t) > 0.5 ? 0.3 : PIECE[w.key].stone ? 0.32 : 0.24;
+  const px = w.x + ax * t, pz = w.z + az * t; return { x: px + nx * side * off, z: pz + nz * side * off, y: (Math.abs(t) > 0.5 ? groundY(px, pz) : w.y) + 1.6, f: side > 0 ? w.f : w.f + Math.PI }; }
 export function placeSpot(key, p = player, rot = mode?.rot || 0) { const aim = aimGround(1.7, 4.6), heading = getCamMode() === 'top' ? Math.atan2(-(aim.x - p.x), -(aim.z - p.z)) : p.yaw;
+  if (key === 'wall_torch') { const m = wallMount(aim.x, aim.z, p); if (!m) return { x: aim.x, y: groundY(aim.x, aim.z), z: aim.z, f: 0, slot: slotOf(aim.x, aim.z), ...no('A wall torch hangs on a wall or a gate post: aim at one.') };
+    return { ...m, f: Math.atan2(Math.sin(m.f), Math.cos(m.f)), slot: slotOf(m.x, m.z), ...spotFree(key, m.x, m.y, m.z, m.f) }; }
   const f = snapF(heading) + (isEdge(key) ? 0 : Math.PI) + rot * QT; let x, z;
   if (isEdge(key)) [x, z] = alongX(f) ? [(Math.floor(aim.x / G) + 0.5) * G, Math.round(aim.z / G) * G] : [Math.round(aim.x / G) * G, (Math.floor(aim.z / G) + 0.5) * G];
   else [x, z] = [(Math.floor(aim.x / G) + 0.5) * G, (Math.floor(aim.z / G) + 0.5) * G];
@@ -51,6 +61,7 @@ export function placeSpot(key, p = player, rot = mode?.rot || 0) { const aim = a
 
 // whether a piece fits there (every game checks its own ghost; the host re-checks a joined game's request with it)
 export function spotFree(key, x, y, z, f = 0, who = net.id) { const slot = slotOf(x, z), there = built.find(b => b.slot === slot);
+  if (key === 'wall_torch') return !mountOf(x, z) ? no('A wall torch hangs on a wall or a gate post: aim at one.') : there ? no('There is a torch there already.') : { ok: true };
   // slice 21 (Jared, 2026-11-14: "If there's a wall, you should be able to build a gate 'on top of it' which replaces the wall
   // with a gate (maybe a discounted build)"): a gate aimed at a palisade wall takes its place
   const swap = there && key === 'gate' && there.key === 'wall' && mine(there, who) ? there : null; // (your own wall, or one whose builder has left, as tearing down; the edge checks below still run)
@@ -81,7 +92,7 @@ export function model(key, b, stage = 0) { const gy = gyOf(b);
   if (key === 'reinforced_wall') return stoneMesh(gy, stage, b.id || 1);
   if (key === 'gate') return gateMesh(gy, stage);
   if (key === 'spike_trap') return spikeMesh(gy, b.spent, b.id || 1);
-  return key === 'craftbench' ? benchMesh() : key === 'bed' ? bedMesh() : key === 'torch' ? torchMesh() : fireGhost(); }
+  return key === 'craftbench' ? benchMesh() : key === 'bed' ? bedMesh() : key === 'torch' ? torchMesh() : key === 'wall_torch' ? wallTorchMesh() : fireGhost(); }
 function fireGhost() { const g = new THREE.Group(), m = new THREE.MeshBasicMaterial(); for (let k = 0; k < 9; k++) { const s = new THREE.Mesh(new THREE.SphereGeometry(0.16, 6, 4), m); s.position.set(Math.cos(k * 0.7) * 0.6, 0.08, Math.sin(k * 0.7) * 0.6); g.add(s); }
   for (let k = 0; k < 3; k++) { const l = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.8, 6).rotateZ(1.2), m); l.rotation.y = k * 2.1; l.position.y = 0.25; g.add(l); } return g; }
 const stageOf = (b) => !b.max ? 0 : b.hp / b.max < 0.34 ? 2 : b.hp / b.max < 0.67 ? 1 : 0;
@@ -111,7 +122,8 @@ function showHit(b, from) { b.barT = 6; b.shakeT = 0.22; const P = PIECE[b.key],
 const falling = [];
 export function removeBuilt(b, how) { const i = built.indexOf(b); if (i < 0) return; built.splice(i, 1);
   for (const c of b.cols) { c.r = 0; c.vr = 0; } const s = scene3(), at = new THREE.Vector3(b.x, b.y + 0.8, b.z), P = PIECE[b.key] || {};
-  if (b.flame) b.flame.visible = false; if (P.edge) for (const [i2, j] of ends(b)) post(i2, j, -1, P.stone ? -1 : 0);
+  if (b.flame) { removeFlame(b.flame); b.flame = null; } /* slice 26: its flame leaves the animated fires and is freed */ if (P.edge) for (const [i2, j] of ends(b)) post(i2, j, -1, P.stone ? -1 : 0);
+  if (P.edge) for (const t of built.filter(q => q.key === 'wall_torch' && !mountOf(q.x, q.z))) removeBuilt(t, 'dropped'); // (slice 26: its wall torches fall with it)
   if (player.bed === b.id) { player.bed = null; log('Your bed is gone: you will not wake there now.'); }
   logEvent(how === 'fell' ? 'collapse' : 'torn', { key: b.key, x: +b.x.toFixed(1), z: +b.z.toFixed(1) });
   if (how !== 'fell') { s.remove(b.mesh); dustPuff(at, 18); sfx('thud', at, 0.6); return; }
@@ -260,8 +272,10 @@ export function tickBuild(dt) {
       if (k >= 1) { scene3().remove(f.m); f.m = null; } }
     if (f.t > 25) { f.rub.position.y -= dt * 0.3; if (f.t > 28) { scene3().remove(f.rub); falling.splice(i, 1); } } } }
 // for the checks: build `key` at grid slot (x, z) facing f, as the host would (null, with the reason, if it does not fit)
-export function putPiece(key, x, z, f = 0) { const y = isEdge(key) ? Math.min(...[-1, 0, 1].map(k => groundY(x + Math.cos(f) * k, z - Math.sin(f) * k))) : Math.max(groundY(x, z), standAt(x, z, groundY(x, z) + STEP)), ok = spotFree(key, x, y, z, f);
+export function putPiece(key, x, z, f = 0) { if (key === 'wall_torch') { const m = wallMount(x, z, { x, z }); if (!m) return 'A wall torch hangs on a wall or a gate post.'; const ok = spotFree(key, m.x, m.y, m.z, m.f); if (!ok.ok) return ok.why;
+    const id = nextBuiltId(); addBuilt(id, key, m.x, m.y, m.z, m.f, net.id); send('all', { t: 'built', id, key, x: m.x, y: m.y, z: m.z, f: m.f, by: net.id }); return built.find(b => b.id === id); }
+  const y = isEdge(key) ? Math.min(...[-1, 0, 1].map(k => groundY(x + Math.cos(f) * k, z - Math.sin(f) * k))) : Math.max(groundY(x, z), standAt(x, z, groundY(x, z) + STEP)), ok = spotFree(key, x, y, z, f);
   if (!ok.ok) return ok.why; if (ok.swap) swapOut(ok.swap); const id = nextBuiltId(); addBuilt(id, key, x, y, z, f, net.id); send('all', { t: 'built', id, key, x, y, z, f, by: net.id }); return built.find(b => b.id === id); }
 // a new game clears every piece and its rubble (the host's game starts an empty world)
-export function clearBuilt() { endBuild(); for (const b of [...built]) { for (const c of b.cols) { c.r = 0; c.vr = 0; } scene3().remove(b.mesh); } built.length = 0;
+export function clearBuilt() { endBuild(); for (const b of [...built]) { for (const c of b.cols) { c.r = 0; c.vr = 0; } scene3().remove(b.mesh); if (b.flame) { removeFlame(b.flame); b.flame = null; } } built.length = 0;
   for (const p of posts.values()) scene3().remove(p.mesh); posts.clear(); for (const f of falling) { if (f.m) scene3().remove(f.m); scene3().remove(f.rub); } falling.length = 0; }

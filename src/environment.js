@@ -165,7 +165,7 @@ export function buildEnvironment(scene, renderer, camera) {
   const pool = []; for (let k = 0; k < Q.fireLights; k++) { const l = new THREE.PointLight(0xff8a3a, 0, 26, 1.25); scene.add(l); pool.push(l); }
   function fireLights(spots, at, nk, t) { const near = spots.map(s => [s, ((s.x - at.x) ** 2 + (s.z - at.z) ** 2) * (s.key === 'torch' ? 2.5 : 1)]).filter(q => q[1] < 70 * 70).sort((a, b) => a[1] - b[1]); // (a campfire before the torches round it)
     pool.forEach((l, k) => { const q = near[k]; if (!q) { l.intensity = 0; return; } const s = q[0], fl = 1 + Math.sin(t * 13 + k * 1.7) * 0.1 + Math.sin(t * 7.3 + k) * 0.08 + Math.sin(t * 23.1 + k * 3) * 0.05;
-      l.position.set(s.x, s.y + (s.key === 'torch' ? 0.15 : 0.5), s.z); l.distance = s.key === 'torch' ? 16 : 26; l.intensity = (s.key === 'torch' ? 9 : 18) * fl * (0.12 + 0.88 * nk); }); } // (slice 21, Jared 2026-11-14: "fires and torches dont seem to be putting off a lot of light": the glow reached about 3 m; now about 8 to 10)
+      l.position.set(s.x, s.y + (s.key === 'torch' ? 0.15 : 0.5), s.z); l.distance = s.dist ?? (s.key === 'torch' ? 16 : 26); l.intensity = (s.i ?? (s.key === 'torch' ? 9 : 18)) * /* (slice 26: a carried torch is brighter) */ fl * (0.12 + 0.88 * nk); }); } // (slice 21, Jared 2026-11-14: "fires and torches dont seem to be putting off a lot of light": the glow reached about 3 m; now about 8 to 10)
   return { sky, sun, water, follow, tick, setTime, fireLights, haze, fogTint, normals: waterNormals(), fogNear: Q.drawDist * 0.2, fogFar: Q.drawDist * 1.35 };
 }
 

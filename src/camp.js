@@ -32,7 +32,7 @@ export function buildFire(parent, x, z, withLight) {
   for (let k = 0; k < 11; k++) { const a = k / 11 * Math.PI * 2, s = new THREE.Mesh(stoneG, rockMat('rock')); s.scale.set(1 + (k % 3) * 0.25, 0.7 + (k % 2) * 0.3, 1.1); s.rotation.set(k, k * 2, 0); at(s, Math.cos(a) * 0.82, Math.sin(a) * 0.82, 0.05); }
   for (let k = 0; k < 5; k++) { const a = k / 5 * Math.PI * 2 + 0.3, l = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.07, 0.95, 7), k % 2 ? bark : char);
     l.position.set(Math.cos(a) * 0.22, 0.32, Math.sin(a) * 0.22); l.rotation.set(Math.sin(a) * 0.6, 0, -Math.cos(a) * 0.6); const holder = new THREE.Group(); holder.add(l); at(holder, 0, 0); }
-  const fire = addFlame(g, groundY(x, z) - fy, 1); fire.light = withLight ? new THREE.PointLight(0xff8a3a, 18, 26, 1.25) : null; if (fire.light) { fire.light.position.set(0, 1.1, 0); g.add(fire.light); }
+  const fire = g.userData.fire = addFlame(g, groundY(x, z) - fy, 1); fire.light = withLight ? new THREE.PointLight(0xff8a3a, 18, 26, 1.25) : null; if (fire.light) { fire.light.position.set(0, 1.1, 0); g.add(fire.light); }
   addCollider(x, z, 0.9, null).top = fy + 0.6; // shots fly over it
   return g;
 }
@@ -57,6 +57,12 @@ export function addFlame(parent, y, s = 1, nEmbers = 40) { const h = new THREE.G
     new THREE.PointsMaterial({ color: 0xffa040, size: 0.05, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
   embers.frustumCulled = false; embers.position.y = 0.3; h.add(embers);
   const f = { flameMat, light: null, embers, ep, eSeed, flames, h }; fires.push(f); return f; }
+// a flame whose fire is gone (a torch or a campfire taken down): out of the animated list, off its parent, its GPU parts freed
+// (the flame cards' material and geometry are its own; the halo sprite shares one material and is only detached)
+export function removeFlame(f) { const i = fires.indexOf(f); if (i < 0) return; fires.splice(i, 1); f.h.removeFromParent();
+  f.flameMat.dispose(); for (const m of f.flames.children) m.geometry.dispose(); f.embers.geometry.dispose(); f.embers.material.dispose(); f.light?.dispose?.(); }
+export const fireCount = () => fires.length; // (for the checks)
+export const hasFlame = (f) => fires.includes(f);
 
 
 // an A-frame canvas tent with a sag, its door flaps tied back, poles, guy lines and stakes; the open end faces +X

@@ -67,6 +67,15 @@ export function bedMesh() { const m = mats(), g = new THREE.Group();
   const pillow = put(g, new THREE.SphereGeometry(0.2, 14, 8), m.linen, [0, 0.52, 0.72]); pillow.scale.set(1.7, 0.45, 0.95);
   return g; }
 
+// slice 26: a wall torch, in its own frame like the wall pieces (+z away from the wall): an iron plate nailed to the logs, an arm,
+// a ring holding a short torch that leans out from the wall; `tip` is where its flame sits (craft.js adds it)
+export function wallTorchMesh() { const m = mats(), g = new THREE.Group();
+  put(g, box(0.13, 0.26, 0.025), m.iron, [0, 0, -0.01]); for (const y of [-0.09, 0.09]) put(g, new THREE.CylinderGeometry(0.014, 0.014, 0.03, 6).rotateX(Math.PI / 2), m.iron, [0, y, 0.008]);
+  put(g, box(0.03, 0.03, 0.2), m.iron, [0, -0.04, 0.09], [0.35, 0, 0]); put(g, new THREE.TorusGeometry(0.045, 0.011, 6, 12).rotateX(Math.PI / 2), m.iron, [0, 0.0, 0.18]);
+  const t = new THREE.Group(); t.position.set(0, 0, 0.18); t.rotation.x = 0.42; g.add(t);
+  put(t, new THREE.CylinderGeometry(0.03, 0.022, 0.62, 8), m.bark, [0, 0.12, 0]); put(t, new THREE.CylinderGeometry(0.058, 0.045, 0.16, 10), m.wrap, [0, 0.42, 0]);
+  const tip = new THREE.Object3D(); tip.position.y = 0.47; t.add(tip); g.userData.tip = tip; return g; }
+
 // a stake driven into the ground, its head wrapped in pitch-soaked rags; flames are added by camp.js's addFlame
 export function torchMesh() { const m = mats(), g = new THREE.Group();
   put(g, new THREE.CylinderGeometry(0.035, 0.05, 1.5, 8), m.bark, [0, 0.75, 0]);

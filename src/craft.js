@@ -12,7 +12,8 @@ import { groundY, slopeAt } from './world.js';
 import { addCollider } from './props.js';
 import { PIECE, makePiece, startBuild, spotFree, slotOf, pieceState, costFor, swapOut } from './build.js';
 import { buildFire, addFlame } from './camp.js';
-import { benchMesh, bedMesh, torchMesh } from './craftmodels.js';
+import { benchMesh, bedMesh, torchMesh, wallTorchMesh } from './craftmodels.js';
+import { lightTorch, halo, wallGlow } from './torch.js';
 import { dustPuff, floatText } from './effects.js';
 import { sfx } from './audio.js';
 import { logEvent } from './playlog.js';
@@ -36,7 +37,7 @@ export const benchNear = (x, z) => built.some(b => b.key === 'craftbench' && Mat
 export const bedNear = (x, z, r = 2.4) => built.find(b => b.key === 'bed' && Math.hypot(b.x - x, b.z - z) < r);
 // the heal spots (built campfires mend like the camp's) and the light spots (slice 13 lights the night with them)
 export const fireSpots = () => built.filter(b => b.key === 'campfire').map(b => ({ x: b.x, z: b.z, r: 5 }));
-export const lightSpots = () => built.filter(b => b.key === 'campfire' || b.key === 'torch').map(b => ({ x: b.x, y: b.y + (b.key === 'torch' ? 1.55 : 0.9), z: b.z, key: b.key }));
+export const lightSpots = () => built.filter(b => b.key === 'campfire' || b.key === 'torch' || b.key === 'wall_torch').map(b => ({ x: b.x, y: b.y + (b.key === 'torch' ? 1.55 : b.key === 'wall_torch' ? 0.35 : 0.9), z: b.z, key: b.key === 'campfire' ? 'campfire' : 'torch' }));
 
 // where a build goes and whether it fits there: build.js (the grid); re-exported for the test hooks
 export { placeSpot, spotFree } from './build.js';
@@ -46,11 +47,12 @@ export function addBuilt(id, key, x, y, z, f, by, hp, st) { if (built.some(b => 
   const scene = scene3(), b = { id, key, x, y, z, f, by, cols: [], slot: slotOf(x, z) }, ax = Math.cos(f), az = -Math.sin(f), bx = Math.sin(f), bz = Math.cos(f); // its own x and z axes
   const col = (dx, dz, r, h) => b.cols.push(Object.assign(addCollider(x + dx, z + dz, r, null), { vr: 0, top: y + h + 0.1, stand: y + h, base: y }));
   if (PIECE[key]?.edge || key === 'spike_trap') makePiece(b, hp, st); /* slice 12: walls, gates, traps */
-  else if (key === 'campfire') { b.mesh = buildFire(scene, x, z, false); b.mesh.position.y = y; } /* on a floor or a rock, not under it */
-  else { b.mesh = key === 'craftbench' ? benchMesh() : key === 'bed' ? bedMesh() : torchMesh(); b.mesh.position.set(x, y, z); b.mesh.rotation.y = f; scene.add(b.mesh); }
+  else if (key === 'campfire') { b.mesh = buildFire(scene, x, z, false); b.mesh.position.y = y; b.flame = b.mesh.userData.fire; } /* on a floor or a rock, not under it */
+  else { b.mesh = key === 'craftbench' ? benchMesh() : key === 'bed' ? bedMesh() : key === 'wall_torch' ? wallTorchMesh() : torchMesh(); b.mesh.position.set(x, y, z); b.mesh.rotation.y = f; scene.add(b.mesh); }
   if (key === 'craftbench') for (const k of [-0.5, 0.5]) col(ax * k, az * k, 0.47, 0.93);
   if (key === 'bed') for (const k of [-0.55, 0.45]) col(bx * k, bz * k, 0.56, 0.5);
   if (key === 'torch') { col(0, 0, 0.12, 1.5); b.flame = addFlame(b.mesh, 1.5, 0.3, 10); }
+  if (key === 'wall_torch') { b.flame = addFlame(b.mesh.userData.tip, 0, 0.26, 8); halo(b.flame.h, 1.6); wallGlow(b.mesh, groundY(x, z) - y); } // (on the wall: no collider of its own)
   built.push(b); dustPuff(new THREE.Vector3(x, y, z), 14); sfx('craft', { x, z }); logEvent('built', { key, x: +x.toFixed(1), z: +z.toFixed(1), mine: by === net.id || !net.role });
   return b; }
 export const builtMsg = () => built.map(b => [b.id, b.key, +b.x.toFixed(2), +b.y.toFixed(2), +b.z.toFixed(2), +b.f.toFixed(3), b.by, b.max ? Math.round(b.hp) : null, pieceState(b)]);
@@ -73,6 +75,7 @@ export function craft(r) {
     spend(r.cost); const n = Math.min(10, quiver.max - quiver.n); quiver.n += n; floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `+${n} arrows`, '#efe6b0'); }
   else if (r.key === 'ammo_pack' || r.key === 'flower_bouquet') { const gun = r.key === 'ammo_pack'; if (gun ? ammo.clip + ammo.reserve >= MAX_ROUNDS : ammo.flowers >= MAX_FLOWERS) { log(gun ? `You carry all the rounds you can (${MAX_ROUNDS}).` : `You carry all the flowers you can (${MAX_FLOWERS}).`); return false; }
     spend(r.cost); const n = gun ? addRounds(8) : addFlowers(8); floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `+${n} ${gun ? 'rounds' : 'flowers'}`, '#efe6b0'); } // slice 12: they run out now (the owner)
+  else if (r.key === 'hand_torch') { spend(r.cost); lightTorch(); } // slice 26
   else if (r.type === 'build') { toggleCraft(false); startBuild(r); return true; } // slice 12: paid when it is placed (build.js)
   else if (r.type === 'upgrade') { if (upgraded(r.charId)) { log(`${r.label}: you have it already.`); return false; }
     spend(r.cost); player.up[r.charId] = true; upgradeFx(r.charId); log(`${r.label}: ${r.tip}`); floatText(new THREE.Vector3(player.x, player.y + 2.3, player.z), 'UPGRADED', '#ffd27a', true); }

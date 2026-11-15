@@ -24,8 +24,9 @@ import { logEvent, tickLog, savePlayLog, startVideo, recording } from './playlog
 import { tickWatch, watchStart, solidAt } from './watch.js';
 import { others, coop, joining, gone, nearestP, everyone, hurt, salvagedProp, requestJoin, tickCoop, followHost, net, send, clearOthers, rules, pvp, modeKey, modeName, RIVAL, level } from './coop.js';
 import { craftOpen, toggleCraft, craftKey, craftPad, renderMenu, bedNear, sleep, wake, tickSleep, bedRespawn, fireSpots, benchNear } from './craft.js';
-import { tickHarvest, harvestTarget, harvestName, prepHarvest } from './harvest.js';
+import { tickHarvest, harvestTarget, harvestName, harvestDoing, prepHarvest } from './harvest.js';
 import { quiver, useArrow, stick, dropFrom, tickArrows, clearArrows } from './arrows.js';
+import { torchWarm, carriedWarm, byFlame, torchOn, toggleTorch, FEARS_FIRE } from './torch.js';
 import { building, buildKey, buildPad, placeNow, endBuild, rotateBuild, tickBuild, tickTear, tearTarget, tickRepair, repairTarget, fixCostText, fixGain, pieceName, refundOf, gateNear, toggleGate, wallAhead, fortSize, damageBuilt, pieceBars } from './build.js';
 import { built } from './craft.js';
 import { attachGear, eatPose } from './characters.js';
@@ -194,7 +195,7 @@ export function startGame(i) {
   // (the other players are forgotten: each comes back with their next message, standing)
   clearOthers(); resetExplored(); const ch = CHARS[i]; player.ch = ch; player.maxHp = ch.maxHp; player.hp = ch.maxHp; player.startT = performance.now(); player.kills = 0; player.inv = { wood: 0, metal: 0, fiber: 0, food: 0 };
   quiver.n = quiver.start; clearArrows(); player.bed = null; player.chop = null; toggleCraft(false); // slice 11: a full quiver, no bed to wake in yet
-  player.up = {}; player.tear = null; player.shieldT = 0; endBuild(); resetSupplies(); player.inv.cooked = 0; // slice 12: upgrades are bought again each game; what is built stays in the world
+  player.up = {}; player.tear = null; player.torch = null; player.shieldT = 0; endBuild(); resetSupplies(); player.inv.cooked = 0; // slice 12: upgrades are bought again each game; what is built stays in the world
   if (player.mesh) scene.remove(player.mesh); player.mesh = buildCharacter(ch); scene.add(player.mesh);
   viewModel.clear(); viewModel.add(buildViewModel(ch)); player.dead = 0; player.down = 0; player.out = false; player.revT = 0; player.secT = player.rallyT = player.fan = 0; player.blow = false;
   for (const q of turrets) removeTurret(q); turrets.length = 0; strikeCD.clear(); player.knifeT = 0; muzzleFlash.t = 0; for (const q of pulses) q.t = q.T; // a new game starts clean
@@ -241,6 +242,7 @@ addEventListener('keydown', e => { if (e.code === 'Tab') { e.preventDefault(); i
   if (e.code === 'KeyE' && !e.repeat && camMode !== 'top') interact();
   if (e.code === 'KeyE' && !e.repeat && camMode === 'top') { if (!interact(true) && !harvestTarget(player.x, player.z)) topYaw -= Math.PI / 4; }
   if (e.code === 'KeyQ' && camMode === 'top') topYaw += Math.PI / 4;
+  if (e.code === 'KeyT' && !e.repeat) toggleTorch(); // slice 26: put the hand torch away or take it out
   if (e.code === 'KeyR' && !e.repeat && !building()) reload(); });
 addEventListener('keyup', e => keys.delete(e.code));
 renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
@@ -557,6 +559,7 @@ export function update(dt, t) {
   // build mode (slice 12): A places, B ends it, RB and the d-pad turn the piece; those presses do nothing else
   if (pad && building()) { buildPad(pad); pad.jump = pad.use = pad.atk = pad.sec = pad.rb = pad.left = pad.right = false; pad.useHeld = pad.tearHeld = pad.fixHeld = false; }
   if (pad?.cam) setCam(CAMS[(CAMS.indexOf(camMode) + 1) % 3]);
+  if (pad?.left && camMode !== 'top') toggleTorch(); // slice 26: the d-pad's left puts the hand torch away or takes it out (top-down: it turns the view; building: it turns the piece)
   if (pad && camMode === 'top') { if (pad.left) topYaw += Math.PI / 4; if (pad.right && !repairTarget(player.x, player.z)) topYaw -= Math.PI / 4; } // (by a damaged wall the d-pad's right mends it)
   // look (arrow keys work everywhere, for pages that block mouse lock)
   if (camMode !== 'top') { player.yaw += ((keys.has('ArrowLeft') ? 1 : 0) - (keys.has('ArrowRight') ? 1 : 0)) * 2.2 * dt;
@@ -664,7 +667,8 @@ export function update(dt, t) {
   { const n = player.dead || player.down > 0 ? (clearPoison(), 0) : tickPoison(dt); if (n) hurtPlayer(n, 'poison'); } // (a widow's poison, working on: poison.js)
   // enemies (dormant beyond the wake radius, as in IW1)
   // turns: one enemy winds up at a time, and the next waits a moment after it (his first play: four raiders struck inside a second)
-  const NK = nightK(), fires = [campfire, ...fireSpots(), ...HEATERS()], warm = (q) => fires.some(f => Math.hypot(q.x - f.x, q.z - f.z) < f.r + 1.5);
+  const NK = nightK(), fires = [campfire, ...fireSpots(), ...HEATERS(), ...torchWarm()], carried = carriedWarm(), near = (L, q) => L.some(f => Math.hypot(q.x - f.x, q.z - f.z) < f.r + 1.5),
+    warm = (q, type) => near(fires, q) || (FEARS_FIRE.has(type) && near(carried, q)); // (a carried torch: only against the animals that fear fire)
   let alive = 0; const striking = new Set(enemies.filter(e => !e.dead && e.state === 'windup').map(e => e.tg)), awake = []; for (const [k, v] of strikeCD) strikeCD.set(k, v - dt);
   const ppl = joining() ? null : everyone();
   for (const e of enemies) {
@@ -683,7 +687,7 @@ export function update(dt, t) {
     { const ring = e.mesh.getObjectByName('threat'), hunt = HUNTS.includes(e.state), want = hunt ? (e.state === 'windup' ? 1.0 : 0.55 + 0.12 * Math.sin(t * 5)) : e.state !== 'lurk' && d < 45 ? 0.22 : 0; // a faint ring on idle creatures in range
       ring.material.opacity += (want - ring.material.opacity) * Math.min(1, dt * 6); ring.visible = ring.material.opacity > 0.02; }
     // slice 13: at night an animal sees further, runs faster and bites harder (IW1: 1.35), unless its quarry is by a fire
-    const nb = NK && !warm(tg) ? NK : 0, aggro = st.aggro / 12 * (1 + 0.35 * nb), reach = 0.9 + st.scale * 0.75, bite = Math.max(1, Math.round(st.dmg * (1 + 0.35 * nb) * level().bite)); // (slice 33: the difficulty)
+    const nb = NK && !warm(tg, e.type) ? NK : 0, aggro = st.aggro / 12 * (1 + 0.35 * nb) * (FEARS_FIRE.has(e.type) && torchOn(tg) ? 0.7 : 1), /* slice 26: a carried flame: it notices you later */ reach = 0.9 + st.scale * 0.75, bite = Math.max(1, Math.round(st.dmg * (1 + 0.35 * nb) * level().bite)); e.nb = nb; // (slice 33: the difficulty; e.nb: its night boost, for the checks)
     // issue #44: an idle animal notices a little further than IW1's sight (1.19x: the night check keeps a day wolf at 19 m
     // idle), and wolves, hounds and bears smell blood: a player under half health from twice IW1's sight; one dug in the mud
     // still only close. A creature below a player stood up on a ledge or a rock strikes up at them: its reach grows with the
@@ -727,6 +731,8 @@ export function update(dt, t) {
         const blk = aim ? null : wallAhead(e.x, e.z, tx, tz, 0.4 * st.scale, Math.min(d - 0.3, 1.4 + 0.6 * st.scale));
         if (blk) { if (e.rollFor !== blk) { e.rollFor = blk; e.rollSiege = fortSize(blk) >= 3 || rng() < 0.35; e.blkT = 0; } e.blkT += dt;
           if (e.rollSiege || e.blkT > 3) { e.state = 'siege'; e.wall = blk; e.sT = 0.35; logEvent('siege', { enemy: e.type, key: blk.key }); break; } }
+        // slice 26: at night an animal that fears fire will not close on someone by a torch or a fire: it circles at 4.5 m, snarling
+        if (NK > 0.3 && FEARS_FIRE.has(e.type) && d < 6 && byFlame(tg)) { const k = (d - 4.5) * 0.6; mx = -tz * e.circle + tx * k; mz = tx * e.circle + tz * k; spd *= 0.55; face = true; break; }
         if (high && !aim && d < 7) { const k = (d - 5) * 0.5; mx = -tz * e.circle + tx * k; mz = tx * e.circle + tz * k; spd *= 0.5; face = true; break; } // out of reach above: back off to 5 m and circle, waiting
         if ((d <= reachUp && up && !blk || aim) && turn) { e.state = 'windup'; e.wT = aim ? 0.5 : e.type === 'bear' ? 0.6 : e.type === 'bog_lurker' ? 0.45 : 0.32; e.tg = tg; striking.add(tg); strikeCD.set(tg, e.wT + 0.45); an.attack(); if (rng() < 0.4) sfx(e.type, e, 0.7); face = true; break; }
         if (!turn && (d < 5.5 || aim)) { // someone else's turn: circle at a few metres (shooters sidestep) and wait for an opening
@@ -932,7 +938,7 @@ function prompt(dt) { const c = player.chop || player.tear || player.fix || play
   else if (player.eat) t = `Hold ${padActive ? 'd-pad down' : 'G'} · eating the ${player.eat.what === 'cooked' ? 'roast meat' : 'raw meat'} (a hit stops you)`;
   else if (player.cook) t = `Hold ${E} · cooking over the fire (${player.inv.food} raw left)`;
   else if (building()) t = '';
-  else if (c) t = `Hold ${E} · ${c.it.type.endsWith('bush') ? 'pulling fiber from the ' : 'chopping the '}${harvestName(c.it)}`;
+  else if (c) t = `Hold ${E} · ${harvestDoing(c.it, true)}`;
   else if (!rules.ffa && [...others.values()].some(o => o.down > 0 && !o.out && Math.hypot(o.x - x, o.z - z) < 2.4)) t = `Hold ${E} · revive`;
   else if (repairTarget(x, z)) { const b = repairTarget(x, z); t = `Hold ${padActive ? 'd-pad right' : 'H'} · repair the ${pieceName(b)}: ${fixCostText(b)} for +${fixGain(b)} (${Math.round(b.hp)}/${b.max})`; }
   else if (caches.some(q => !q.opened && Math.hypot(q.x - x, q.z - z) < 2.4 && Math.abs(player.y - q.y) < 2.6)) t = `${E} · search the crate`;
@@ -941,7 +947,7 @@ function prompt(dt) { const c = player.chop || player.tear || player.fix || play
   else if (bedNear(x, z)) t = `${E} · sleep (you wake here if you fall)`;
   else if (atTent(x, z)) t = `${E} · change character`;
   else if ((placed.scrap || []).concat(placed.hulk || []).some(q => !q.gone && !q.salvaged && Math.hypot(q.x - x, q.z - z) < (q.type === 'hulk' ? 4 : 2.6))) t = `${E} · salvage metal`;
-  else { const h = harvestTarget(x, z); if (h) t = `Hold ${E} · ${h.type.endsWith('bush') ? 'pull fiber from the ' : 'chop the '}${harvestName(h)}`; }
+  else { const h = harvestTarget(x, z); if (h) t = `Hold ${E} · ${harvestDoing(h)}`; }
   if (!t && benchNear(x, z) && !craftOpen() && running && !player.dead) t = `${TAB} · craft at the bench`;
   if (!t && running && !player.dead && player.inv.food > 0 && fireNear()) t = `Hold ${E} · cook raw meat (${player.inv.food}): it mends ${HEAL.cooked}, not ${HEAL.food}`;
   if (!t && running && !player.dead && !building() && foodCount() && player.hp < player.maxHp) { const G = padActive ? 'd-pad down' : 'G', w = player.inv.cooked ? `roast meat, +${HEAL.cooked}` : `raw meat, +${HEAL.food}`;
