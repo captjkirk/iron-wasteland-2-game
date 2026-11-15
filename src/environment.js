@@ -3,7 +3,9 @@
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { Water } from 'three/addons/objects/Water.js';
-import { WORLD, WATER_Y, Q } from './config.js';
+import { WORLD, WATER_Y, Q, HALF, CELL, SEG, N } from './config.js';
+import { H, river } from './world.js';
+import { vnoise, smooth, clamp01 } from './noise.js';
 import { sunElev, sunAz, moonElev, moonAz, nightK } from './daynight.js';
 // what the far trees (baked billboards, unlit) are multiplied by: the light of the hour (trees.js)
 export const skyLight = { value: new THREE.Color(1, 1, 1) };
@@ -88,18 +90,52 @@ export function buildEnvironment(scene, renderer, camera) {
   for (const [x, y, r] of [[-0.3, 0.25, 0.32], [0.25, 0.1, 0.24], [0.05, -0.35, 0.2], [-0.2, -0.1, 0.16]]) { const d = new THREE.Mesh(new THREE.CircleGeometry(R * 0.035 * r, 24), new THREE.MeshBasicMaterial({ color: 0xb8bfcc, fog: false, transparent: true, depthWrite: false }));
     d.position.set(x * R * 0.035, y * R * 0.035, 0.01); d.frustumCulled = false; moon.add(d); }
 
-  let water;
+  let water; FLOW_U.flowMap.value = flowMap();
   if (Q.water === 'mirror') {
     water = new Water(new THREE.PlaneGeometry(WORLD + 600, WORLD + 600), { textureWidth: Q.waterRes, textureHeight: Q.waterRes, waterNormals: waterNormals(),
       sunDirection: SUN_DIR.clone(), sunColor: 0xfff2dc, waterColor: 0x10292e, distortionScale: 1.2, fog: true });
     water.material.uniforms.size.value = 3.0;
+    // slice 31: the ripples run with the water (two phases of the flow, crossfaded), and foam laps at the shore
+    const m = water.material; Object.assign(m.uniforms, FLOW_U);
+    m.fragmentShader = m.fragmentShader.replace('varying vec4 worldPosition;', 'varying vec4 worldPosition;\n' + FLOW_GLSL)
+      .replace('vec4 noise = getNoise( worldPosition.xz * size );', `vec4 noise = getNoise( worldPosition.xz * size );
+        #ifdef FLOW
+        vec4 fl = flowAt( worldPosition.xz ); vec3 ph = flowPhase( fl );
+        noise = getNoise( ( worldPosition.xz - fl.xy * ph.x ) * size ) * ph.z + getNoise( ( worldPosition.xz - fl.xy * ph.y ) * size ) * ( 1.0 - ph.z );
+        vec2 fu0 = ( worldPosition.xz - fl.xy * ph.x ) / 16.0, fu1 = ( worldPosition.xz - fl.xy * ph.y ) / 16.0, st = fl.xy * 0.04; // (two taps 0.6 m apart along the flow per phase: streaks, not spots)
+        float foam = foamAt( fl, ( texture2D( normalSampler, fu0 ).w + texture2D( normalSampler, fu0 - st ).w ) * 0.5 * ph.z + ( texture2D( normalSampler, fu1 ).w + texture2D( normalSampler, fu1 - st ).w ) * 0.5 * ( 1.0 - ph.z ) + 0.04, worldPosition.xz ); // (the foam's own finer pattern, as on Low)
+        #endif`)
+      .replace('gl_FragColor = vec4( outgoingLight, alpha );', `#ifdef FLOW
+        outgoingLight = mix( outgoingLight, vec3( 0.86, 0.9, 0.9 ) * ( sunColor * ( 0.8 + 0.9 * max( sunDirection.y, 0.0 ) ) * getShadowMask() + 0.12 ), foam ); // (bright enough to stand out against the mirrored sky)
+        #endif
+        gl_FragColor = vec4( outgoingLight, alpha );`);
+    m.defines = { ...m.defines, FLOW: '' };
   } else {
     water = new THREE.Mesh(new THREE.PlaneGeometry(WORLD + 600, WORLD + 600), new THREE.MeshStandardMaterial({ color: 0x24434a, roughness: 0.06, metalness: 0.0,
       normalMap: waterNormals(), normalScale: new THREE.Vector2(0.35, 0.35), transparent: true, opacity: 0.88, envMapIntensity: 1.2 }));
     water.material.normalMap.repeat.set(160, 160);
+    // slice 31 on Low: the same running ripples and foam on the plain material, from one extra normal sample and the flow map
+    const m = water.material; m.defines = { FLOW: '' };
+    m.onBeforeCompile = (sh) => { Object.assign(sh.uniforms, FLOW_U);
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWp;').replace('#include <project_vertex>', '#include <project_vertex>\nvWp = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vWp;\n' + FLOW_GLSL)
+        .replace('#include <color_fragment>', `#include <color_fragment>
+          #ifdef FLOW
+          vec4 fl = flowAt( vWp.xz ); vec3 ph = flowPhase( fl ); vec2 nuv = vWp.xz / 10.0 + vec2( flowT * 0.003, 0.0 );
+          vec4 fN = texture2D( normalMap, nuv - fl.xy * ph.x / 10.0 ) * ph.z + texture2D( normalMap, nuv - fl.xy * ph.y / 10.0 ) * ( 1.0 - ph.z );
+          float foam = foamAt( fl, fN.w, vWp.xz );
+          diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.86, 0.9, 0.9 ), foam ); diffuseColor.a = mix( diffuseColor.a, 1.0, foam );
+          #endif`)
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n#ifdef FLOW\nroughnessFactor = mix( roughnessFactor, 0.85, foam );\n#endif')
+        .replace('#include <normal_fragment_maps>', `#ifdef FLOW
+          vec3 mapN = fN.xyz * 2.0 - 1.0; mapN.xy *= normalScale * ( 1.0 - foam ); normal = normalize( tbn * mapN );
+          #else
+          #include <normal_fragment_maps>
+          #endif`); };
   }
-  water.rotation.x = -Math.PI / 2; water.position.y = WATER_Y; water.receiveShadow = true; scene.add(water);
-  function tick(dt) { cloudMat.uniforms.uTime.value += dt; if (water.material.uniforms?.time) water.material.uniforms.time.value += dt * 0.5;
+  water.name = 'water'; water.userData.flowT = FLOW_U.flowT; /* (the water check reads the flow's clock) */ water.rotation.x = -Math.PI / 2; water.position.y = WATER_Y; water.receiveShadow = true; scene.add(water);
+  // (the wind's ripples drift slowly now, 0.2 not 0.5, so on the river the current, not the wind, is what moves)
+  function tick(dt) { cloudMat.uniforms.uTime.value += dt; FLOW_U.flowT.value += dt; if (water.material.uniforms?.time) water.material.uniforms.time.value += dt * 0.2;
     else water.material.normalMap.offset.x += dt * 0.004; }
 
   // ── the hour: t is how far through the day (daynight.js) ──
@@ -133,16 +169,66 @@ export function buildEnvironment(scene, renderer, camera) {
   return { sky, sun, water, follow, tick, setTime, fireLights, haze, fogTint, normals: waterNormals(), fogNear: Q.drawDist * 0.2, fogFar: Q.drawDist * 1.35 };
 }
 
-// A tiling ripple normal map made in code (sums of whole-number sine waves wrap seamlessly).
+// ── Running water (slice 31, issue #61; Jared, November 14, 2026: "river water should look like its 'running'") ──
+// The flow map: per 2 m square of the world, which way and how fast the water runs (the river downstream, its points' own
+// order, faster in its narrows; lakes and ponds still), how deep it is (the shore's foam and lapping), and a slow random phase
+// (so the lapping is not in step all round a lake). Made once from the height field; a 512 x 512 texture, 1 MB.
+const FLOW_MAX = 3; // m/s at full scale in the map
+function flowMap() {
+  const S = SEG, d = new Uint8Array(S * S * 4), hAt = (x, z) => H[Math.min(SEG, Math.max(0, Math.round((z + HALF) / CELL))) * N + Math.min(SEG, Math.max(0, Math.round((x + HALF) / CELL)))];
+  const halfW = river.map((p, k) => { const a = river[Math.max(0, k - 1)], b = river[Math.min(river.length - 1, k + 1)], l = Math.hypot(b.x - a.x, b.z - a.z) || 1, nx = -(b.z - a.z) / l, nz = (b.x - a.x) / l;
+    let w = 0; for (const s of [1, -1]) { let t = 0; while (t < 40 && hAt(p.x + nx * s * t, p.z + nz * s * t) < WATER_Y) t++; w += t; } return Math.max(4, w / 2); }); // (wade out both ways to dry ground)
+  for (let j = 0; j < S; j++) for (let i = 0; i < S; i++) {
+    const h = H[j * N + i], o = (j * S + i) * 4, x = -HALF + i * CELL, z = -HALF + j * CELL;
+    d[o] = d[o + 1] = 128; d[o + 2] = clamp01((WATER_Y - h + 1) / 5) * 255; d[o + 3] = vnoise(i * 0.05, j * 0.05) * 255;
+    if (h > WATER_Y + 1) continue;
+    let best = 1e9, bk = -1, bt = 0;
+    for (let k = 0; k < river.length - 1; k++) { const a = river[k], b = river[k + 1], ex = b.x - a.x, ez = b.z - a.z, t = clamp01(((x - a.x) * ex + (z - a.z) * ez) / (ex * ex + ez * ez)), q = (x - a.x - ex * t) ** 2 + (z - a.z - ez * t) ** 2;
+      if (q < best) { best = q; bk = k; bt = t; } }
+    if (bk < 0) continue;
+    const w = halfW[bk] + (halfW[bk + 1] - halfW[bk]) * bt, fade = 1 - smooth(w + 2, w + 10, Math.sqrt(best)); if (fade <= 0) continue;
+    const a = river[bk], b = river[bk + 1], l = Math.hypot(b.x - a.x, b.z - a.z), sp = Math.min(2.6, 1.6 * 12 / w) * fade; // (about 1.3 m/s where it is 30 m wide, faster in the narrows)
+    d[o] = 128 + (b.x - a.x) / l * sp / FLOW_MAX * 127; d[o + 1] = 128 + (b.z - a.z) / l * sp / FLOW_MAX * 127; }
+  const t = new THREE.DataTexture(d, S, S); t.magFilter = t.minFilter = THREE.LinearFilter; t.needsUpdate = true; return t;
+}
+const FLOW_U = { flowMap: { value: null }, flowT: { value: 0 } };
+// boulders standing in the water (props.js): the flow map takes each one as a shore, so foam rings it
+export function rocksInWater(list) { const t = FLOW_U.flowMap.value; if (!t) return; const d = t.image.data;
+  for (const r of list) { const R = r.s * 0.9 + 1.5, i0 = Math.round((r.x + HALF) / CELL), j0 = Math.round((r.z + HALF) / CELL);
+    for (let j = j0 - 3; j <= j0 + 3; j++) for (let i = i0 - 3; i <= i0 + 3; i++) { if (i < 0 || j < 0 || i >= SEG || j >= SEG) continue;
+      const e = Math.hypot(-HALF + i * CELL - r.x, -HALF + j * CELL - r.z) - R; if (e > 2) continue; const o = (j * SEG + i) * 4;
+      d[o + 2] = Math.min(d[o + 2], clamp01((1 + Math.max(0, e) * 0.25) / 5) * 255); } }
+  t.needsUpdate = true; }
+const FLOW_GLSL = `
+  uniform sampler2D flowMap; uniform float flowT;
+  // x, y: the water's velocity (m/s); z: its depth (m, below 0 on land); w: a slow random phase
+  vec4 flowAt( vec2 w ) { vec4 f = texture2D( flowMap, ( w + ${(HALF + CELL / 2).toFixed(1)} ) / ${WORLD.toFixed(1)} ); return vec4( ( f.xy * 2.0 - 1.0 ) * ${FLOW_MAX.toFixed(1)}, f.z * 5.0 - 1.0, f.w ); }
+  // two phases 1.2 s apart, each sliding the ripples along the flow for 2.4 s; z is the first's weight (zero as it jumps back)
+  vec3 flowPhase( vec4 f ) { float p0 = fract( flowT / 2.4 + f.w ), p1 = fract( p0 + 0.5 ); return vec3( ( p0 - 0.5 ) * 2.4, ( p1 - 0.5 ) * 2.4, 1.0 - abs( 2.0 * p0 - 1.0 ) ); }
+  // foam: a line where the water meets the shore, ripples of it coming in over the shallows, and broken white where the river
+  // runs; pat (0..1) is the foam's own pattern, moving with the water, that breaks it up
+  float foamAt( vec4 f, float pat, vec2 w ) { float d = f.z, run = smoothstep( 0.2, 1.4, length( f.xy ) );
+    // how far away from the waterline (m), from the depth and how steeply it falls (the screen's derivatives give its slope),
+    // so the foam is about as wide on a gravel bar as under a steep bank
+    vec2 ax = dFdx( w ), ay = dFdy( w ); float det = ax.x * ay.y - ax.y * ay.x, gx = dFdx( d ), gy = dFdy( d );
+    float slope = clamp( length( vec2( gx * ay.y - gy * ax.y, ax.x * gy - ay.x * gx ) / ( abs( det ) > 1e-6 ? det : 1e-6 ) ), 0.04, 1.2 ), away = max( d, 0.0 ) / slope;
+    float edge = 1.0 - smoothstep( 0.0, 0.45 + 0.6 * f.w + 0.35 * sin( flowT * 1.3 + f.w * 25.0 ), away ); // the line where it meets the shore, breathing in and away
+    float wave = smoothstep( 0.86, 1.0, fract( away / 1.3 + flowT * 0.3 + f.w * 4.0 ) ) * ( 1.0 - smoothstep( 0.5, 4.0, away ) ) * ( 1.0 - smoothstep( 0.15, 0.5, fwidth( away / 1.3 ) ) ); // ripples coming in (faded where a pixel spans too many to draw cleanly)
+    float fleck = smoothstep( 0.64 - 0.06 * run, 0.88, pat ) * run * ( 0.6 + 0.4 * ( 1.0 - smoothstep( 0.0, 5.0, away ) ) ); // broken white on running water, more along its banks
+    return clamp( edge * ( 0.45 + 0.55 * smoothstep( 0.35, 0.65, pat ) ) + wave * 0.75 * smoothstep( 0.35, 0.75, pat ) + fleck * 0.9, 0.0, 1.0 ); }
+`;
+
+// A tiling ripple normal map made in code (sums of whole-number sine waves wrap seamlessly). Slice 31: its alpha holds the foam's
+// pattern, a finer field of the same kind whose peaks are small blobs (a data texture, so the alpha does not spoil the normals)
+let WN = null; // (the pattern is made once; each caller gets its own texture of it)
 function waterNormals() {
-  const S = 256, cv = document.createElement('canvas'); cv.width = cv.height = S; const cx = cv.getContext('2d'), img = cx.createImageData(S, S);
-  const waves = []; let a = 12345; const r = () => (a = (a * 16807) % 2147483647) / 2147483647;
-  for (let k = 0; k < 90; k++) { let fx = 0, fz = 0; while (!fx && !fz) { fx = Math.round((r() - 0.5) * 34); fz = Math.round((r() - 0.5) * 34); } waves.push({ fx, fz, ph: r() * 6.28, amp: 1 / Math.hypot(fx, fz) }); }
-  const hgt = (x, z) => { let s = 0; for (const w of waves) s += Math.sin((w.fx * x + w.fz * z) * 2 * Math.PI / S + w.ph) * w.amp; return s; };
-  const hf = new Float32Array(S * S); for (let z = 0; z < S; z++) for (let x = 0; x < S; x++) hf[z * S + x] = hgt(x, z);
+  const S = 256; if (WN) return wnTex(WN, S); const d = WN = new Uint8Array(S * S * 4); let a = 12345; const r = () => (a = (a * 16807) % 2147483647) / 2147483647;
+  const field = (n, lo, hi, flat) => { const waves = []; for (let k = 0; k < n; k++) { let fx = 0, fz = 0; while (Math.hypot(fx, fz) < lo) { fx = Math.round((r() - 0.5) * hi * 2); fz = Math.round((r() - 0.5) * hi * 2); } waves.push({ fx, fz, ph: r() * 6.28, amp: flat ? 1 : 1 / Math.hypot(fx, fz) }); }
+    const hf = new Float32Array(S * S); for (let z = 0; z < S; z++) for (let x = 0; x < S; x++) { let s = 0; for (const w of waves) s += Math.sin((w.fx * x + w.fz * z) * 2 * Math.PI / S + w.ph) * w.amp; hf[z * S + x] = s; } return hf; };
+  const hf = field(90, 1, 17, false), fo = field(70, 8, 22, true); let lo = 1e9, hi = -1e9; for (const v of fo) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
   for (let z = 0; z < S; z++) for (let x = 0; x < S; x++) {
     const dx = (hf[z * S + (x + 1) % S] - hf[z * S + (x - 1 + S) % S]) * 0.9, dz = (hf[((z + 1) % S) * S + x] - hf[((z - 1 + S) % S) * S + x]) * 0.9, l = Math.hypot(dx, dz, 1), o = (z * S + x) * 4;
-    img.data[o] = (-dx / l * 0.5 + 0.5) * 255; img.data[o + 1] = (-dz / l * 0.5 + 0.5) * 255; img.data[o + 2] = (1 / l * 0.5 + 0.5) * 255; img.data[o + 3] = 255; }
-  cx.putImageData(img, 0, 0);
-  const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
+    d[o] = (-dx / l * 0.5 + 0.5) * 255; d[o + 1] = (-dz / l * 0.5 + 0.5) * 255; d[o + 2] = (1 / l * 0.5 + 0.5) * 255; d[o + 3] = (fo[z * S + x] - lo) / (hi - lo) * 255; }
+  return wnTex(d, S);
 }
+function wnTex(d, S) { const t = new THREE.DataTexture(d, S, S); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter; t.generateMipmaps = true; t.needsUpdate = true; return t; }

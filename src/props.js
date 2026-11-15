@@ -2,12 +2,13 @@
 // Each is drawn through scatter.js (instanced, distance LOD); trunks, rocks and wrecks get collision circles; props
 // between the camera and the player are hidden (occluders).
 import * as THREE from 'three';
-import { HALF, WATER_Y, Q, CAMP } from './config.js';
-import { rng, fbm, vnoise } from './noise.js';
-import { groundY, biomeAt, slopeAt, isWet, forestAt, canyonAt, street, PASSES } from './world.js';
+import { HALF, WATER_Y, Q, CAMP, SEED } from './config.js';
+import { rng, fbm, vnoise, mulberry32 } from './noise.js';
+import { groundY, biomeAt, slopeAt, isWet, forestAt, canyonAt, street, PASSES, river } from './world.js';
+import { rocksInWater } from './environment.js';
 import { addLayer, markDirty } from './scatter.js';
 import { buildTrees, SPECIES } from './trees.js';
-import { rockParts, cactusParts, fernParts, reedParts, flowerParts, loadPropMeshes, scrapParts, wreckParts, wallParts, spireParts, glowcapParts, SPIRE_REACH } from './propmodels.js';
+import { rockParts, cactusParts, fernParts, reedParts, flowerParts, loadPropMeshes, scrapParts, wreckParts, wallParts, spireParts, glowcapParts, SPIRE_REACH, pebbleParts, driftwoodParts } from './propmodels.js';
 import { mushroomParts, archParts } from './landmarks.js';
 import { planBuildings, clearOf } from './buildings.js';
 const AS = [9.4, 13]; // arch sizes: metres per unit of landmarks.js's arch (legs at +-0.85, leg radius 0.3)
@@ -152,12 +153,35 @@ function place() {
     else if (roll < aS + pS) { const n = 1 + Math.floor(rng() * 3); for (let k = 0; k < n; k++) { const qx = px + (rng() - 0.5) * 16 * Math.min(1, k), qz = pz + (rng() - 0.5) * 16 * Math.min(1, k);
       add(kind === 'icerock' ? 'icespire' : 'spire', { x: qx, y: groundY(qx, qz) + 0.4, z: qz, s: 0.75 + rng() * 0.45, ry: rng() * 6.283, v: Math.min(2, Math.floor(rng() * 3 * (k ? 0.7 : 1))) }); } }
   }
+  // slice 31 (Jared, November 14, 2026: "water that looks alive should include more variety on the shoreline"): pebbles,
+  // driftwood and fallen trunks along every bank by biome (the Bog has its own), rocks breaking the waterline, and boulders out
+  // in the river's deep middle, foam round each rock. Their own random stream, so everything above lies exactly as before (the
+  // classic world keeps its layout). Pebbles and driftwood lie flat and are walked over (no collider: no bank becomes a wall);
+  // the rocks are solid but few (about one in 30 waterline spots) and small, so a way out of the water is never far
+  const boulders = [], sr = mulberry32(SEED + 31), STONE = { grass: 0, fungal: 0, ruins: 0, desert: 1, waste: 1, tundra: 2 }, ROCK = ['rock', 'sandrock', 'icerock'];
+  for (let z = -HALF + 30; z < HALF - 30; z += 3) for (let x = -HALF + 30; x < HALF - 30; x += 3) {
+    const px = x + (sr() - 0.5) * 2.8, pz = z + (sr() - 0.5) * 2.8, roll = sr(), sv = sr(), turn = sr(), y = groundY(px, pz), bio = biomeAt(px, pz);
+    if (bio === 'swamp' || y < WATER_Y - 0.5 || y > WATER_Y + 1.6 || spawnClear(px, pz, 8) || slopeAt(px, pz) > 0.8) continue;
+    const drift = { desert: 0.02, waste: 0.04 }[bio] ?? 0.15;
+    if (roll < 0.035 && Math.abs(y - WATER_Y) < 0.35) { const it = { x: px, y: y - 0.3, z: pz, s: 0.55 + sv * 0.7, ry: turn * 6.283, v: Math.floor(sv * 3), tilt: [(turn - 0.5) * 0.4, (sv - 0.5) * 0.4] }; // a rock breaking the waterline (solid)
+      add(ROCK[STONE[bio]], it); boulders.push(it); it.shore = true; }
+    else if (roll < 0.6) add('pebbles', { x: px, y: y - 0.03, z: pz, s: 0.5 + sv * sv * 1.4, ry: turn * 6.283, v: STONE[bio] });
+    else if (roll < 0.6 + drift) { const gx = groundY(px + 1, pz) - groundY(px - 1, pz), gz = groundY(px, pz + 1) - groundY(px, pz - 1); // (lying along the shore)
+      const v = bio !== 'desert' && bio !== 'waste' && sv < 0.3 ? 2 : sv < 0.65 ? 0 : 1;
+      add('driftwood', { x: px, y: y - [0.06, 0.08, 0.2][v], z: pz, s: 0.85 + turn * 0.3, ry: Math.atan2(-gx, -gz) + (sv - 0.5) * 0.8, v }); }
+  }
+  for (let k = 2; k < river.length - 2; k++) { const a = river[k - 1], b = river[k + 1], l = Math.hypot(b.x - a.x, b.z - a.z), side = (sr() - 0.5) * 12, roll = sr(), sv = sr(), turn = sr();
+    const px = river[k].x - (b.z - a.z) / l * side, pz = river[k].z + (b.x - a.x) / l * side, y = groundY(px, pz);
+    if (roll > 0.16 || y > WATER_Y - 1.2 || spawnClear(px, pz, 20)) continue;
+    const kind = ROCK[STONE[biomeAt(px, pz)] ?? 0], it = { x: px, y: y - 0.3, z: pz, s: 1.9 + sv * 1.0, ry: turn * 6.283, v: Math.floor(sv * 3), tilt: [(turn - 0.5) * 0.3, (sv - 0.5) * 0.3] };
+    add(kind, it); boulders.push(it); it.shore = true; }
   // the buildings' sites stay open: filtered after placing, so the seeded layout everywhere else is exactly slice 7's
   for (const t in placed) placed[t] = placed[t].filter(it => it.keep || clearOf(it.x, it.z, /spire|arch/.test(t) ? 3 : 2));
   // the passes are the valley's only ways out: no hoodoo, ice spire or arch stands in one before the ring ends (two
   // overlapping spires 208 m out in the desert pass made a dead end facing the valley, 2026-11-04)
   const inPass = (x, z) => { const r = Math.hypot(x, z); return r < 255 && PASSES.some(q => Math.abs(Math.atan2(Math.sin(Math.atan2(z, x) - q.a), Math.cos(Math.atan2(z, x) - q.a))) * r < 32); };
   for (const t of ['spire', 'icespire', 'arch']) if (placed[t]) placed[t] = placed[t].filter(it => !inPass(it.x, it.z));
+  rocksInWater(boulders.filter(it => clearOf(it.x, it.z, 2))); // (foam round the boulders that stayed)
 }
 
 const COL = { shroom: [0.11, 0.15], pine: [0.03, 0.16], snowpine: [0.03, 0.16], oak: [0.035, 0.22], aspen: [0.02, 0.1], deadtree: [0.04, 0.12], swamptree: [0.04, 0.2],
@@ -175,7 +199,7 @@ export async function buildProps(scene, renderer, status) {
     ['wasterock', 3, v => rockParts('wasterock', v + 10), Q.propFar], ['cactus', 3, v => cactusParts(v * 3.1), Q.propFar * 0.6], ['fern', 3, v => fernParts(v + 1), Q.smallDist],
     ['reeds', 3, v => reedParts(v + 1), Q.smallDist * 1.3], ['flowers', 4, v => flowerParts(v), Q.smallDist], ['scrap', 6, scrapParts, Math.min(90, Q.propFar * 0.3)], ['hulk', 3, wreckParts, Q.propFar],
     ['ruinwall', 2, wallParts, Q.propFar], ['spire', 3, v => spireParts(v, 'sandrock'), Q.drawDist], ['icespire', 3, v => spireParts(v, 'icerock'), Q.drawDist],
-    ['arch', 2, v => archParts(v), Q.drawDist], ['shroom', 3, mushroomParts, Math.min(Q.drawDist, Q.propFar * 1.2)], ['glowcap', 3, glowcapParts, Q.smallDist * 1.3]];
+    ['arch', 2, v => archParts(v), Q.drawDist], ['pebbles', 3, pebbleParts, Q.smallDist], ['driftwood', 3, driftwoodParts, Q.propFar * 0.5], ['shroom', 3, mushroomParts, Math.min(Q.drawDist, Q.propFar * 1.2)], ['glowcap', 3, glowcapParts, Q.smallDist * 1.3]];
   for (const [type, n, make, dist] of simple) byVariant(type, n).forEach((items, v) => { if (!items.length) return; const m = make(v);
     if (type.endsWith('rock')) { const prof = footprint(m.parts[0].geo); for (const it of items) it.prof = prof; }
     const hgt = Math.max(...m.parts.map(q => (q.geo.boundingBox || (q.geo.computeBoundingBox(), q.geo.boundingBox)).max.y)); for (const it of items) it.hgt = hgt; // how high a foot stands on it

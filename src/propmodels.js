@@ -56,6 +56,28 @@ export function rockParts(kind, seed) {
   return { parts: [{ geo: near, mat: rockMats[kind], cast: true, name: kind }], far: [{ geo: far, mat: rockMats[kind], cast: false, name: kind + ' far' }] };
 }
 
+// ── The shore (slice 31; Jared, November 14, 2026: "water that looks alive should include more variety on the shoreline") ──
+// a scatter of pebbles about two metres across, in the biome's own stone (v: 0 grey rock, 1 sandstone, 2 frost-dark rock)
+export function pebbleParts(v) { // the boulders' own rock, darkened by vertex colour (wet stone): a plain colour read as ice in the sun
+  const bits = [];
+  for (let k = 0; k < 22; k++) { const a = h3(v, k, 5) * 6.283, r = h3(k, v, 6) ** 0.8 * 1.1, sc = 0.04 + h3(k, k, v + 7) ** 3 * 0.3; // (crowded in the middle, a few big ones)
+    const g = rockGeo(v * 20 + k, 0, null); // (20 faces a stone: a patch is under 500 triangles) g.scale(sc, sc * 0.6, sc); g.rotateY(h3(k, 3, v) * 6.283); g.translate(Math.cos(a) * r, -sc * 0.15, Math.sin(a) * r); // (sunk into the ground)
+    const c = new THREE.Color().setScalar(0.42 + h3(k, v, 9) * 0.3), col = g.attributes.color; for (let i = 0; i < col.count; i++) col.setXYZ(i, c.r, c.g, c.b); bits.push(g); }
+  return { parts: [{ geo: mergeGeometries(bits), mat: rockMat(['rock', 'sandrock', 'icerock'][v]), cast: false, name: 'pebbles' }] }; }
+// driftwood and fallen trunks, lying along the local x axis on the ground, sun-bleached bark: v 0 a short branch, 1 a forked
+// log, 2 a whole fallen trunk with its roots and broken limbs
+let driftMat = null;
+export function driftwoodParts(v) { driftMat ||= pbr('props/logbark', { rough: 0.95, color: 0xc4b8a8 });
+  const len = [2.2, 3.4, 6.5][v], r = [0.09, 0.13, 0.26][v], parts = [];
+  const limb = (l, r0, r1, x, ry, rz, y = 0) => { const g = new THREE.CylinderGeometry(r1, r0, l, 7, 3); const p = g.attributes.position; // a little crooked
+    for (let i = 0; i < p.count; i++) { const t = p.getY(i) / l; p.setX(i, p.getX(i) + Math.sin(t * 5 + v) * r0 * 0.6); } g.computeVertexNormals();
+    g.translate(0, l / 2, 0); g.rotateZ(rz); g.rotateY(ry); g.translate(x, y, 0); return g; };
+  parts.push(limb(len, r, r * 0.7, -len / 2, 0, -Math.PI / 2, r * 0.8));
+  if (v >= 1) parts.push(limb(len * 0.35, r * 0.6, r * 0.3, len * 0.15, 0.5, -1.1, r * 0.9));
+  if (v === 2) { parts.push(limb(1.4, r * 0.5, r * 0.25, len * 0.05, -0.9, -1.15, r * 1.2), limb(0.9, r * 0.4, r * 0.2, -len * 0.25, 2.4, -1.2, r * 1.3));
+    for (let k = 0; k < 5; k++) { const a = k / 5 * 6.283 + 0.4; parts.push(limb(r * 3.6, r * 0.6, r * 0.15, -len / 2 + r * 0.3, Math.PI + Math.cos(a) * 0.9, -Math.PI / 2 - Math.sin(a) * 0.9 - 0.25, r * 0.8)); } } // (the roots, splayed from the butt)
+  return { parts: [{ geo: mergeGeometries(parts), mat: driftMat, cast: true, name: 'driftwood' }] }; }
+
 // ── Saguaro cactus: ribbed trunk and arms ──
 let cactusMat = null;
 export function cactusParts(seed) {

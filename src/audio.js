@@ -1,7 +1,7 @@
 // Sound, all synthesised with Web Audio (no audio files): weapon swings and shots, hits, creature voices, pickups,
 // the player's hurt grunt, and a quiet wind bed. The context starts on the first key or click (browsers require a
 // gesture); M mutes. sfx(name, at) places a sound in the world: distance lowers it, the angle pans it.
-let ctx = null, master = null, noiseBuf = null, windGain = null, muted = false, listener = { x: 0, z: 0, yaw: 0 };
+let ctx = null, master = null, noiseBuf = null, windGain = null, riverGain = null, muted = false, listener = { x: 0, z: 0, yaw: 0 };
 try { muted = localStorage.getItem('iw2.mute') === '1'; } catch { /* storage blocked */ }
 export function unlockAudio() {
   if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
@@ -13,6 +13,10 @@ export function unlockAudio() {
   const src = ctx.createBufferSource(); src.buffer = noiseBuf; src.loop = true; const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 400; bp.Q.value = 0.6;
   const lfo = ctx.createOscillator(); lfo.frequency.value = 0.07; const lg = ctx.createGain(); lg.gain.value = 250; lfo.connect(lg); lg.connect(bp.frequency); lfo.start();
   windGain = ctx.createGain(); windGain.gain.value = 0.05; src.connect(bp); bp.connect(windGain); windGain.connect(master); src.start();
+  // slice 31: the river's soft rush, looped noise low-passed and a little hollow, louder the nearer the running water (riverLevel)
+  const rs = ctx.createBufferSource(); rs.buffer = noiseBuf; rs.loop = true; rs.playbackRate.value = 0.63; const rl = ctx.createBiquadFilter(); rl.type = 'lowpass'; rl.frequency.value = 1100; rl.Q.value = 0.3;
+  const rp = ctx.createBiquadFilter(); rp.type = 'peaking'; rp.frequency.value = 380; rp.gain.value = 5; riverGain = ctx.createGain(); riverGain.gain.value = 0;
+  rs.connect(rl); rl.connect(rp); rp.connect(riverGain); riverGain.connect(master); rs.start();
   startMusic();
 }
 export const isMuted = () => muted;
@@ -86,6 +90,7 @@ const SFX = {
 VOICE.spider_pale = VOICE.spider_widow = VOICE.spider; VOICE.spider_brute = (d, t) => { VOICE.spider(d, t); growl(d, t, 0.5, 60, 1.6); }; // (the kinds of spider, slice 22: the brute rasps low under its chitter)
 export function sfx(name, at, vol = 1) { if (!ctx || muted) return; const d = out(at, vol); if (!d) return; duck(); const t = ctx.currentTime + 0.005; (SFX[name] || VOICE[name])?.(d, t); }
 export function windLevel(v) { if (windGain) windGain.gain.setTargetAtTime(v, ctx.currentTime, 0.5); }
+export function riverLevel(v) { if (riverGain) riverGain.gain.setTargetAtTime(v, ctx.currentTime, 0.8); }
 
 // ── The land's own sounds (slice 13), now and then round the listener: birds by day in the green places, frogs in the
 // Bog, crickets and an owl at night, and far off at night a wolf's howl (never inside the safe valley) ──

@@ -47,7 +47,7 @@ let mouth = 0; // the river's last point along its axis: the lake lies just past
 for (let z = CLASSIC ? -HALF - 10 : -760; z <= 300; z += 12) { const p = turn(SHAPE.side * (riverRaw(z) + RIVER_SHIFT), z); mouth = z;
   if (CLASSIC || (Math.abs(p.x) < HALF + 30 && Math.abs(p.z) < HALF + 30)) river.push(p); }
 const lakes = [{ ...turn(SHAPE.side * (riverRaw(mouth) + RIVER_SHIFT) + 10, 340), rx: 95, rz: 62, a: CLASSIC ? 0 : SHAPE.riverA }];
-function riverDist(x, z) { let best = 1e9;
+export function riverDist(x, z) { let best = 1e9; // (exported for the river's sound, slice 31)
   for (let i = 0; i < river.length - 1; i++) { const a = river[i], b = river[i + 1];
     if (z < Math.min(a.z, b.z) - 60 || z > Math.max(a.z, b.z) + 60 || (!CLASSIC && (x < Math.min(a.x, b.x) - 60 || x > Math.max(a.x, b.x) + 60))) continue;
     const ex = b.x - a.x, ez = b.z - a.z, t = clamp01(((x - a.x) * ex + (z - a.z) * ez) / (ex * ex + ez * ez));

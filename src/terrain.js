@@ -2,7 +2,7 @@
 // MeshStandardMaterial extended to blend ten Poly Haven texture layers by the per-vertex weights from world.js.
 // Rock is sampled triplanar so cliffs do not stretch; every layer is sampled twice at different scales to hide tiling.
 import * as THREE from 'three';
-import { HALF, CELL, SEG, N, LAYERS, Q } from './config.js';
+import { HALF, CELL, SEG, N, LAYERS, Q, WATER_Y } from './config.js';
 import { H, NORMAL, SPLAT_A, SPLAT_B, SPLAT_C } from './world.js';
 
 const CHUNK = 32; // cells per chunk side (64 m)
@@ -75,6 +75,7 @@ function makeMaterial(alb, nor) {
         ${LAYERS.map((_, i) => layerCode(i, antiTile)).join('')}
         tot = max(tot, 1e-5); col /= tot; pn /= tot; rough /= tot;
         col *= 0.86 + 0.28 * macro;
+        float wetK = (1.0 - smoothstep(0.03, 0.3, vWPos.y - (${WATER_Y.toFixed(2)}))) * (1.0 - smoothstep(0.3, 0.7, vSB.z)); col *= 1.0 - 0.32 * wetK; rough = mix(rough, 0.45, wetK); // (slice 31: ground the water touches is dark and wet; not the Bog's mud, which already is, and whose floor lies at the water's height)
         diffuseColor.rgb *= col;
         vec3 terrainN = normalize(wn + pn * 0.9);`)
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = rough;')

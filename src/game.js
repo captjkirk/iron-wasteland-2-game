@@ -7,7 +7,7 @@ import { tickDeep, resetDeep, ripple } from './water.js';
 import { day, tickDay, resetDay, nightK, isNight, phase } from './daynight.js';
 const DEEP_BITE = 20; // the lake serpent's bite (slice 13: 15 before, from the shadow)
 import { rng } from './noise.js';
-import { groundY, biomeAt, slopeAt } from './world.js';
+import { groundY, biomeAt, slopeAt, riverDist } from './world.js';
 import { nearColliders, colR, placed, hideOccluders, addCollider, standAt, steps, STEP, rockCol } from './props.js';
 import { markDirty } from './scatter.js';
 import { part, box, rockG, MAT, merged } from './models.js';
@@ -16,7 +16,7 @@ import { initFireflies, tickFireflies } from './fireflies.js';
 import { resetExplored } from './explore.js';
 import { startPlaces, tickPlaces, placePrompt, radioNear, places } from './places.js'; // slice 23
 import { initEffects, tickEffects, hitBurst, splash, dustPuff, floatText, healthBars, hitMarker, buildLoot, nameTags } from './effects.js';
-import { unlockAudio, toggleMute, isMuted, sfx, setListener, windLevel, ambient, setMusicVolume, setMusicPaused, setMusicMode } from './audio.js';
+import { unlockAudio, toggleMute, isMuted, sfx, setListener, windLevel, riverLevel, ambient, setMusicVolume, setMusicPaused, setMusicMode } from './audio.js';
 import { W } from './weather.js';
 const BIOME_WIND = { tundra: 0.03, waste: 0.025, desert: 0.02 };
 import { buildCharacter, buildViewModel } from './characters.js';
@@ -852,6 +852,7 @@ export function update(dt, t) {
   tickCoop(dt); tickEffects(dt); tickFireflies(dt, camera.position, true); setListener(player.x, player.z, camMode === 'top' ? topYaw : player.yaw);
   windLevel(0.03 + Math.min(0.06, Math.max(0, player.y - 20) / 600) + W.wind + (BIOME_WIND[biomeAt(player.x, player.z)] || 0)); setMusicMode(isNight() ? 'night' : 'day', dt); // (the 'boss' track is ready in audio.js for when IW2 has bosses)
   ambient(dt, biomeAt(player.x, player.z), nightK(), Math.hypot(player.x, player.z) < SAFE_R); // (slice 13: storms, the open biomes' wind, the night's sounds)
+  riverLevel(0.1 * Math.max(0, 1 - riverDist(player.x, player.z) / 45) ** 2); // (slice 31: the river rushes as you near it)
 }
 const HUNTS = ['chase', 'windup', 'recover', 'emerge', 'siege'], SMELL = new Set(['wolf', 'dust_hound', 'bear']);
 const HEATERS = () => places.filter(q => q.heater).map(q => ({ ...q.heater, heater: true })); // slice 23
