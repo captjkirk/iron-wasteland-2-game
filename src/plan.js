@@ -4,9 +4,10 @@
 // the meshes, colliders and crates from these records.
 import { HALF, WATER_Y, SEED, CLASSIC, ENEMY, CAMP } from './config.js';
 import { mulberry32 } from './noise.js';
-import { groundY, biomeAt, slopeAt, isWet, canyonAt, street, reachable, lakes, islands, PASSES } from './world.js';
+import { groundY, biomeAt, slopeAt, isWet, canyonAt, street, reachable, lakes, islands, PASSES, LEAN } from './world.js';
+import { CAVE_KINDS, caves, layout } from './cavemap.js';
 
-export const buildings = [], raiderCamps = [], places = [], newSites = []; // (newSites: the ground the classic world's new things took, for the checks)
+export const buildings = [], raiderCamps = [], places = [], newSites = [], solidWays = []; // (newSites: the ground the classic world's new things took, for the checks)
 const sites = [];
 let RS = mulberry32(SEED ^ 0x8b1d5);
 export const R = () => RS(); // its own stream: the props' layout stays as it was (buildings.js draws on after the plan)
@@ -131,7 +132,10 @@ export function planBuildings() { const adds = []; // props for props.js to plac
     for (let k = 0; k < 11; k++) { const a = c.a0 + k * 0.57; if (k === 3 || k === 8) continue; // a scrap barricade with two ways in
       adds.push(['scrap', { x: s.x + Math.cos(a) * 11.5, z: s.z + Math.sin(a) * 11.5, s: 1 + R() * 0.3, ry: a, v: k % 6 }]); }
     adds.push(['hulk', { x: s.x + Math.cos(c.a0 + 1.71) * 15.5, z: s.z + Math.sin(c.a0 + 1.71) * 15.5, s: 1, ry: c.a0, v: 0 }]); }
-  if (CLASSIC) { const n0 = sites.length; apart(() => { planPlaces(adds); classicKinds(adds); }); newSites.push(...sites.slice(n0)); } else planPlaces(adds);
+  const n0 = sites.length; // (the ground the classic world's new things take: its places, kinds and caves)
+  if (CLASSIC) apart(() => { planPlaces(adds); classicKinds(adds); }); else planPlaces(adds);
+  planCaves(); // (#8: after everything else, on its own stream, so nothing planned before moves; the classic world too: Jared, 7:15 AM)
+  if (CLASSIC) newSites.push(...sites.slice(n0)); // (the caves' mounds and yards too, not their ways out (solidWays): what stands on those still counts in watercheck's print) // (the caves' mounds and yards too: docs/decisions/2026-11-15-classic-update.md names them)
   for (const [, it] of adds) it.y = groundY(it.x, it.z) - 0.1;
   return adds;
 }
@@ -217,3 +221,35 @@ function planPlaces(adds) {
 }
 
 
+
+// ── Caves (#8; Jared, November 15, 2026: docs/decisions/2026-11-15-caves-relics.md). Every world, the classic one too (Jared, November 15,
+// 2026, 7:15 AM: "keep it basically the same but it needs to get the new stuff"): planned last, so nothing else there moves. One cave per kind, its mouth in its own land, cut into a hillside where one rises behind level ground a player can reach
+// (the Bog has few hills: there the mound alone stands for one). A mouth: the spot a player stands at (x, z), the way out it faces
+// (fx, fz), the doorway 4 m behind; the rock mound it is cut into rises behind that. Its inside is cavemap.js's
+function planCaves() { const C = mulberry32(SEED ^ 0x0ca7e5), ways = []; // (its own stream; ways: the clear ways out, added last)
+  // the steepest rise round (x, z) within 9 m, and which way it lies
+  const rise = (x, z) => { const y0 = groundY(x, z); let best = { h: -1e9, a: 0 };
+    for (let k = 0; k < 12; k++) { const a = k * Math.PI / 6, h = groundY(x + Math.cos(a) * 9, z + Math.sin(a) * 9) - y0; if (h > best.h) best = { h, a }; } return best; };
+  const ok = (b, hill) => (x, z) => groundY(x, z) > WATER_Y + (b === 'swamp' ? 0.3 : 1) && slopeAt(x, z) < 0.35 && !isWet(x, z) && deep(x, z, b, 10) && (!hill || rise(x, z).h > 2.5);
+  // the doorway: up to 4 m behind the yard, but where the ground is still level, so the hillside never rises inside the passage (2 m deep)
+  const doorAt = (s, fx, fz) => { const y0 = groundY(s.x, s.z); for (let d = 4; d > 1.5; d -= 0.25) { const x = s.x - fx * d, z = s.z - fz * d, y = groundY(x, z);
+    if (y - y0 < 0.35 && groundY(x - fx * 2.2, z - fz * 2.2) - y < 0.5) return { x, z }; } return { x: s.x - fx * 1.5, z: s.z - fz * 1.5 }; };
+  const far = (k, x, z) => caves.every(c => c.kind !== k || Math.hypot(c.x - x, c.z - z) > 110); // (a land's caves well apart)
+  // out of the mouth facing away from a (the hill's way), from 5 m to 32 m, nothing too steep to walk up (the walk's limit, 1.05): the
+  // quality pass's rule for every place (worlds.mjs), so a family walking straight out of a cave never meets a bank it cannot climb
+  const outOK = (x, z, a) => { const fx = -Math.cos(a), fz = -Math.sin(a); for (let t = 5; t < 32; t += 0.5) { const x0 = x + fx * t, z0 = z + fz * t, x1 = x0 + fx * 0.5, z1 = z0 + fz * 0.5;
+    if (slopeAt(x1, z1) > 1.05) return false; } return true; }; // (either way: a drop walked out of is a bank to climb walking in)
+  const facing = (x, z, from) => { const r = rise(x, z); if (r.h > 0.5 && outOK(x, z, r.a)) return r.a; for (let k = 0; k < 12; k++) { const a = from + k * Math.PI / 6; if (outOK(x, z, a)) return a; } return null; };
+  for (let n = 0; n < 3; n++) for (const [k, K] of Object.entries(CAVE_KINDS)) { if (n === 2 && !LEAN.includes(K.biome)) continue;
+    const ok2 = (hill) => (x, z) => far(k, x, z) && ok(K.biome, hill)(x, z) && (hill ? outOK(x, z, rise(x, z).a) : facing(x, z, 0) !== null);
+    const s = spot(ok2(true), 240, 26) || spot(ok2(false), 240, 26) || spot(ok2(false), 200, 14); if (!s) continue;
+    const r = rise(s.x, s.z), a = facing(s.x, s.z, C() * 6.283) ?? facing(s.x, s.z, 0), fx = -Math.cos(a), fz = -Math.sin(a); // (it faces away from the hill, or else a way that walks out)
+    const c = { kind: k, name: K.names[n], relic: n === 0, biome: K.biome, foe: K.foe, x: s.x, z: s.z, fx, fz, door: doorAt(s, fx, fz), hill: r.h > 2.5, L: layout(caves.length, k, n === 0) };
+    caves.push(c); sites.push({ x: s.x - fx * 6, z: s.z - fz * 6, r: 10 }, { x: s.x, z: s.z, r: 4 }); // (the mound, and its yard kept clear)
+    places.push({ kind: 'cave', name: c.name, x: s.x, z: s.z, r: 7, guards: [], seen: false, reached: false, heard: false, cave: c });
+    // a clear way out of its mouth, as every place has from the camp's side (planPlaces): no tree or rock across it (the classic Glowing
+    // Cavern had a boulder 26 m out, across the walk's way in). Kept aside until every cave is placed, so no cave moves for another's way
+    // (the classic world's clear only what blocks a walker, Jared, November 15, 2026: "Only what blocks"; reeds, ferns and the like stay)
+    for (let t = 1; t <= 37; t += 3) ways.push({ x: s.x + fx * t, z: s.z + fz * t, r: 2.5 }); }
+  if (CLASSIC) solidWays.push(...ways); else sites.push(...ways); } // (the classic world's are no site: props.js drops only the solid props on them)
+export { caves };

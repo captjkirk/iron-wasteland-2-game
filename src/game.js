@@ -16,6 +16,8 @@ import { turretModel, turretMats } from './turret.js';
 import { initFireflies, tickFireflies } from './fireflies.js';
 import { resetExplored } from './explore.js';
 import { startPlaces, tickPlaces, placePrompt, radioNear, places } from './places.js'; // slice 23
+import { startCaves, tickCaves } from './caves.js'; // #8
+import { beyond } from './cavemap.js';
 import { initEffects, tickEffects, hitBurst, splash, dustPuff, floatText, healthBars, hitMarker, buildLoot, nameTags } from './effects.js';
 import { unlockAudio, toggleMute, isMuted, sfx, setListener, windLevel, riverLevel, ambient, setMusicVolume, setMusicPaused, setMusicMode } from './audio.js';
 import { W } from './weather.js';
@@ -240,6 +242,7 @@ export function startGame(i) { clearTracks(); // (slice 43)
   // each raider camp's crew, round its fire; they keep to the camp until they see you
   raiderCamps.forEach((c, i) => c.raiders.forEach((type, k) => { const a = c.a0 + 0.4 + k * 1.9; spawnEnemy(c.x + Math.cos(a) * 3, c.z + Math.sin(a) * 3, type, 9000 + i, k, c.raiders.length); enemies.at(-1).home = c; })); }
   startPlaces({ spawnEnemy, enemies, joining, log, logEvent, sfx, send, player, hurt: (d, by) => hurtPlayer(d, by) }); // slice 23: the places' guards, and what this game knows of them
+  startCaves({ spawnEnemy, enemies, joining, log, logEvent, sfx, player, teleport, look, nightK }); // #8: the caves' surprises armed again
   clearPoison(); startSpiders(scene, !joining(), spawnEnemy); // slice 22: the webs go; the spider nests are set down (a joined game gets them from the host)
   document.getElementById('menu').classList.add('hidden'); for (const id of ['hud-tl', 'hud-tr', 'hud-b']) document.getElementById(id).classList.remove('hidden'); running = true; log(`${ch.player} walks out as ${ch.title}. (F9 saves a play log.)`); if (net.role) log(`Game: ${modeName()}.`); setCam(camMode); logEvent('start', { ch: ch.id, cam: camMode, mode: modeKey(), lvl: rules.lvl }); watchStart(); startVideo(renderer.domElement);
 }
@@ -643,7 +646,7 @@ export function gameOver(why = null, reason = '') { clearPoison(); riverLevel(0)
 // (slice 36: an upper floor's wall has a bottom, bot: a head below it walks on under it; a creature by the same rule from the ground, creatureCollide)
 function collide(o, radius, feet, low = feet) { for (let pass = 0; pass < 3; pass++) for (const c of nearColliders(o.x, o.z)) { if (!c.r || (c.bot != null && (low ?? -1e9) + 1.7 < c.bot) || (feet != null && c.stand != null && steps(c, feet)) || (c.gate && (feet != null || c.gate.open))) continue; const dx = o.x - c.x, dz = o.z - c.z, d = Math.hypot(dx, dz), m = (feet != null && c.bands ? rockCol(c, o.x, o.z, feet) : colR(c, o.x, o.z)) + radius;
   if (d < m && d > 1e-4) { o.x = c.x + dx / d * m; o.z = c.z + dz / d * m; } }
-  const lim = HALF - 6; o.x = Math.max(-lim, Math.min(lim, o.x)); o.z = Math.max(-lim, Math.min(lim, o.z)); }
+  if (beyond(o.z)) return; /* (#8: inside a cave, past the north edge: its walls hold you) */ const lim = HALF - 6; o.x = Math.max(-lim, Math.min(lim, o.x)); o.z = Math.max(-lim, Math.min(lim, o.z)); }
 // a creature: its feet on the ground for walls with a bottom (a stilt house's stand on its floor: it walked through them, the review of
 // November 15, 2026), and no gates or steps
 export const creatureCollide = (e, r) => collide(e, r, undefined, groundY(e.x, e.z));
@@ -714,6 +717,7 @@ export function update(dt, t) {
   if (camMode === 'first') player.faceYaw = player.yaw;
   tickHarvest(dt, (keys.has('KeyE') || !!pad?.useHeld) && !player.rv && !player.mantle && !player.climbing && !building() && !cooking); // hold E by a tree: chop it (slice 11)
   tickPlaces(dt, (keys.has('KeyE') || !!pad?.useHeld) && !player.rv && !building() && !caches.some(c => !c.opened && Math.hypot(c.x - player.x, c.z - player.z) < 2.4 && Math.abs(feetY() - c.y) < 2.6)); // slice 23: arriving at places, the radio (not while a crate is in reach), the spores
+  tickCaves(dt); // #8: in and out at the mouths, the surprises
   tickTear(dt, keys.has('KeyX') || !!pad?.tearHeld);
   tickRepair(dt, (keys.has('KeyH') || !!pad?.fixHeld) && !craftOpen() && !player.rv && !player.mantle && !player.climbing); // hold H (the d-pad's right) by a damaged wall or gate: mend it (slice 32)
   // slice 12: hold G (d-pad down) to eat, hold E at a fire to cook; R or d-pad up reloads the revolver

@@ -4,6 +4,7 @@
 // reach it; once a game: every crate nobody can reach. In co-op the host sends a check every 10 s (coop.js) and a joined
 // game compares it with its own world: drift. The world's coarse map goes in at the start, so the report can name the
 // ground never visited. (Page errors, failed loads and long frames are playlog.js's own.)
+import { caveAt } from './cavemap.js';
 import { HALF, WORLD, SEED, WATER_Y, ENEMY, BIOME_NAMES } from './config.js';
 import { groundY, biomeAt, slopeAt } from './world.js';
 import { nearColliders, colR, placed, standAt } from './props.js';
@@ -26,7 +27,7 @@ export function solidAt(x, z, y, depth = 0.3, not = null) {
     if ((c.stand != null && y >= c.stand - 0.1) || (c.top != null && y >= c.top - 0.05)) continue;
     if (Math.hypot(x - c.x, z - c.z) < colR(c, x, z) - depth) return c; }
   return null; }
-const outside = (x, z) => Math.abs(x) > HALF - 1 || Math.abs(z) > HALF - 1;
+const outside = (x, z) => (Math.abs(x) > HALF - 1 || Math.abs(z) > HALF - 1) && !caveAt(x, z); // (#8: a cave's inside lies past the north edge)
 const broken = (...v) => v.some(q => !Number.isFinite(q));
 
 // ── each game ──

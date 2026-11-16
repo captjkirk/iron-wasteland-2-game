@@ -2,6 +2,7 @@
 // per-vertex texture-layer weights the terrain shader blends. Everything reads the same 2 m grid.
 import { HALF, WORLD, CELL, SEG, N, WATER_Y, BIOME, BIOME_NAMES, NB, SEED, CLASSIC, CAMP } from './config.js';
 import { rng, fbm, vnoise, ridged, smooth, clamp01, mulberry32 } from './noise.js';
+import { beyond, caveFloor, caveAt } from './cavemap.js';
 
 // ── Biome map: warped nearest-seed, like IW1 getBiome, with soft weights for blending ──
 // The first seed is the start: a Greenbelt valley at the centre (IW1: the start is grass). Every other seed sits
@@ -334,6 +335,7 @@ for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
 
 // ── Lookups ──
 export function groundY(x, z) { // exact on the LOD0 mesh's triangles
+  if (beyond(z)) { const c = caveFloor(x, z); if (c != null) return c; } // (#8: past the north edge, a cave's floor: cavemap.js)
   const gx = Math.min(SEG - 1e-4, Math.max(0, (x + HALF) / CELL)), gz = Math.min(SEG - 1e-4, Math.max(0, (z + HALF) / CELL));
   const i = Math.floor(gx), j = Math.floor(gz), fx = gx - i, fz = gz - j;
   const h00 = H[j * N + i], h10 = H[j * N + i + 1], h01 = H[(j + 1) * N + i], h11 = H[(j + 1) * N + i + 1];
@@ -369,4 +371,5 @@ export function reachGrid() { if (REACH) return REACH; REACH = new Uint8Array(N 
     for (let d = 0; d < 4; d++) { const ii = i + (d === 0) - (d === 1), jj = j + (d === 2) - (d === 3); if (ii < 1 || jj < 1 || ii >= SEG || jj >= SEG) continue;
       const m = jj * N + ii; if (REACH[m] || Math.abs(H[m] - H[k]) > CELL) continue; REACH[m] = 1; q[n++] = m; } }
   return REACH; }
-export function reachable(x, z) { const i = Math.round((x + HALF) / CELL), j = Math.round((z + HALF) / CELL); return reachGrid()[Math.min(SEG, Math.max(0, j)) * N + Math.min(SEG, Math.max(0, i))] === 1; }
+export function reachable(x, z) { if (beyond(z)) { const c = caveAt(x, z); return !!c && reachable(c.x, c.z); } // (#8: inside a cave, as reachable as its mouth: worlds.mjs walks every inside)
+  const i = Math.round((x + HALF) / CELL), j = Math.round((z + HALF) / CELL); return reachGrid()[Math.min(SEG, Math.max(0, j)) * N + Math.min(SEG, Math.max(0, i))] === 1; }

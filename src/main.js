@@ -32,10 +32,12 @@ import { RECIPES } from './recipes.js';
 import { startBuild, placeNow, endBuild, building, rotateBuild, damageBuilt, toggleGate, tearTarget, repairTarget, pieceBars, refundOf, clearBuilt, wallAhead, PIECE, putPiece } from './build.js';
 import { ammo, clipSize } from './supplies.js';
 import { felled, fell, harvestTarget, saplingStats } from './harvest.js';
-import { tickTorch, torchLights } from './torch.js';
+import { tickTorch, torchLights, torchBar } from './torch.js';
 import { quiver, stuckArrows } from './arrows.js';
-import { warmCreatures, pickups, initGame, hurtPlayer, gotPickup, selected, liveShots, spreadAt, upgraded, aimGround, togglePause, startGame, setCam, update, placeCamera, hud, menuPad, isRunning, worldWaits, getCamMode, player, enemies, spawnEnemy, attack, teleport, creatureCollide, look, hitEnemy, press, secondary, turrets, dropLoot, spawnPack } from './game.js';
+import { warmCreatures, pickups, initGame, hurtPlayer, gotPickup, selected, liveShots, spreadAt, upgraded, aimGround, togglePause, startGame, setCam, update, placeCamera, hud, menuPad, isRunning, worldWaits, getCamMode, player, enemies, spawnEnemy, attack, teleport, creatureCollide, look, hitEnemy, press, secondary, turrets, dropLoot, spawnPack , gameOver } from './game.js';
 import * as spiders from './spiders.js';
+import { buildCaves, caveScene, caveDark, caveLights, caveHere, caveFade, caves, caveAt, caveCam } from './caves.js'; // #8
+import { caveDepth } from './cavemap.js';
 
 const status = document.getElementById('loading');
 const renderer = new THREE.WebGLRenderer({ antialias: Q.antialias, powerPreference: 'high-performance' });
@@ -76,7 +78,7 @@ status.textContent = 'Loading terrain textures…';
 const stages = { code: Math.round(Math.max(0, ...performance.getEntriesByType('resource').filter(e => /\.m?js(\?|$)/.test(e.name)).map(e => e.responseEnd))), boot: Math.round(performance.now()) }, stage = (k) => { stages[k] = Math.round(performance.now()); };
 await buildTerrain(scene, renderer); stage('terrain');
 await buildProps(scene, renderer, (t) => status.textContent = t); stage('props');
-buildGrass(scene); buildBog(scene, env.normals); buildDeepWater(scene, env.normals); buildWeather(scene); await buildCamp(scene); await buildBuildings(scene); stage('world');
+buildGrass(scene); buildBog(scene, env.normals); buildDeepWater(scene, env.normals); buildWeather(scene); await buildCamp(scene); await buildBuildings(scene); buildCaves(scene); stage('world');
 await charsLoading; stage('chars');
 initGame({ scene, camera, renderer, env }); initPortraits(scene); stage('init');
 await warmCreatures(); stage('warm'); // (issue #44: every creature's shaders compiled now, not on its first sight in play)
@@ -106,6 +108,7 @@ function autoScale(dt) { if (navigator.webdriver || !isRunning() || fps <= 0) re
 let CF = null; const campFires = () => CF ||= raiderCamps.map(c => ({ x: c.x, y: groundY(c.x, c.z) + 0.4, z: c.z, key: 'campfire' }));
 
 // ── Loop ──
+const BRIGHT = Math.max(0.5, Math.min(4, +new URLSearchParams(location.search).get('bright') || 1));
 let nextFrameAt = 0, last = performance.now(), frames = 0, fpsT = 0, fps = 0, clock = 0, rendered = 0, freeCam = null;
 const menuCam = { a: 2.2 };
 function frame(now) {
@@ -117,19 +120,23 @@ function frame(now) {
   frameTime(now - last, isRunning()); const dt = Math.max(0, Math.min(0.05, (now - last) / 1000)); last = now; clock += dt;
   frames++; fpsT += dt; if (fpsT > 0.5) { fps = Math.round(frames / fpsT); frames = 0; fpsT = 0; }
   hintsTick(); // #16: the hints outside play follow the keyboard or the pad, whichever was used last
-  if (isRunning()) { update(dt, clock); placeCamera(dt); hud(fps, dt); autoScale(dt); }
+  if (isRunning()) { update(dt, clock); placeCamera(dt); caveCam(camera, player, getCamMode()); /* #8 */ hud(fps, dt); autoScale(dt); }
   else { menuPad(); if (menuStep() === 'chars') drawPortraits(renderer, dt, selected()); // (only while the carousel shows)
     menuCam.a += dt * 0.03; const x = 20 + Math.cos(menuCam.a) * 150, z = Math.sin(menuCam.a) * 150;
     camera.position.set(x, Math.max(groundY(x, z), WATER_Y) + 55, z); camera.lookAt(40, 8, 0); env.follow(new THREE.Vector3(40, groundY(40, 0), 0)); }
   if (freeCam) { camera.position.copy(freeCam.pos); camera.lookAt(freeCam.target); camera.fov = freeCam.fov; camera.updateProjectionMatrix(); env.follow(freeCam.target); }
   // slice 13: the hour lights the world: sky, sun or moon, fog, the far trees; fires and torches light the night
-  env.setTime(day.t); eyeShine(nightK()); tickTorch(isRunning() && !worldWaits() ? dt : 0, camera, isRunning() && getCamMode() === 'first'); env.fireLights(isRunning() ? [...torchLights(), ...lightSpots(), ...campFires(), ...lampSpots()] : [], camera, nightK(), clock);
+  const dk = Math.max(nightK(), caveDark()); // (#8: a cave is as dark as night: eyes shine, fires and torches light it fully)
+  env.setTime(day.t); eyeShine(dk); tickTorch(isRunning() && !worldWaits() ? dt : 0, camera, isRunning() && getCamMode() === 'first', dk); env.fireLights(isRunning() ? [...torchLights(), ...lightSpots(), ...campFires(), ...caveLights(), ...lampSpots()] : [], camera, dk, clock);
   localFog(scene.fog, FOG_COLOR, env.fogNear, env.fogFar, camera.position.x, camera.position.z); scene.fog.color.multiply(env.fogTint);
-  if (isRunning()) { markExplored(player.x, player.z); const r = fogReach(camera.position.x, camera.position.z, dt); scene.fog.near *= 0.2 + 0.8 * r; scene.fog.far *= r; } // (#19 part 1: unseen ground is foggier)
+  if (isRunning() && !caveHere()) { markExplored(player.x, player.z); const r = fogReach(camera.position.x, camera.position.z, dt); scene.fog.near *= 0.2 + 0.8 * r; scene.fog.far *= r; } // (#19 part 1: unseen ground is foggier)
   { const nk = nightK(), f = scene.fog; f.near += (Math.min(f.near, 10) - f.near) * nk; f.far += (Math.min(f.far, 150) - f.far) * nk; } // the night closes in (the owner: "view distance = less at night")
   tickWeather((day.n + day.t) * DAY_S, camera.position, scene.fog, nightK(), env.haze);
   const under = player.under && camera.position.y < WATER_Y; if (under) { scene.fog.color.set(0x0a262b).multiply(env.fogTint); scene.fog.near = 0.5; scene.fog.far = 20; } document.body.classList.toggle('under', under); deepShadow.camUnder = under; // under the surface
-  wind.value = clock; updateScatter(camera.position); updateGrass(camera.position);
+  caveScene(scene, env, camera, isRunning()); // #8: inside a cave, no sun, sky or weather
+  if (caveHere()) renderer.toneMappingExposure = 0.95; // (#8, D6: in a cave the eye opens up to the dark: "SOME light")
+  renderer.toneMappingExposure *= BRIGHT; // (D6: ?bright=2 for looking at caves while building them; never set in play)
+  wind.value = clock; if (!caveHere()) { updateScatter(camera.position); updateGrass(camera.position); } // (#8: none of it grows in a cave)
   tickBuildings(camera.position, player.x, player.z, player.y, isRunning() && getCamMode() === 'first' && !freeCam);
   if (isRunning()) tickTracks(scene, clock, everyone(), enemies, camera.position); // (slice 43: prints on the ground)
   env.tick(dt); tickCamp(dt, clock); renderer.render(scene, camera); snapFrame(renderer.domElement); rendered++;
@@ -145,7 +152,7 @@ const fit = () => { camera.aspect = innerWidth / innerHeight; camera.updateProje
 addEventListener('resize', fit); fit(); // (and once now: a window resized while the world was building drew in a corner until the next resize, Jared, 2026-11-15)
 
 // Test hooks for the headless check (scripts/shots.js): not used by play.
-window.__iw = { tracks: { stats: trackStats, groundOf, mesh: tracksMesh, fill: fillTracks }, /* slice 43 */ selected, larder, /* places round 2 */ portraits: portraitStats, get rules() { return rules; }, /* the start menu (menu.js) */ fireflies: fireflyStats, explored: exploredStats, others, net, built, deliver, /* the gate of slice 12 */ logEvent, playlogState, tickWatch, checkCrates, checkMsg, solidAt, pickups, HALF, /* slice 13d */
+window.__iw = { caveLights, torchBar, gameOver, caves, caveAt, caveHere, caveFade, caveDepth, caveLook: () => ({ sky: env.sky.visible, sun: env.sun.intensity, fogFar: scene.fog.far, fogDark: Math.max(scene.fog.color.r, scene.fog.color.g, scene.fog.color.b) < 0.1, /* (a cave's haze: dark, tinted) */ ibl: scene.environmentIntensity, far: camera.far }), /* #8 */ tracks: { stats: trackStats, groundOf, mesh: tracksMesh, fill: fillTracks }, /* slice 43 */ selected, larder, /* places round 2 */ portraits: portraitStats, get rules() { return rules; }, /* the start menu (menu.js) */ fireflies: fireflyStats, explored: exploredStats, others, net, built, deliver, /* the gate of slice 12 */ logEvent, playlogState, tickWatch, checkCrates, checkMsg, solidAt, pickups, HALF, /* slice 13d */
   // a build recipe opens build mode; for the checks, craft() of one places it at once where the ghost stands (slice 12)
   craft: (key) => { const r = RECIPES.find(q => q.key === key); if (r.type !== 'build') return craft(r); if (!craft(r)) return false; const ok = placeNow(); endBuild(); return ok; },
   lightSpots: () => [...torchLights(), ...lightSpots()], fireCount, hasFlame, saplingStats, setDay, /* slice 26 */ startBuild: (key) => startBuild(RECIPES.find(q => q.key === key)), placeNow, endBuild, building, rotateBuild, damageBuilt, toggleGate, tearTarget, repairTarget, pieceBars, refundOf, clearBuilt, wallAhead, PIECE, putPiece, liveShots, ammo, clipSize, gotPickup, spreadAt, upgraded, aimGround, /* slice 12 */ toggleCraft, craftOpen, placeSpot, sleep, bedNear, bedRespawn, felled, fell, harvestTarget, quiver, stuckArrows, // slice 11

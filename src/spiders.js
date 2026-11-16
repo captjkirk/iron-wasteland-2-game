@@ -13,6 +13,7 @@
 //         a fast drop, a second hanging at head height with its legs spread, then it lets go and attacks. Each player's
 //         first comes 5 to 12 s into the night there, then one every minute or so. Shoot it on its thread and it falls.
 import * as THREE from 'three';
+import { caveAt, caveDepth } from './cavemap.js';
 import { SEED, HALF, SAFE_R, WATER_Y, ENEMY } from './config.js';
 import { groundY, biomeAt, slopeAt } from './world.js';
 import { nearColliders, colR, placed, addCollider, floorY } from './props.js';
@@ -171,7 +172,8 @@ export function tickSpiders(dt, { scene: sc, enemies, players, host, spawn, log,
     const s = spawn(a.x, a.z, KIND[b] || 'spider'); Object.assign(s, { state: 'drop', dropTop: a.h, dropH: a.h, dropT: 0, hangT: 0, yaw: Math.atan2(-(q.x - a.x), -(q.z - a.z)), hunter: { until: t + 30 } });
     sfx('spiderdrop', s); logEvent?.('drop', { enemy: 'spider', from: a.tree ? 'tree' : 'wall', d: +Math.hypot(q.x - a.x, q.z - a.z).toFixed(1) }); } }
 // the height a spider at (x, z) came down from: the tree, giant mushroom or wall it is under (as anchorNear placed it)
-function dropHeightAt(x, z) { for (const [type, h] of [['deadtree', 6.5], ['oak', 6.5], ['shroom', 0]]) for (const t of placed[type] || []) if (Math.abs(x - t.x) < 2.6 && Math.abs(z - t.z) < 2.6 && Math.hypot(x - t.x, z - t.z) < 2.6) return h || Math.min(6.5, t.s * 0.7);
+function dropHeightAt(x, z) { const cv = caveAt(x, z); if (cv) return caveDepth(cv.L, x, z).ceil - 0.5; // (#8: a cave's vault)
+  for (const [type, h] of [['deadtree', 6.5], ['oak', 6.5], ['shroom', 0]]) for (const t of placed[type] || []) if (Math.abs(x - t.x) < 2.6 && Math.abs(z - t.z) < 2.6 && Math.hypot(x - t.x, z - t.z) < 2.6) return h || Math.min(6.5, t.s * 0.7);
   for (const b of buildings) { const dx = x - b.x, dz = z - b.z; if (Math.abs(dx) > 30 || Math.abs(dz) > 30) continue; const lx = dx * b.ca + dz * b.sa, lz = -dx * b.sa + dz * b.ca;
     if (Math.abs(lx) < b.w / 2 + 1.5 && Math.abs(lz) < b.d / 2 + 1.5) return b.h ?? 3; }
   return 6; }

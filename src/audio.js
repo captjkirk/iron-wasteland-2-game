@@ -31,7 +31,8 @@ export function panOf(at) { const dx = at.x - listener.x, dz = at.z - listener.z
 // than its growl: the follow-ups to #66, "wolves that seem silent")
 function out(at, vol = 1, reach = 7, max = 60) { const g = ctx.createGain(); let v = vol, pan = 0;
   if (at) { const d = Math.hypot(at.x - listener.x, at.z - listener.z); v *= 1 / (1 + d / reach); if (d > max) return null; pan = panOf(at); }
-  g.gain.value = v; if (ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = pan; g.connect(p); p.connect(master); } else g.connect(master); return g; }
+  g.gain.value = v; if (cave && echo) g.connect(echo); // (#8: in a cave every sound comes back off the rock)
+  if (ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = pan; g.connect(p); p.connect(master); } else g.connect(master); return g; }
 function env(g, t, a, peak, dec) { g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + a + dec); }
 function noise(dest, t, dur, { type = 'bandpass', f0 = 1000, f1 = f0, q = 1, peak = 0.8, a = 0.005 } = {}) {
   const s = ctx.createBufferSource(); s.buffer = noiseBuf; s.playbackRate.value = 0.8 + Math.random() * 0.4; const f = ctx.createBiquadFilter(); f.type = type; f.Q.value = q;
@@ -84,6 +85,11 @@ const SFX = {
   // slice 11: an axe biting wood, a tree's creak as it goes, the crash of its fall, hammering at the bench, an arrow striking
   eat: (d, t) => { for (let i = 0; i < 3; i++) noise(d, t + i * 0.08, 0.05, { f0: 2600 - i * 400, f1: 1200, q: 1.4, peak: 0.3 }); }, // a bite (slice 12)
   chop: (d, t) => { tone(d, t, 0.09, { type: 'triangle', f0: 240, f1: 120, peak: 0.6 }); noise(d, t, 0.07, { f0: 1100, f1: 600, q: 2.5, peak: 0.7 }); noise(d, t + 0.02, 0.18, { type: 'lowpass', f0: 900, f1: 200, peak: 0.25, a: 0.01 }); },
+  // #8, the caves' own: a drop of water into a pool, and its smaller echo-drop; trickling grit; a deep rumble in the rock; the cave's slow breath
+  drip: (d, t) => { const f = 1500 + Math.random() * 1100; tone(d, t, 0.07, { f0: f, f1: f * 0.45, peak: 0.3 }); tone(d, t + 0.1 + Math.random() * 0.08, 0.05, { f0: f * 1.25, f1: f * 0.6, peak: 0.1 }); },
+  grit: (d, t) => { for (let i = 0; i < 7 + Math.floor(Math.random() * 6); i++) noise(d, t + i * 0.05 + Math.random() * 0.05, 0.025, { type: 'highpass', f0: 2500 + Math.random() * 2500, q: 1, peak: 0.25 }); },
+  rumble: (d, t) => { noise(d, t, 2.2, { type: 'lowpass', f0: 140, f1: 50, q: 1, peak: 1.1, a: 0.4 }); tone(d, t, 1.8, { f0: 42, f1: 30, peak: 0.5, a: 0.3 }); },
+  hum: (d, t) => noise(d, t, 3.2, { type: 'bandpass', f0: 180 + Math.random() * 120, f1: 140, q: 3, peak: 0.12, a: 1.2 }),
   creak: (d, t) => { const o = ctx.createOscillator(), f = ctx.createBiquadFilter(), g = ctx.createGain(); o.type = 'sawtooth'; o.frequency.setValueAtTime(48, t); o.frequency.linearRampToValueAtTime(70, t + 0.6); o.frequency.linearRampToValueAtTime(38, t + 1.3);
     f.type = 'bandpass'; f.frequency.value = 420; f.Q.value = 3; env(g, t, 0.15, 0.3, 1.2); o.connect(f); f.connect(g); g.connect(d); o.start(t); o.stop(t + 1.5); },
   crash: (d, t) => { noise(d, t, 1.1, { type: 'lowpass', f0: 1800, f1: 120, peak: 1.0, a: 0.01 }); tone(d, t, 0.5, { f0: 60, f1: 28, peak: 0.9 }); for (let i = 0; i < 5; i++) noise(d, t + 0.05 + i * 0.07, 0.08, { f0: 2400 - i * 250, q: 3, peak: 0.25 }); },
@@ -103,8 +109,17 @@ const CARRY = { wolfcall: [1, 20, 120], wolfwatch: [0.9, 16, 90], howl: [0.8, 30
 export const heard = []; // (the last 40 sounds with a place within earshot, and where each sat left to right: for the walk test)
 export function sfx(name, at, vol = 1) { const [cv = 1, reach, max] = CARRY[name] || []; if (at && Math.hypot(at.x - listener.x, at.z - listener.z) <= (max ?? 60)) { heard.push({ name, x: at.x, z: at.z, pan: panOf(at) }); if (heard.length > 40) heard.shift(); } // (only what is in earshot)
   if (!ctx || muted) return; const d = out(at, vol * cv, reach, max); if (!d) return; duck(); const t = ctx.currentTime + 0.005; (SFX[name] || VOICE[name])?.(d, t); }
-export function windLevel(v) { if (windGain) windGain.gain.setTargetAtTime(v, ctx.currentTime, 0.5); }
-let riverWant = 0; export function riverLevel(v) { riverWant = v; if (riverGain) riverGain.gain.setTargetAtTime(v, ctx.currentTime, 0.8); }
+export function windLevel(v) { if (windGain) windGain.gain.setTargetAtTime(cave ? 0 : v, ctx.currentTime, 0.5); }
+let riverWant = 0; export function riverLevel(v) { riverWant = cave ? 0 : v; if (riverGain) riverGain.gain.setTargetAtTime(riverWant, ctx.currentTime, 0.8); }
+// #8 (Jared, November 15, 2026: "Cave sounds and fog will add to the feeling of the cave. Maybe music fades, and it sounds wet and
+// drippy in some caves, or dry and unstable in others"): inside a cave (kind, or null outside) the music sinks to a murmur, the wind,
+// the river and the open land's birds and frogs go quiet, and every sound comes back off the rock (a short dark echo); caves.js
+// plays each cave's own drips, grit, creaks and rumbles round you
+let cave = null, echo = null;
+export function caveAudio(kind) { if (kind === cave) return; cave = kind; if (!ctx) return;
+  if (!echo) { echo = ctx.createDelay(1); echo.delayTime.value = 0.16; const fb = ctx.createGain(); fb.gain.value = 0.42; const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1800;
+    echo.connect(lp); lp.connect(fb); fb.connect(echo); const wet = ctx.createGain(); wet.gain.value = 0.55; lp.connect(wet); wet.connect(master); }
+  setMusicVolume(musicVol); if (cave) { windLevel(0); riverLevel(0); } }
 
 // ── The land's own sounds (slice 13), now and then round the listener: birds by day in the green places, frogs in the
 // Bog, crickets and an owl at night, and far off at night a wolf's howl (never inside the safe valley) ──
@@ -118,7 +133,7 @@ const AMB = {
     o.type = 'triangle'; o.frequency.setValueAtTime(380, t); o.frequency.linearRampToValueAtTime(640, t + 0.6); o.frequency.linearRampToValueAtTime(560, t + 2.0); o.frequency.linearRampToValueAtTime(420, t + 2.6);
     v.frequency.value = 5.5; vg.gain.value = 9; v.connect(vg); vg.connect(o.frequency); env(g, t, 0.4, 0.22, 2.3); o.connect(g); g.connect(d); o.start(t); v.start(t); o.stop(t + 2.9); v.stop(t + 2.9); } } };
 const ambT = {};
-export function ambient(dt, biome, night, safe) { if (!ctx || muted) return;
+export function ambient(dt, biome, night, safe) { if (!ctx || muted || cave) return; // (#8: a cave has its own: caves.js)
   for (const [k, a] of Object.entries(AMB)) { if (!a.when(biome, night, safe)) { ambT[k] = Math.max(ambT[k] || 0, a.gap[0]); continue; }
     if ((ambT[k] = (ambT[k] ?? a.gap[0]) - dt) > 0) continue; ambT[k] = a.gap[0] + Math.random() * (a.gap[1] - a.gap[0]);
     const r = k === 'howl' ? 55 : 8 + Math.random() * 16, ang = Math.random() * 6.28, d = out({ x: listener.x + Math.cos(ang) * Math.min(r, 50), z: listener.z + Math.sin(ang) * Math.min(r, 50) }, a.vol * (k === 'howl' ? 6 : 1)); if (d) a.play(d, ctx.currentTime + 0.01); } }
@@ -129,7 +144,7 @@ export function ambient(dt, biome, night, safe) { if (!ctx || muted) return;
 // click/key); the pause screen fades it out; M mutes everything; the Music slider in settings sets its level. ──
 let musicDest = null, musicMode = 'day', bossHold = 0, musicBus = null, duckG = null, musicVol = 0.5, musicPaused = false, musicNext = 0, musicTimer = 0, duckT = 0;
 const MUSIC_BASE = 0.1; // against the master 0.7: one loud sound effect peaks near 1.0 and the wind sits at 0.05
-export function setMusicVolume(v) { musicVol = Math.max(0, Math.min(1, v)); if (musicBus) musicBus.gain.setTargetAtTime(musicPaused ? 0 : musicVol * MUSIC_BASE, ctx.currentTime, 0.2); }
+export function setMusicVolume(v) { musicVol = Math.max(0, Math.min(1, v)); if (musicBus) musicBus.gain.setTargetAtTime(musicPaused ? 0 : musicVol * MUSIC_BASE * (cave ? 0.12 : 1), ctx.currentTime, cave ? 1.2 : 0.8); } // (#8: in a cave, a murmur, faded slowly)
 export function setMusicPaused(p) { musicPaused = p; setMusicVolume(musicVol); }
 export const audioState = () => ({ started: !!ctx, music: musicBus ? musicBus.gain.value : null, musicDuck: duckG ? duckG.gain.value : null, wind: windGain ? windGain.gain.value : null, river: riverWant, muted, master: master ? master.gain.value : null });
 function duck() { if (!duckG) return; const t = ctx.currentTime; if (t - duckT < 0.08) return; duckT = t; duckG.gain.cancelScheduledValues(t); duckG.gain.setTargetAtTime(0.35, t, 0.05); duckG.gain.setTargetAtTime(1, t + 0.9, 0.7); }

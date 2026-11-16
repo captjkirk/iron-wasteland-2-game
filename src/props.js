@@ -10,7 +10,7 @@ import { addLayer, markDirty } from './scatter.js';
 import { buildTrees, SPECIES } from './trees.js';
 import { rockParts, cactusParts, fernParts, reedParts, flowerParts, loadPropMeshes, scrapParts, wreckParts, wallParts, spireParts, glowcapParts, SPIRE_REACH, pebbleParts, driftwoodParts, tuftParts, puffballParts, bracketParts, barrelCactusParts } from './propmodels.js';
 import { mushroomParts, archParts } from './landmarks.js';
-import { planBuildings, clearOf } from './buildings.js';
+import { planBuildings, clearOf, solidWays } from './buildings.js';
 const AS = [9.4, 13]; // arch sizes: metres per unit of landmarks.js's arch (legs at +-0.85, leg radius 0.3)
 
 export const colliders = []; const CG = 8, cgrid = new Map(); // spatial hash of circles
@@ -234,7 +234,8 @@ function place() {
     if (C({ grass: 0.02, tundra: 0.03, ruins: 0.03, waste: 0.02 }[bio] || 0)) put('pebbles', 0.2 + sv * 0.15, 0.4, { v: bio === 'tundra' ? 2 : bio === 'waste' ? 1 : 0, y: y - 0.03 }); // (small stones in the grass: the shore's patch at a fifth to a third its size, under 0.8 m across with its largest stone about 0.15 m; at 0.3 to 0.7 its biggest stones read as one dark boulder against a trunk)
   }
   // the buildings' sites stay open: filtered after placing, so the seeded layout everywhere else is exactly slice 7's
-  for (const t in placed) placed[t] = placed[t].filter(it => it.keep || clearOf(it.x, it.z, /spire|arch/.test(t) ? 3 : 2));
+  for (const t in placed) { const pad = /spire|arch/.test(t) ? 3 : 2, solid = COL[t] || /spire|arch|ruinwall/.test(t); // (solid: a collider below)
+    placed[t] = placed[t].filter(it => it.keep || (clearOf(it.x, it.z, pad) && !(solid && solidWays.some(s => Math.hypot(it.x - s.x, it.z - s.z) <= s.r + pad)))); } // (a classic cave's way out: only what blocks)
   // the passes are the valley's only ways out: no hoodoo, ice spire or arch stands in one before the ring ends (two
   // overlapping spires 208 m out in the desert pass made a dead end facing the valley, 2026-11-04)
   const inPass = (x, z) => { const r = Math.hypot(x, z); return r < 255 && PASSES.some(q => Math.abs(Math.atan2(Math.sin(Math.atan2(z, x) - q.a), Math.cos(Math.atan2(z, x) - q.a))) * r < 32); };

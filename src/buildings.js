@@ -20,7 +20,7 @@ import { pbr, boxUV, loadMesh, canvasTex, rockMat, glowcapParts } from './propmo
 import { buildFire, buildTent } from './camp.js';
 
 export const caches = [];
-export { buildings, raiderCamps, clearOf, indoors, planBuildings } from './plan.js';
+export { buildings, raiderCamps, clearOf, indoors, planBuildings, solidWays } from './plan.js';
 
 // ── Building: meshes, colliders, crates ────────────────────────────────────────────────────────────────────────
 let MAT = null, CRATE = null;
@@ -364,7 +364,7 @@ let SPOTS = null; // (made once, on the first lit frame: the buildings never mov
 export const lampSpots = () => SPOTS ||= LAMPS.map((o, k) => { const w = o.getWorldPosition(new THREE.Vector3()); return { x: w.x, y: w.y, z: w.z, key: 'lamp', who: 'lamp' + k, w: 2.5, ...LAMP[o.userData.lamp] }; });
 export async function buildBuildings(scene) { LAMPS.length = 0; SPOTS = null;
   if (!CRATE) { CRATE = { geo: await loadMesh('wooden_crate_01'), mat: pbr('props/wooden_crate_01', { rough: 0.85 }) }; CRATE.geo.computeBoundingBox(); CRATE.h = CRATE.geo.boundingBox.max.y * 1.25; }
-  { const need = places.length || buildings.some(b => b.style) ? Object.keys(KITS) : buildings.some(b => b.kind === 'gas') ? GAS_KIT : []; if (need.some(k => !KIT?.[k])) KIT = await loadKit(need, KIT || {}); } // (and for the house kinds, slice 36) // (slice 23 polish: the interiors' scanned props, only for a world with places)
+  { const need = places.some(q => q.kind !== 'cave') || buildings.some(b => b.style) ? Object.keys(KITS) : buildings.some(b => b.kind === 'gas') ? GAS_KIT : []; if (need.some(k => !KIT?.[k])) KIT = await loadKit(need, KIT || {}); } // (caves need none of it, #8) // (and for the house kinds, slice 36) // (slice 23 polish: the interiors' scanned props, only for a world with places)
   const M = mats(), root = new THREE.Group(); root.name = 'buildings'; scene.add(root);
   for (const b of buildings) { const g = new THREE.Group(); g.position.set(b.x, 0, b.z); g.rotation.y = -b.a; root.add(b.group = g);
     const P = pools(); b.place = places.find(q => q.b === b || q.shack === b) || null; b.PR = Object.fromEntries(Object.keys(TILE).map(k => [k, []]));
