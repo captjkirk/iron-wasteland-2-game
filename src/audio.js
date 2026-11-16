@@ -113,12 +113,26 @@ export function windLevel(v) { if (windGain) windGain.gain.setTargetAtTime(cave 
 let riverWant = 0; export function riverLevel(v) { riverWant = cave ? 0 : v; if (riverGain) riverGain.gain.setTargetAtTime(riverWant, ctx.currentTime, 0.8); }
 // #8 (Jared, November 15, 2026: "Cave sounds and fog will add to the feeling of the cave. Maybe music fades, and it sounds wet and
 // drippy in some caves, or dry and unstable in others"): inside a cave (kind, or null outside) the music sinks to a murmur, the wind,
-// the river and the open land's birds and frogs go quiet, and every sound comes back off the rock (a short dark echo); caves.js
+// the river and the open land's birds and frogs go quiet, and every sound comes back off the rock (the cave's own tail, below); caves.js
 // plays each cave's own drips, grit, creaks and rumbles round you
-let cave = null, echo = null;
+// (Jared on Dev, November 15, 2026, 9:15 PM: "the echo in the cave is a little too much- less like a cave, more like a manufactured
+// reverb". The first echo was one 0.16 s delay fed back into itself: even repeats you could count, half as loud as the sound. Now the rock
+// answers as a cave does: many uneven reflections that blur into a dark tail with no repeat to count (a convolver fed a fading, darkening
+// noise made here, no sound files), well under the sound itself; long and bright off ice and crystal, short and soft among roots and timbers)
+let cave = null, echo = null; const rooms = {};
+// each kind's rock: [seconds for its tail to fade away (60 dB), how loud the tail sits under the sound, how bright it starts (Hz)]
+const ROOM = { ice: [2.2, 0.45, 5200], crystal: [2.4, 0.45, 6000], fungal: [1.5, 0.38, 3200], mine: [1.3, 0.34, 3600], roots: [1.2, 0.34, 2600] };
+// the cave's answer to a single click: silence for 12 ms (the nearest wall), a few uneven early reflections, then noise that thickens over
+// 30 ms, fades over the room's time and darkens as it goes (high notes die first in rock); each ear its own noise, so it surrounds you
+export function caveImpulse(ac, kind) { const [T, , hz] = ROOM[kind] || ROOM.mine, sr = ac.sampleRate, pre = 0.012, n = Math.ceil(sr * (T + pre)), b = ac.createBuffer(2, n, sr);
+  for (let ch = 0; ch < 2; ch++) { const d = b.getChannelData(ch); let y = 0;
+    for (let i = Math.ceil(pre * sr); i < n; i++) { const t = i / sr - pre, a = Math.exp(-2 * Math.PI * (hz * Math.exp(-t * 1.6) + 400) / sr); y = a * y + (1 - a) * (Math.random() * 2 - 1); d[i] = y * Math.exp(-6.9 * t / T) * Math.min(1, t / 0.03); }
+    for (let k = 0; k < 7; k++) d[Math.floor(sr * (pre + 0.006 + Math.random() * 0.05))] += (Math.random() < 0.5 ? -1 : 1) * (0.25 + Math.random() * 0.35); }
+  return b; }
 export function caveAudio(kind) { if (kind === cave) return; cave = kind; if (!ctx) return;
-  if (!echo) { echo = ctx.createDelay(1); echo.delayTime.value = 0.16; const fb = ctx.createGain(); fb.gain.value = 0.42; const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1800;
-    echo.connect(lp); lp.connect(fb); fb.connect(echo); const wet = ctx.createGain(); wet.gain.value = 0.55; lp.connect(wet); wet.connect(master); }
+  if (!echo) echo = ctx.createGain(); // (what every sound in a cave also feeds: out())
+  if (cave) { let r = rooms[cave]; if (!r) { r = rooms[cave] = { cv: ctx.createConvolver(), wet: ctx.createGain() }; r.cv.buffer = caveImpulse(ctx, cave); r.wet.gain.value = (ROOM[cave] || ROOM.mine)[1]; r.cv.connect(r.wet); r.wet.connect(master); }
+    echo.disconnect(); echo.connect(r.cv); } // (leaving, sounds stop feeding it and the last tail rings out)
   setMusicVolume(musicVol); if (cave) { windLevel(0); riverLevel(0); } }
 
 // ── The land's own sounds (slice 13), now and then round the listener: birds by day in the green places, frogs in the
