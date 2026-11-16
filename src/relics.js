@@ -8,8 +8,11 @@
 import * as THREE from 'three';
 import { caves, caveAt, floorOf } from './cavemap.js';
 import { groundY } from './world.js';
-import { addCollider } from './props.js';
-import { CAMP, SAFE_R, SEED_TEXT } from './config.js';
+import { addCollider, nearColliders } from './props.js';
+import { campTent } from './camp.js';
+import { rockMat } from './propmodels.js';
+import { mulberry32 } from './noise.js';
+import { CAMP, SAFE_R, SEED_TEXT, WATER_Y } from './config.js';
 
 // the relic of each kind of cave: its name and its glow
 const LOOK = {
@@ -34,7 +37,7 @@ const shapeOf = (k, s) => (SHAPE[k] || SHAPE.ice)(s);
 // HUNT: seconds between the packs sent at a carrier out in the open, by difficulty (the first comes after half the shorter wait)
 const TAKE = 1.5,
   NEAR = 2.2,
-  ALTAR_R = 3.2,
+  ALTAR_R = 4.8,
   HUNT = { easy: null, normal: [40, 60], hard: [18, 28] },
   AT = ['plinth', 'held', 'ground', 'altar'];
 export const relics = [],
@@ -78,40 +81,108 @@ export function buildRelics(sc) {
     halo.scale.setScalar(2.2);
     m.add(gem, halo);
     m.userData.gem = gem;
+    m.userData.halo = halo;
     relics.push({ i: relics.length, c, name, color, m, at: 'plinth', by: null, x: 0, y: 0, z: 0, huntT: null });
   }
-  altar.y = groundY(altar.x, altar.z);
+  // the altar (Jared, November 16, 2026: "bigger", "old and run down", in the green zone but not right by the tent): a ruin of worn,
+  // chipped stone with moss and lichen on it, cracks, flagstones gone astray and a fallen post, on clear flat ground 22 to 30 m from the tent
+  const A = placeAltar();
+  altar.x = A.x;
+  altar.z = A.z;
+  altar.y = groundY(altar.x, altar.z) - 0.08;
   const g = new THREE.Group();
   g.name = 'altar';
   g.position.set(altar.x, altar.y, altar.z);
+  g.rotation.y = A.a;
   scene.add(g);
-  const stone = new THREE.MeshStandardMaterial({ color: 0x9a948a, roughness: 0.95 });
-  const dais = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.7, 0.35, 10), stone);
-  dais.position.y = 0.1;
-  g.add(dais);
-  altar.sockets = relics.map((r, k) => {
-    const a = (k / Math.max(5, relics.length)) * Math.PI * 2,
-      x = Math.cos(a) * 1.05,
-      z = Math.sin(a) * 1.05;
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.17, 0.9, 7), stone);
-    post.position.set(x, 0.72, z);
-    g.add(post);
-    const cup = new THREE.Mesh(
-      new THREE.TorusGeometry(0.16, 0.035, 5, 16).rotateX(Math.PI / 2),
-      new THREE.MeshStandardMaterial({ color: r.color, emissive: r.color, emissiveIntensity: 0.35 }),
+  const stone = rockMat('rock').clone(); // (a copy: the world's own rocks keep their colour)
+  stone.color.setHex(0xeef1f4); // (Jared, November 16, 2026: "Yes, grey stone"; the rock look alone came out brown, like stumps)
+  const dark = stone.clone();
+  dark.color.multiplyScalar(0.62);
+  const moss = new THREE.MeshStandardMaterial({ color: 0x46592c, roughness: 1, flatShading: true }),
+    lichen = new THREE.MeshStandardMaterial({ color: 0x8f8f5c, roughness: 1, flatShading: true }),
+    crack = new THREE.MeshBasicMaterial({ color: 0x1a1814 });
+  const add = (geo, mat, x, y, z, ry = 0, rx = 0, rz = 0) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    m.rotation.set(rx, ry, rz);
+    g.add(m);
+    return m;
+  };
+  add(worn(new THREE.CylinderGeometry(3.1, 3.35, 0.45, 11, 1), 0.24, 1), dark, 0, 0.12, 0);
+  add(worn(new THREE.CylinderGeometry(2.45, 2.7, 0.5, 10, 1), 0.2, 2), stone, 0, 0.55, 0); // (two worn steps)
+  for (const [x, z, l, r] of [
+    [0.4, 0.5, 2.3, 0.6],
+    [-1.2, -0.6, 1.4, 2.1],
+    [2.75, -0.9, 0.9, 1.2],
+  ])
+    add(new THREE.BoxGeometry(l, 0.04, 0.06), crack, x, x > 2.5 ? 0.35 : 0.81, z, r); // (cracks across the steps)
+  for (let k = 0; k < 7; k++) {
+    const t = k * 0.9 + 0.3,
+      d = 3.7 + (k % 3) * 0.45;
+    add(
+      worn(new THREE.BoxGeometry(1.1 - (k % 2) * 0.3, 0.18, 0.8), 0.14, 10 + k),
+      k % 2 ? stone : dark,
+      Math.cos(t) * d,
+      0.04,
+      Math.sin(t) * d,
+      t + k,
+      0,
+      ((k % 3) - 1) * 0.07,
     );
-    cup.position.set(x, 1.19, z);
+  } // (flagstones, gone astray)
+  for (let k = 0; k < 7; k++) {
+    const t = k * 1.13 + 0.5,
+      d = 1.2 + (k % 3) * 0.55;
+    add(
+      worn(new THREE.SphereGeometry(0.38 + (k % 3) * 0.14, 7, 4), 0.14, 20 + k).scale(1, 0.22, 1),
+      k % 3 ? moss : lichen,
+      Math.cos(t) * d,
+      0.8,
+      Math.sin(t) * d,
+    );
+  } // (moss and lichen in patches)
+  add(worn(new THREE.CylinderGeometry(0.27, 0.33, 1.2, 7, 2), 0.1, 50), stone, 3.9, 0.27, 1.4, 0.4, 0, Math.PI / 2);
+  add(worn(new THREE.BoxGeometry(0.7, 0.45, 0.6), 0.16, 51), dark, 4.5, 0.18, 0.4, 0.9); // (a fallen post, and a block broken off it)
+  altar.sockets = relics.map((r, k) => {
+    const t = (k / Math.max(5, relics.length)) * Math.PI * 2,
+      x = Math.cos(t) * 1.75,
+      z = Math.sin(t) * 1.75,
+      h = 1.5 - (k % 3) * 0.14,
+      top = 0.8 + h;
+    add(
+      worn(new THREE.CylinderGeometry(0.25, 0.34, h, 7, 3), 0.09, 30 + k),
+      stone,
+      x,
+      0.8 + h / 2,
+      z,
+      t,
+      (k % 2 ? 1 : -1) * 0.035,
+    ); // (a worn post, leaning a little)
+    add(
+      worn(new THREE.SphereGeometry(0.34, 6, 3), 0.1, 40 + k).scale(1.1, 0.4, 1.1),
+      k % 2 ? moss : lichen,
+      x,
+      0.84,
+      z,
+    ); // (moss at its foot)
+    const cup = new THREE.Mesh(
+      new THREE.TorusGeometry(0.3, 0.06, 5, 14).rotateX(Math.PI / 2),
+      new THREE.MeshStandardMaterial({ color: r.color, emissive: r.color, emissiveIntensity: 0.2, roughness: 0.8 }),
+    );
+    cup.position.set(x, top + 0.03, z);
     g.add(cup);
     const mark = new THREE.Mesh(
-      shapeOf(r.c.kind, 0.1),
-      new THREE.MeshStandardMaterial({ color: 0xe8e2d4, roughness: 0.6 }),
+      shapeOf(r.c.kind, 0.33),
+      new THREE.MeshStandardMaterial({ color: 0xd8d2c2, roughness: 0.9, flatShading: true }),
     );
-    mark.position.set(x, 1.36, z);
-    g.add(mark); // (pale stone: its shape, not its colour, says whose)
+    mark.position.set(x, top + 0.42, z);
+    g.add(mark); // (pale stone, the relic's own shape, a little bigger: its shape, not its colour, says whose)
     altar.marks[k] = mark;
-    return { x: altar.x + x, y: altar.y + 1.55, z: altar.z + z };
+    const w = new THREE.Vector3(x, top + 0.45, z).applyAxisAngle(new THREE.Vector3(0, 1, 0), A.a);
+    return { x: altar.x + w.x, y: altar.y + w.y, z: altar.z + w.z };
   });
-  addCollider(altar.x, altar.z, 1.6, null);
+  addCollider(altar.x, altar.z, 3.1, null);
   for (const r of relics) home(r);
 }
 
@@ -138,9 +209,61 @@ function home(r) {
   }
   if (r.at === 'altar') Object.assign(r, altar.sockets[r.i]);
   if (altar.marks[r.i]) altar.marks[r.i].visible = r.at !== 'altar'; // (the relic itself shows there once set)
+  const set = r.at === 'altar';
+  r.m.userData.halo.scale.setScalar(set ? 1.1 : 2.2);
+  r.m.userData.gem.material.emissiveIntensity = set ? 0.7 : 1.6; // (set, it glows low: the altar's stone still shows round it)
   const parent = r.at === 'plinth' ? r.c.g : r.at === 'ground' && caveAt(r.x, r.z) ? caveAt(r.x, r.z).g : scene; // (in a cave: shown and hidden with it)
   if (parent && r.m.parent !== parent) parent.add(r.m);
   r.m.position.set(r.x, r.y, r.z);
+}
+// where the altar stands: the flattest clear ground 22 to 30 m from the tent, away from it first, inside the safe valley and out of water
+function placeAltar() {
+  const away = Math.atan2(campTent.z - CAMP.z, campTent.x - CAMP.x);
+  let best = null;
+  for (const d of [24, 27, 30, 22])
+    for (let k = 0; k < 24; k++) {
+      const a = away + ((k % 2 ? 1 : -1) * Math.ceil(k / 2) * Math.PI) / 12,
+        x = campTent.x + Math.cos(a) * d,
+        z = campTent.z + Math.sin(a) * d;
+      if (Math.hypot(x, z) > SAFE_R - 25 || groundY(x, z) < WATER_Y + 1) continue;
+      const near = nearColliders(x, z).filter((c) => Math.hypot(c.x - x, c.z - z) < c.r + 6).length;
+      let tilt = 0;
+      for (let q = 0; q < 8; q++)
+        tilt = Math.max(
+          tilt,
+          Math.abs(groundY(x + Math.cos(q * 0.785) * 4, z + Math.sin(q * 0.785) * 4) - groundY(x, z)),
+        );
+      const s = tilt * 10 + near * 100 + Math.ceil(k / 2) * 0.1 + Math.abs(d - 24) * 0.05;
+      if (!best || s < best.s) best = { x, z, s, a: Math.atan2(CAMP.x - x, CAMP.z - z) };
+    }
+  return best || { x: CAMP.x - 4.8, z: CAMP.z - 3.4, a: 0 };
+} // (none clear: by the fire, as before)
+// weathered: every corner of a stone shape knocked a little out of true (the same corner moved alike on every face, so it stays whole),
+// each corner its own shade of worn stone, and some of the upward ones gone green with moss (the rock look takes its colours by the corner)
+function worn(geo, amt, seed) {
+  const p = geo.attributes.position,
+    R = mulberry32(seed * 7919 + 13),
+    at = new Map(),
+    col = new Float32Array(p.count * 3);
+  for (let i = 0; i < p.count; i++) {
+    const k = p.getX(i).toFixed(3) + ',' + p.getY(i).toFixed(3) + ',' + p.getZ(i).toFixed(3);
+    if (!at.has(k)) {
+      const v = 0.55 + R() * 0.35,
+        m = p.getY(i) > 0 && R() < 0.3;
+      at.set(k, [
+        (R() - 0.5) * amt,
+        (R() - 0.5) * amt * 0.6,
+        (R() - 0.5) * amt,
+        m ? [v * 0.62, v * 0.8, v * 0.45] : [v * 1.08, v * 1.12, v * 1.16],
+      ]);
+    }
+    const [a, b, c, rgb] = at.get(k);
+    p.setXYZ(i, p.getX(i) + a, p.getY(i) + b, p.getZ(i) + c);
+    col.set(rgb, i * 3);
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  geo.computeVertexNormals();
+  return geo;
 }
 const me = () => G.net.id;
 const holder = (by) => (by === me() ? (G.running() ? G.player : null) : G.others.get(by) || null);

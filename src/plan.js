@@ -77,14 +77,14 @@ const deep = (x, z, b, r) =>
 // the nearest such spot to the centre, at least minR out, in biome b, well clear of everything planned so far
 // (slice 13c: a generated world with no such spot gets a second, looser look: nearer the biome's edge, closer to its
 // neighbours and 20 m nearer in; the classic world finds every site on the first)
-function findSite(b, minR, r, minY, loose = false, ok = null) {
+function findSite(b, minR, r, minY, loose = false, ok = null, step = 8) {
   let best = null,
     bd = 1e9;
   const edge = loose ? r + 4 : r + 12,
     gap = loose ? r + 14 : r + 30,
     mr = loose ? minR - 20 : minR;
-  for (let z = -HALF + 70; z < HALF - 70; z += 8)
-    for (let x = -HALF + 70; x < HALF - 70; x += 8) {
+  for (let z = -HALF + 70; z < HALF - 70; z += step)
+    for (let x = -HALF + 70; x < HALF - 70; x += step) {
       const d = Math.hypot(x, z);
       if (
         d < mr ||
@@ -98,7 +98,7 @@ function findSite(b, minR, r, minY, loose = false, ok = null) {
       best = { x, z };
       bd = d;
     }
-  return best || (loose ? null : findSite(b, minR, r, minY, true, ok));
+  return best || (loose ? null : findSite(b, minR, r, minY, true, ok, step));
 }
 // a building record: its frame (heading a: local +x is world (cos a, sin a), local -z is its front), footprint and parts
 function bld(kind, x, z, a, o) {
@@ -335,7 +335,9 @@ export function planBuildings() {
     buildings.town = town;
   }
   // landmarks, one per biome: the gas station is IW1's (structures.js: garage with loot, pumps under a canopy, a wreck each side)
-  const gs = findSite('waste', 250, 13);
+  // (silver-hollow-5: a rough waste whose few level spots fall between the 8 m grid's points; a 2 m one finds them, only
+  // where the 8 m search found none, so every world that had its gas station keeps it where it was)
+  const gs = findSite('waste', 250, 13) || findSite('waste', 250, 13, undefined, false, null, 2);
   if (gs) {
     const b = bld('gas', gs.x, gs.z, R() * 6.283, { w: 18, d: 20 });
     for (const sx of [-1, 1]) {

@@ -1135,56 +1135,7 @@ function grow(c) {
         o.rotation.set((R() - 0.5) * 0.8, R() * 6, (R() - 0.5) * 0.8);
       },
     );
-    for (const t of c.traps) {
-      t.block = new THREE.Mesh(
-        new THREE.DodecahedronGeometry(1.1, 0),
-        glowMat(0xbfe4ff, 0x234e70, 0.7, { transparent: true, opacity: 0.75 }),
-      );
-      const w = wallBy(L, t);
-      Object.assign(t, w);
-      t.block.position.set(w.x, t.y + 1.0, w.z);
-      t.block.scale.set(1, 1.5, 1);
-      c.g.add(t.block);
-    }
   }
-  if (c.kind === 'fungal')
-    for (const t of c.traps) {
-      // (D6: "we don't want the spiders coming out of the wall ... maybe taller ceilings only? Or cracks in the ceilings?": they come down out of dark cracks in a tall vault, well off the walls)
-      t.drops = [];
-      for (let a = 0; a < 40 && t.drops.length < 4; a++) {
-        const x = t.x + (R() - 0.5) * 12,
-          z = t.z + (R() - 0.5) * 12,
-          q = caveDepth(L, x, z),
-          f = floorOf(L, x, z),
-          top = q.d > 0 ? vaultY(L, x, z) - f : 0;
-        if (q.d < 2.0 || top < 4.0 || t.drops.some((p) => Math.hypot(p.x - x, p.z - z) < 1.6)) continue;
-        t.drops.push({ x, z, top });
-        const cr = new THREE.Mesh(jagged(0.55), new THREE.MeshBasicMaterial({ color: 0x050403 }));
-        cr.position.set(x, f + top - 0.05, z);
-        c.g.add(cr);
-        const wp = [];
-        for (let k = 0; k < 6; k++) {
-          const ang = k * 1.05 + R(),
-            r = 0.3 + R() * 0.35;
-          wp.push(
-            x + Math.cos(ang) * r,
-            f + top - 0.05,
-            z + Math.sin(ang) * r,
-            x + Math.cos(ang) * r * 0.4,
-            f + top - 0.5 - R() * 0.6,
-            z + Math.sin(ang) * r * 0.4,
-          );
-        }
-        const wg = new THREE.BufferGeometry();
-        wg.setAttribute('position', new THREE.Float32BufferAttribute(wp, 3));
-        c.g.add(
-          new THREE.LineSegments(
-            wg,
-            new THREE.LineBasicMaterial({ color: 0xbdb8ae, transparent: true, opacity: 0.55 }),
-          ),
-        );
-      }
-    }
   if (c.kind === 'fungal') {
     // glowing caps on thin stems, and a few giants in the hall
     const caps = spots(140, 0.2, 2.2)
@@ -1224,22 +1175,6 @@ function grow(c) {
       o.rotation.set(Math.cos(p.a) * p.t, 0, Math.sin(p.a) * p.t);
       o.scale.set(1 + p.l * 0.3, p.l, 1 + p.l * 0.3);
     });
-    for (const t of c.traps) {
-      const w = wallBy(L, t);
-      Object.assign(t, w);
-      t.eyes = new THREE.Group();
-      for (let k = 0; k < 3; k++)
-        for (const s of [-0.12, 0.12]) {
-          const e = new THREE.Mesh(
-            new THREE.SphereGeometry(0.05, 6, 4),
-            new THREE.MeshBasicMaterial({ color: 0xffe9a0, fog: false }),
-          );
-          e.position.set(w.x + (k - 1) * 0.9 + s, t.y + 0.7 + (k % 2) * 0.25, w.z);
-          t.eyes.add(e);
-        }
-      t.eyes.visible = false;
-      c.g.add(t.eyes);
-    }
   }
   if (c.kind === 'roots') {
     // dark pools (the lurkers' at each surprise), glow-worms overhead
@@ -1250,7 +1185,7 @@ function grow(c) {
       roughness: 0.04,
       metalness: 0.5,
     }); // (dark water with a sheen: pure black read as a hole)
-    for (const p of [...c.traps, ...spots(6, 2, 6)]) {
+    for (const p of spots(6, 2, 6)) {
       const m = new THREE.Mesh(new THREE.CircleGeometry(1.4 + R() * 0.8, 20).rotateX(-Math.PI / 2), pool);
       m.position.set(p.x, p.y + 0.04, p.z);
       c.g.add(m);
@@ -1348,14 +1283,104 @@ function grow(c) {
     ct.rotation.set(0.04, 0.4, 0.12);
     c.g.add(ct);
     addCollider(cx, cz, 1.0, c);
-    for (const t of c.traps) {
-      const w = wallBy(L, t);
-      Object.assign(t, w);
-      const h = new THREE.Mesh(new THREE.CircleGeometry(0.75, 14), new THREE.MeshBasicMaterial({ color: 0x000000 }));
-      h.position.set(w.x, t.y + 0.55, w.z);
-      h.lookAt(t.x, t.y + 0.55, t.z);
-      c.g.add(h);
+  }
+  for (const t of c.traps) lay(c, t, R);
+}
+// what waits at a surprise's spot, by the surprise (cavemap.js's SURPRISE): a bulge in the wall (clear ice in an ice cave, crystal in a
+// crystal cave, rock elsewhere), dark cracks in a tall vault with threads hanging, a black hole low in a wall, eyes not yet open, a dark pool
+function lay(c, t, R) {
+  const L = c.L;
+  if (t.how === 'drop') {
+    t.drops = [];
+    for (let a = 0; a < 60 && t.drops.length < 4; a++) {
+      const x = t.x + (R() - 0.5) * 12,
+        z = t.z + (R() - 0.5) * 12,
+        q = caveDepth(L, x, z),
+        f = floorOf(L, x, z),
+        top = q.d > 0 ? vaultY(L, x, z) - f : 0;
+      if (q.d < 2.0 || top < 4.0 || t.drops.some((p) => Math.hypot(p.x - x, p.z - z) < 1.6)) continue;
+      t.drops.push({ x, z, top });
+      const cr = new THREE.Mesh(jagged(0.55), new THREE.MeshBasicMaterial({ color: 0x050403 }));
+      cr.position.set(x, f + top - 0.05, z);
+      c.g.add(cr);
+      const wp = [];
+      for (let k = 0; k < 6; k++) {
+        const ang = k * 1.05 + R(),
+          r = 0.3 + R() * 0.35;
+        wp.push(
+          x + Math.cos(ang) * r,
+          f + top - 0.05,
+          z + Math.sin(ang) * r,
+          x + Math.cos(ang) * r * 0.4,
+          f + top - 0.5 - R() * 0.6,
+          z + Math.sin(ang) * r * 0.4,
+        );
+      }
+      const wg = new THREE.BufferGeometry();
+      wg.setAttribute('position', new THREE.Float32BufferAttribute(wp, 3));
+      c.g.add(
+        new THREE.LineSegments(wg, new THREE.LineBasicMaterial({ color: 0xbdb8ae, transparent: true, opacity: 0.55 })),
+      );
     }
+    if (!t.drops.length) t.how = 'pour';
+    else return;
+  } // (no vault tall enough after all: they pour from the wall instead; else the trap stays where it was, out in the open under the cracks)
+  if (t.how === 'rise') {
+    const m = new THREE.Mesh(
+      new THREE.CircleGeometry(1.6, 20).rotateX(-Math.PI / 2),
+      new THREE.MeshStandardMaterial({ color: 0x24302a, emissive: 0x0a1c18, roughness: 0.04, metalness: 0.5 }),
+    );
+    const e = 0.6,
+      n = new THREE.Vector3(
+        floorOf(L, t.x - e, t.z) - floorOf(L, t.x + e, t.z),
+        2 * e,
+        floorOf(L, t.x, t.z - e) - floorOf(L, t.x, t.z + e),
+      ).normalize(); // (lying on the floor's slope)
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), n);
+    m.position.set(t.x, t.y + 0.04, t.z);
+    c.g.add(m);
+    return;
+  }
+  if (t.how === 'quiet') return;
+  const w = wallBy(L, t);
+  Object.assign(t, w);
+  if (t.how === 'burst') {
+    t.block = new THREE.Mesh(
+      new THREE.DodecahedronGeometry(1.1, 0),
+      c.kind === 'ice'
+        ? new THREE.MeshStandardMaterial({
+            color: 0xbfe4ff,
+            emissive: 0x234e70,
+            emissiveIntensity: 0.7,
+            roughness: 0.4,
+            transparent: true,
+            opacity: 0.75,
+          })
+        : c.kind === 'crystal'
+          ? CRYSTAL()
+          : pbr('terrain/rock', { color: 0x6a645c, rough: 0.95 }),
+    );
+    t.block.position.set(w.x, t.y + 1.0, w.z);
+    t.block.scale.set(1, 1.5, 1);
+    c.g.add(t.block);
+  }
+  if (t.how === 'pour') {
+    const h = new THREE.Mesh(new THREE.CircleGeometry(0.75, 14), new THREE.MeshBasicMaterial({ color: 0x000000 }));
+    h.position.set(w.x, t.y + 0.55, w.z);
+    h.lookAt(t.x, t.y + 0.55, t.z);
+    c.g.add(h);
+  }
+  if (t.how === 'eyes') {
+    t.eyes = new THREE.Group();
+    const m = new THREE.MeshBasicMaterial({ color: EYE[c.kind], fog: false });
+    for (let k = 0; k < 3; k++)
+      for (const s of [-0.12, 0.12]) {
+        const e = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 4), m);
+        e.position.set(w.x + (k - 1) * 0.9 + s, t.y + 0.7 + (k % 2) * 0.25, w.z);
+        t.eyes.add(e);
+      }
+    t.eyes.visible = false;
+    c.g.add(t.eyes);
   }
 }
 // the nearest point of the wall to a surprise's spot, a hand inside it (where a crawler breaks out, the rats pour from, the eyes open)
@@ -1516,7 +1541,7 @@ export function tickCaves(dt) {
       if (t.rats > 0 && (t.ratT -= dt) <= 0) {
         t.rats--;
         t.ratT = 0.26;
-        const e = G.spawnEnemy(t.x, t.z, c.foe);
+        const e = G.spawnEnemy(t.x, t.z, t.foe);
         Object.assign(e, { state: 'chase', cave: c });
         G.sfx('snap', e, 0.5);
       }
@@ -1569,24 +1594,32 @@ function spring(c, t) {
   const n = { easy: 1, normal: 2, hard: 3 }[rules.lvl] ?? 2,
     P = G.player,
     host = !G.joining();
-  G.logEvent('cave-surprise', { kind: c.kind, n });
-  if (c.kind === 'ice') {
+  G.logEvent('cave-surprise', { kind: c.kind, how: t.how, foe: t.foe, n });
+  if (t.how === 'burst') {
     t.block.visible = false;
     dustPuff(new THREE.Vector3(t.x, t.y + 1, t.z), 30);
     G.sfx('crash', { x: t.x, z: t.z }, 0.8);
     shards(c, t);
   }
-  if (c.kind === 'crystal') {
+  if (t.how === 'eyes') {
     t.eyes.visible = true;
     t.eyesT = 1.6;
     t.n = n;
-    G.sfx('wolf', { x: t.x, z: t.z }, 0.5);
+    G.sfx(t.foe === 'dust_hound' ? 'wolf' : 'grit', { x: t.x, z: t.z }, 0.5);
   }
+  if (t.how === 'quiet') {
+    G.sfx(
+      Math.random() < 0.5 ? 'grit' : 'spiderdrop',
+      { x: t.x + (Math.random() - 0.5) * 30, z: t.z + (Math.random() - 0.5) * 30 },
+      0.3,
+    );
+    return;
+  } // (something, off in the dark; nothing comes)
   if (!host) return; // (what follows brings creatures: the host's, sent to everyone as usual)
-  if (c.kind === 'fungal')
+  if (t.how === 'drop')
     for (const [k, { x, z, top: t0 }] of (t.drops || []).slice(0, n + 1).entries()) {
       const top = t0 - 0.35;
-      const e = G.spawnEnemy(x, z, c.foe);
+      const e = G.spawnEnemy(x, z, t.foe);
       Object.assign(e, {
         state: 'drop',
         dropTop: top,
@@ -1598,19 +1631,18 @@ function spring(c, t) {
       });
       G.sfx('spiderdrop', e);
     }
-  if (c.kind === 'ice') {
+  if (t.how === 'burst')
     for (let k = 0; k < n; k++) {
-      const e = G.spawnEnemy(t.x + k * 0.7, t.z, c.foe);
+      const e = G.spawnEnemy(t.x + k * 0.7, t.z, t.foe);
       Object.assign(e, { state: 'chase', cave: c });
-    }
-  } // (out of the ice and straight at you: rising from the floor hid it)
-  if (c.kind === 'mine') {
-    t.rats = n * 3;
+    } // (out of the wall and straight at you)
+  if (t.how === 'pour') {
+    t.rats = t.foe === 'rat' ? n * 3 : n + 1;
     t.ratT = 0;
   } // (one every quarter second, from tickCaves: a new game stops them)
-  if (c.kind === 'roots')
+  if (t.how === 'rise')
     for (let k = 0; k < Math.max(1, n - 1); k++) {
-      const e = G.spawnEnemy(t.x + k * 1.2, t.z, c.foe);
+      const e = G.spawnEnemy(t.x + k * 1.2, t.z, t.foe);
       Object.assign(e, { state: 'emerge', emT: 0.8, cave: c });
       G.sfx('lurk', e);
     }
@@ -1622,8 +1654,8 @@ function shards(c, t) {
     dz = P0().z - t.z,
     l = Math.hypot(dx, dz) || 1;
   for (let k = 0; k < 10; k++) {
-    const m = new THREE.Mesh(new THREE.DodecahedronGeometry(0.07 + Math.random() * 0.13, 0), ICE());
-    m.position.set(t.x, t.y + 0.6 + Math.random() * 1.2, t.z);
+    const m = new THREE.Mesh(new THREE.DodecahedronGeometry(0.07 + Math.random() * 0.13, 0), t.block.material);
+    /* (pieces of whatever burst: ice, crystal or rock) */ m.position.set(t.x, t.y + 0.6 + Math.random() * 1.2, t.z);
     c.g.add(m);
     flying.push({
       m,
@@ -1660,7 +1692,7 @@ function tickShards(dt) {
 function hounds(c, t) {
   if (G.joining()) return;
   for (let k = 0; k < t.n; k++) {
-    const e = G.spawnEnemy(t.x + (k - 1) * 0.9, t.z, c.foe);
+    const e = G.spawnEnemy(t.x + (k - 1) * 0.9, t.z, t.foe);
     Object.assign(e, { state: 'chase', cave: c });
   }
 }

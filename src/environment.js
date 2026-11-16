@@ -9,6 +9,7 @@ import { vnoise, smooth, clamp01 } from './noise.js';
 import { sunElev, sunAz, moonElev, moonAz, nightK, DAY_S } from './daynight.js';
 import { SKY_STARS } from './skystars.js';
 import { EDGE } from './edgefog.js';
+import { DRIFT } from './wind.js';
 // what the far trees (baked billboards, unlit) are multiplied by: the light of the hour (trees.js)
 export const skyLight = { value: new THREE.Color(1, 1, 1) };
 
@@ -348,15 +349,15 @@ export function buildEnvironment(scene, renderer, camera) {
     water.material.uniforms.size.value = 3.0;
     // slice 31: the ripples run with the water (two phases of the flow, crossfaded), and foam laps at the shore
     const m = water.material;
-    Object.assign(m.uniforms, FLOW_U);
+    Object.assign(m.uniforms, FLOW_U, { uWindDrift: DRIFT }); // (ticket 91: still water's ripples drift downwind)
     m.fragmentShader = m.fragmentShader
       .replace('varying vec4 worldPosition;', 'varying vec4 worldPosition;\n' + FLOW_GLSL)
       .replace(
         'vec4 noise = getNoise( worldPosition.xz * size );',
         `vec4 noise = getNoise( worldPosition.xz * size );
         #ifdef FLOW
-        vec4 fl = flowAt( worldPosition.xz ); vec3 ph = flowPhase( fl );
-        noise = getNoise( ( worldPosition.xz - fl.xy * ph.x ) * size ) * ph.z + getNoise( ( worldPosition.xz - fl.xy * ph.y ) * size ) * ( 1.0 - ph.z );
+        vec4 fl = flowAt( worldPosition.xz ); vec3 ph = flowPhase( fl ); vec2 iwDrift = uWindDrift * ( 1.0 - smoothstep( 0.05, 0.3, length( fl.xy ) ) );
+        noise = getNoise( ( worldPosition.xz - iwDrift - fl.xy * ph.x ) * size ) * ph.z + getNoise( ( worldPosition.xz - iwDrift - fl.xy * ph.y ) * size ) * ( 1.0 - ph.z );
         vec2 fu0 = ( worldPosition.xz - fl.xy * ph.x ) / 16.0, fu1 = ( worldPosition.xz - fl.xy * ph.y ) / 16.0, st = fl.xy * 0.04; // (two taps 0.6 m apart along the flow per phase: streaks, not spots)
         float foam = foamAt( fl, ( texture2D( normalSampler, fu0 ).w + texture2D( normalSampler, fu0 - st ).w ) * 0.5 * ph.z + ( texture2D( normalSampler, fu1 ).w + texture2D( normalSampler, fu1 - st ).w ) * 0.5 * ( 1.0 - ph.z ) + 0.04, worldPosition.xz ); // (the foam's own finer pattern, as on Low)
         #endif`,
@@ -388,7 +389,7 @@ export function buildEnvironment(scene, renderer, camera) {
     const m = water.material;
     m.defines = { FLOW: '' };
     m.onBeforeCompile = (sh) => {
-      Object.assign(sh.uniforms, FLOW_U);
+      Object.assign(sh.uniforms, FLOW_U, { uWindDrift: DRIFT });
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', '#include <common>\nvarying vec3 vWp;')
         .replace(
@@ -401,7 +402,7 @@ export function buildEnvironment(scene, renderer, camera) {
           '#include <color_fragment>',
           `#include <color_fragment>
           #ifdef FLOW
-          vec4 fl = flowAt( vWp.xz ); vec3 ph = flowPhase( fl ); vec2 nuv = vWp.xz / 10.0 + vec2( flowT * 0.003, 0.0 );
+          vec4 fl = flowAt( vWp.xz ); vec3 ph = flowPhase( fl ); vec2 nuv = ( vWp.xz - uWindDrift * ( 1.0 - smoothstep( 0.05, 0.3, length( fl.xy ) ) ) ) / 10.0 + vec2( flowT * 0.003, 0.0 );
           vec4 fN = texture2D( normalMap, nuv - fl.xy * ph.x / 10.0 ) * ph.z + texture2D( normalMap, nuv - fl.xy * ph.y / 10.0 ) * ( 1.0 - ph.z );
           float foam = foamAt( fl, fN.w, vWp.xz );
           diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.86, 0.9, 0.9 ), foam ); diffuseColor.a = mix( diffuseColor.a, 1.0, foam );
@@ -696,7 +697,7 @@ export function rocksInWater(list) {
   t.needsUpdate = true;
 }
 const FLOW_GLSL = `
-  uniform sampler2D flowMap; uniform float flowT;
+  uniform sampler2D flowMap; uniform float flowT; uniform vec2 uWindDrift;
   // x, y: the water's velocity (m/s); z: its depth (m, below 0 on land); w: a slow random phase
   vec4 flowAt( vec2 w ) { vec4 f = texture2D( flowMap, ( w + ${(HALF + CELL / 2).toFixed(1)} ) / ${WORLD.toFixed(1)} ); return vec4( ( f.xy * 2.0 - 1.0 ) * ${FLOW_MAX.toFixed(1)}, f.z * 5.0 - 1.0, f.w ); }
   // two phases 1.2 s apart, each sliding the ripples along the flow for 2.4 s; z is the first's weight (zero as it jumps back)

@@ -17,7 +17,8 @@ import { mushroomParts } from './landmarks.js';
 import { addCollider, surfaces, colliders, dropColliders } from './props.js';
 import { buildKind, dressDoor, dressWindow, porchOn } from './houses.js';
 import { pbr, boxUV, loadMesh, canvasTex, rockMat, glowcapParts } from './propmodels.js';
-import { buildFire, buildTent } from './camp.js';
+import { buildFire, buildTent, addSmoke } from './camp.js';
+import { windShader } from './wind.js';
 
 export const caches = [];
 export { buildings, raiderCamps, clearOf, indoors, planBuildings, solidWays } from './plan.js';
@@ -2276,6 +2277,62 @@ const drift = (b, Q, x, z, r, sx = 1.6, sy = 0.45, ry = 0) =>
 // (src/places.js), seen for kilometres. Round it a real site: a chain-link compound with barbed wire (its gate swung open, a bay
 // fallen on the far side), warning signs, equipment cabinets on a slab, a generator and its drums. The shack is its own house
 // record (furnish 'radio'), its door toward the mast
+// ticket 91: cloth on the wind. A flag hung from (x, y, z) in its building's frame; the graphics card lays it out downwind from
+// the pole each frame (L long, H deep), sagging toward the pole as the wind drops, waves running along it faster in a gust
+let FLAG = null;
+function windFlag(x, y, z, L = 1.3, H = 0.8) {
+  FLAG ||= canvasTex(
+    128,
+    80,
+    (c, w, h) => {
+      c.fillStyle = '#b8462e';
+      c.beginPath();
+      c.moveTo(0, 0); // (faded red, the fly end torn ragged, a few holes)
+      for (let k = 0; k <= 8; k++) c.lineTo(w * (0.78 + 0.2 * Math.abs(Math.sin(k * 2.7))), (h * k) / 8);
+      c.lineTo(0, h);
+      c.fill();
+      c.fillStyle = '#d8c8a8';
+      c.fillRect(0, h * 0.38, w * 0.8, h * 0.24);
+      c.globalCompositeOperation = 'destination-out';
+      for (const [hx, hy, r] of [
+        [0.55, 0.2, 4],
+        [0.68, 0.7, 5],
+        [0.4, 0.82, 3],
+      ]) {
+        c.beginPath();
+        c.arc(w * hx, h * hy, r, 0, 6.283);
+        c.fill();
+      }
+    },
+    '#b8462e',
+  );
+  const m = new THREE.MeshStandardMaterial({ map: FLAG, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.95 }),
+    pole = { value: new THREE.Vector3(x, y, z) };
+  m.onBeforeCompile = (sh) => {
+    const head = windShader(sh);
+    sh.uniforms.uPole = pole;
+    sh.vertexShader =
+      head +
+      'uniform vec3 uPole;\n' +
+      sh.vertexShader
+        .replace(
+          '#include <beginnormal_vertex>',
+          'vec3 objectNormal = transpose(mat3(modelMatrix)) * vec3(-uWindDir.y, 0.0, uWindDir.x);',
+        )
+        .replace(
+          '#include <begin_vertex>',
+          `vec3 transformed; { vec3 pw = (modelMatrix * vec4(uPole, 1.0)).xyz; float w = iwWind(pw.xz), u = uv.x, limp = 1.0 - smoothstep(0.02, 0.45, w);
+        float wave = sin(u * 7.0 - uWindT * (4.0 + 9.0 * w)) * (0.05 + 0.14 * w) * u;
+        vec3 wp = pw + vec3(uWindDir.x, 0.0, uWindDir.y) * u * ${L.toFixed(2)} * (1.0 - 0.75 * limp) + vec3(0.0, (uv.y - 1.0) * ${H.toFixed(2)} - u * ${L.toFixed(2)} * 0.7 * limp, 0.0) + vec3(-uWindDir.y, 0.0, uWindDir.x) * wave;
+        transformed = transpose(mat3(modelMatrix)) * (wp - modelMatrix[3].xyz); }`,
+        );
+  };
+  m.customProgramCacheKey = () => 'iw-flag';
+  const f = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, 14, 4), m);
+  f.frustumCulled = false;
+  f.name = 'flag';
+  return f;
+}
 function buildRadio(b, P, g) {
   const H = 30,
     w0 = 1.8,
@@ -2355,6 +2412,9 @@ function buildRadio(b, P, g) {
       bar(P, 'iron', x, py, z, x, py + 1.05, z, 0.06);
     collideRun(b, x0, z0, x1, z1, 0.12, () => py + 1.1);
   }
+  // ticket 91: a tattered flag on a pole at the platform's corner, flown by the world wind (wind.js): limp in a calm, out and flapping in a gust
+  bar(P, 'iron', pw, py + 1.05, pw, pw, py + 3.7, pw, 0.035);
+  b.group.add(windFlag(pw, py + 3.65, pw));
   // the ladder up the front face (it leans in with the mast), caged from 2.4 m: hoops round the climber and five straps up them
   const lz = (y) => -(hw(y) + 0.32),
     cz = (y) => lz(y) - 0.36;
@@ -6380,46 +6440,15 @@ function buildBarge(b, P, g) {
 // the hermit's yard (polish): a stone chimney up his shack's gable with smoke drifting off it, a fenced vegetable patch, his nets
 // drying on frames, a rain barrel under the eave's gutter, a woodpile under a lean-to with the chopping block, lanterns by his
 // door and at the jetty's end, and his rowboat tied alongside the jetty (the trees round the yard are props: src/plan.js)
-let PUFF = null;
 export function smoke(b, x, y, z) {
-  PUFF ||= canvasTex(
-    64,
-    64,
-    (c) => {
-      const gr = c.createRadialGradient(32, 32, 2, 32, 32, 31);
-      gr.addColorStop(0, 'rgba(255,255,255,0.9)');
-      gr.addColorStop(0.5, 'rgba(255,255,255,0.35)');
-      gr.addColorStop(1, 'rgba(255,255,255,0)');
-      c.fillStyle = gr;
-      c.fillRect(0, 0, 64, 64);
-    },
-    '#ffffff',
-  );
-  const n = 12,
-    ps = [],
-    drift = R() * 6.283;
-  for (let i = 0; i < n; i++) {
-    const s = new THREE.Sprite(
-      new THREE.SpriteMaterial({ map: PUFF, color: 0x8e8b86, transparent: true, depthWrite: false, opacity: 0 }),
-    );
-    s.position.set(x, y, z);
-    b.group.add(s);
-    ps.push(s);
-  }
-  ps[0].onBeforeRender = () => {
-    const t = performance.now() / 1000;
-    ps.forEach((s, i) => {
-      const f = (t * 0.1 + i / n) % 1; // (each puff rises, swells and fades, the wind leaning it over)
-      s.position.set(
-        x + Math.cos(drift) * f * f * 3.5 + Math.sin(t * 0.7 + i) * 0.12,
-        y + f * 5,
-        z + Math.sin(drift) * f * f * 3.5,
-      );
-      s.scale.setScalar(0.6 + f * 3.2);
-      s.material.opacity = 0.6 * Math.min(1, f * 6) * (1 - f);
-    });
-  };
-}
+  R();
+  /* (its old drift's draw, kept so the world's later draws do not move) */ addSmoke(b.group, x, y, z, {
+    n: 12,
+    rise: 5,
+    size: 3,
+    alpha: 0.6,
+  });
+} // (ticket 91: the world wind carries it, camp.js)
 function boatParts() {
   const Lb = 3.7,
     B = 1.3,

@@ -23,6 +23,17 @@ export const CAVE_KINDS = {
 };
 // what each kind of cave's crates hold that nothing outside does (Jared, November 15, 2026, 10:05 PM: "all the loot in the caves seems to
 // be ammo... not cool!"): its name and colour. Any of them pays for the bench upgrades that call for cave finds (recipes.js)
+// each kind's surprises and who each brings (Jared and Zach's co-op play, November 15, 2026: more than one kind of creature in a cave,
+// spiders in more of them, and surprises you cannot see coming): burst (out of a wall), drop (spiders down out of a tall vault's cracks),
+// pour (one after another out of a hole low in a wall), eyes (eyes open in the dark, then a pack comes), rise (up out of a pool or the
+// floor), quiet (a sound off in the dark, and nothing comes). The first is the kind's own and every cave has it; the rest are drawn
+export const SURPRISE = {
+  ice: { burst: 'ice_crawler', drop: 'spider_pale', eyes: 'ice_crawler', quiet: null },
+  fungal: { drop: 'spider_pale', rise: 'bog_lurker', pour: 'rat', quiet: null },
+  mine: { pour: 'rat', drop: 'spider_brute', eyes: 'rat', burst: 'rat' },
+  crystal: { eyes: 'dust_hound', drop: 'spider_widow', burst: 'dust_hound', quiet: null },
+  roots: { rise: 'bog_lurker', drop: 'spider', pour: 'rat', eyes: 'bog_lurker' },
+}; // (a spider only ever drops from the vault: D6, "we don't want the spiders coming out of the wall")
 export const FINDS = {
   ice: ['frost shard', 0x9ad8ff],
   fungal: ['glow spore', 0x8affc0],
@@ -62,6 +73,7 @@ function inner(p, x, z) {
 // others end in a small room in the maze's deepest corner with the richest crate. The style (D6) sets the maze's grain: maze (small cells,
 // narrow), grand (big cells, wide, many rooms), long (cells stretched east to west: long runs), mixed (between)
 export const STYLES = ['maze', 'grand', 'long', 'mixed'];
+const LIFT = 3.2; // (m: how far a cell's level may stand off; worlds.mjs holds every way in to a walkable slope)
 const GRAIN = {
   maze: { cw: 12, ch: 12, r: 2.3, h: 3.8, rooms: 0.12, loops: 3, run: 0.45 },
   grand: { cw: 15, ch: 15, r: 2.9, h: 4.8, rooms: 0.35, loops: 2, run: 0.55 },
@@ -190,8 +202,57 @@ export function layout(i, k, relic = false) {
   }
   const { adj, dist, prev, goal } = M;
   let hall = null;
+  // heights (from the same play: ramps up and down, upper and lower stretches): each cell of the grid stands at its own level, up to
+  // LIFT m above or below its neighbours' run, and the floor ramps between them along each passage (level in each cell, so a crate, a
+  // room or a fork stands flat); the cells by the mouth stay level with it, and a relic cave's hall and the cells before it level with
+  // the cell that opens into it
+  const lv = new Float32Array(nx * nz),
+    raw = Array.from(lv, () => R() * 2 - 1);
+  for (let a = 0; a < nx; a++)
+    for (let b = 0; b < nz; b++) {
+      const near = [
+        [a, b],
+        [a + 1, b],
+        [a - 1, b],
+        [a, b + 1],
+        [a, b - 1],
+      ].filter(([p, q]) => p >= 0 && p < nx && q >= 0 && q < nz);
+      lv[id(a, b)] =
+        ((LIFT * near.reduce((t, [p, q]) => t + raw[id(p, q)], 0)) / near.length) * 1.6 * Math.min(1, a / 1.5);
+    }
+  if (relic) for (let b = 0; b < nz; b++) lv[id(nx - 1, b)] = lv[goal];
   const loops = [];
   if (relic) hall = [node[goal][0] + G.cw * 0.5 + 22, hz];
+  // (a few draws ran flat or steep, gap-207, gap-312 and gap-358: where the levels along the passages rise and fall under 3 m, or climb
+  // steeper than 0.64 anywhere, they are scaled to fit; the rest are as drawn)
+  {
+    const F = { x0: gx0, z0: zc - ((nz - 1) * G.ch) / 2, cw: G.cw, ch: G.ch, nx, nz, lv },
+      at = (u, v, s) => {
+        const l = Math.hypot(node[v][0] - node[u][0], node[v][1] - node[u][1]);
+        return lift(
+          F,
+          node[u][0] + ((node[v][0] - node[u][0]) * s) / l,
+          node[u][1] + ((node[v][1] - node[u][1]) * s) / l,
+        );
+      };
+    let lo = 1e9,
+      hi = -1e9,
+      st = 0;
+    for (const u of node.keys())
+      for (const v of adj[u]) {
+        if (v < u) continue;
+        const l = Math.hypot(node[v][0] - node[u][0], node[v][1] - node[u][1]);
+        for (let s = 0; s <= l; s += 0.5) {
+          const y = at(u, v, s);
+          lo = Math.min(lo, y);
+          hi = Math.max(hi, y);
+          if (s + 0.5 <= l) st = Math.max(st, Math.abs(at(u, v, s + 0.5) - y) / 0.5);
+        }
+      }
+    const k =
+      st > 0.64 ? 0.64 / st : hi - lo < 3 ? Math.min(3 / Math.max(hi - lo, 0.01), 0.64 / Math.max(st, 0.01)) : 1;
+    for (let j = 0; j < lv.length; j++) lv[j] *= k;
+  }
   const way = [];
   for (let j = goal; j >= 0; j = prev[j]) way.unshift(j);
   const onWay = new Set(way.slice(1).map((v, n) => [way[n], v].sort().join()));
@@ -285,6 +346,29 @@ export function layout(i, k, relic = false) {
   const traps = [0.3, 0.55, 0.82, ...(style === 'long' || style === 'maze' ? [0.68] : [])]
     .map((f) => mid(main[Math.min(main.length - 1, Math.floor(f * main.length))]))
     .map(([x, z]) => ({ x, z }));
+  {
+    const M = SURPRISE[k] || SURPRISE.mine,
+      [own, ...rest] = Object.keys(M),
+      mix = (a) => {
+        for (let j = a.length - 1; j > 0; j--) {
+          const q = Math.floor(R() * (j + 1));
+          [a[j], a[q]] = [a[q], a[j]];
+        }
+        return a;
+      };
+    const r = mix(rest),
+      o = r.findIndex((h) => M[h] && M[h] !== M[own]);
+    r.unshift(...r.splice(o, 1));
+    const hows = mix([
+      own,
+      ...r.slice(0, traps.length - 1),
+    ]); /* (the kind's own, one that brings another creature, the rest drawn, all in a drawn order: never the same twice in a cave) */
+    traps.forEach((t, j) => {
+      t.how = hows[j];
+      t.foe = M[t.how];
+      if (t.how === 'drop') part([t.x, t.z], [t.x, t.z], G.r + 1.6, undefined, 7.5, undefined, 'vault');
+    });
+  } // (a tall vault, so they come down from well up and well off the walls)
   // the crates: in up to four blind ends, spread from the nearest to the farthest; the last, the richest, in the end room (a relic cave's in its back side hall)
   const blind = [...node.keys()]
       .filter((u) => adj[u].size === 1 && u !== start && u !== goal)
@@ -310,6 +394,7 @@ export function layout(i, k, relic = false) {
     traps,
     crates,
     main,
+    lift: { x0: gx0, z0: zc - ((nz - 1) * G.ch) / 2, cw: G.cw, ch: G.ch, nx, nz, lv },
     box: [Math.min(...xs) - 2, Math.max(...xs) + 2, Math.min(...zs) - 2, Math.max(...zs) + 2],
   };
 }
@@ -370,7 +455,21 @@ function depthIn(parts, x, z) {
   return { d, ceil: d > 0 ? top.h * Math.sqrt(1 - (1 - u) ** 2) : 0 };
 }
 // the floor: falling a metre every 12 m from the mouth, with a gentle unevenness
-export const floorOf = (L, x, z) => CAVE_Y - (x - L.x0) / 12 + (vnoise(x * 0.18 + L.i * 31, z * 0.18) - 0.5) * 0.5;
+export const floorOf = (L, x, z) =>
+  CAVE_Y - (x - L.x0) / 12 + (vnoise(x * 0.18 + L.i * 31, z * 0.18) - 0.5) * 0.5 + lift(L.lift, x, z);
+// a cell grid's levels at (x, z): held flat round each cell and ramping between (a smooth step each way), level beyond the grid's edges
+const step = (t) => t * t * (3 - 2 * t);
+function lift(F, x, z) {
+  if (!F) return 0;
+  const u = Math.max(0, Math.min(F.nx - 1, (x - F.x0) / F.cw)),
+    v = Math.max(0, Math.min(F.nz - 1, (z - F.z0) / F.ch));
+  const a = Math.min(F.nx - 2, Math.floor(u)),
+    b = Math.min(F.nz - 2, Math.floor(v)),
+    fu = step(u - a),
+    fv = step(v - b),
+    at = (p, q) => F.lv[p * F.nz + q];
+  return (at(a, b) * (1 - fu) + at(a + 1, b) * fu) * (1 - fv) + (at(a, b + 1) * (1 - fu) + at(a + 1, b + 1) * fu) * fv;
+}
 // the cave whose inside holds (x, z), or null
 export function caveAt(x, z) {
   if (!beyond(z)) return null;

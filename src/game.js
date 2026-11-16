@@ -39,7 +39,8 @@ import { tickDeep, resetDeep, ripple } from './water.js';
 import { day, tickDay, resetDay, nightK, isNight, phase } from './daynight.js';
 const DEEP_BITE = 20; // the lake serpent's bite (slice 13: 15 before, from the shadow)
 import { rng } from './noise.js';
-import { groundY, biomeAt, slopeAt, riverDist, PASSES } from './world.js';
+import { groundY, biomeAt, slopeAt, riverDist, PASSES, forestAt } from './world.js';
+import { windAt } from './wind.js';
 import {
   nearColliders,
   colR,
@@ -4163,7 +4164,11 @@ export function update(dt, t) {
 // the wind and the river: on the pause screen a quarter as loud, like the music pausing (the quality pass, 2026-11-15: they kept their volume)
 const hush = () => (paused ? 0.25 : 1),
   windNow = () =>
-    0.03 + Math.min(0.06, Math.max(0, player.y - 20) / 600) + W.wind + (BIOME_WIND[biomeAt(player.x, player.z)] || 0);
+    (0.018 + 0.09 * windAt(player.x, player.z)) *
+      (1 - 0.65 * forestAt(player.x, player.z)) *
+      (1 + Math.min(0.8, Math.max(0, player.y - 10) / 100)) +
+    W.wind +
+    (BIOME_WIND[biomeAt(player.x, player.z)] || 0); // (ticket 91: it swells with the world wind's gusts, louder high and in the open, hushed among trees; a cave silences it, audio.js)
 const riverNow = () => (running ? 0.1 * Math.max(0, 1 - riverDist(player.x, player.z) / 45) ** 2 : 0); // (0: a game over earlier in this frame; the quality pass)
 const FLOOR = (x, z) => floorAt(x, z, groundY(x, z)); // (a creature's feet on a house floor)
 const HUNTS = ['chase', 'windup', 'recover', 'emerge', 'siege'],

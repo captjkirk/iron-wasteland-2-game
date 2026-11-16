@@ -7,7 +7,7 @@ import { HALF, CELL, SEG, N, WATER_Y, Q } from './config.js';
 import { groundY, biomeAt, slopeAt, SPLAT_A, SPLAT_B, SPLAT_C } from './world.js';
 import { indoors } from './buildings.js';
 import { vnoise } from './noise.js';
-import { wind } from './trees.js';
+import { windShader } from './wind.js';
 
 const TILE = 8,
   PER_M2 = 26 * Q.grassDensity,
@@ -41,23 +41,27 @@ const mat = new THREE.MeshStandardMaterial({
 });
 const uR = { value: R };
 mat.onBeforeCompile = (sh) => {
-  sh.uniforms.uWind = wind;
   sh.uniforms.uR = uR;
+  const head = windShader(sh);
   sh.vertexShader =
-    `uniform float uWind, uR; attribute vec4 aOff; attribute vec4 aPar; attribute vec3 aBase; attribute vec3 aTip; varying vec3 vGrassCol;\n` +
+    head +
+    `uniform float uR; attribute vec4 aOff; attribute vec4 aPar; attribute vec3 aBase; attribute vec3 aTip; varying vec3 vGrassCol;\n` +
     sh.vertexShader
       .replace(
         '#include <begin_vertex>',
         `
       float t = position.y, yaw = aOff.w, hgt = aPar.x, wdt = aPar.y, lean = aPar.z;
       float fade = 1.0 - smoothstep(uR * 0.7, uR, distance(aOff.xz, cameraPosition.xz)); hgt *= fade;
-      vec2 fw = vec2(cos(yaw), sin(yaw)), side = vec2(-fw.y, fw.x);
-      float gust = sin(uWind * 1.7 + dot(aOff.xz, vec2(0.21, 0.13))) * 0.55 + sin(uWind * 3.1 + dot(aOff.xz, vec2(0.7, -0.5))) * 0.2 + 0.35;
-      vec2 bend = fw * lean + vec2(0.8, 0.45) * gust * 0.35;
+      vec2 fw = vec2(cos(yaw), sin(yaw)), side = vec2(-fw.y, fw.x), acr = vec2(-uWindDir.y, uWindDir.x);
+      // ticket 91: the world wind (wind.js) combs the grass downwind and each gust lays it over as it rolls past; every blade
+      // also nods on its own beat, more as the wind rises
+      float w = 0.0, nod = 0.0; if (t > 0.0 && hgt > 0.0) { // (the root vertices never move and faded blades are gone: they skip the wind's sums, for the frame rate)
+        w = iwWind(aOff.xz); nod = sin(uWindT * (2.0 + lean * 2.4) + dot(aOff.xz, vec2(0.9, 0.7))) * (0.05 + 0.22 * w); }
+      vec2 bend = fw * lean * (1.0 - 0.6 * w) + uWindDir * (0.1 + 0.95 * w + nod * 0.5) + acr * nod * 0.35;
       vec3 transformed = vec3(aOff.x, aOff.y, aOff.z);
       transformed.xz += side * position.x * wdt + bend * t * t * hgt;
       transformed.y += t * hgt * (1.0 - 0.25 * dot(bend, bend));
-      vGrassCol = mix(aBase, aTip, t * t * 0.9 + t * 0.1);`,
+      vGrassCol = mix(aBase, aTip, t * t * 0.9 + t * 0.1) * (1.0 + 0.35 * w * t); // (a gust shows the blades' paler sides: the wave you see cross a meadow)`,
       )
       .replace('#include <beginnormal_vertex>', 'vec3 objectNormal = vec3(0.0, 1.0, 0.0);')
       .replace(

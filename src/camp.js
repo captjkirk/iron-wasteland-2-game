@@ -7,6 +7,8 @@ import { groundY } from './world.js';
 import { addCollider } from './props.js';
 import { rockMat, loadMesh, pbr as phPbr, canvasTex } from './propmodels.js';
 import { nightK } from './daynight.js';
+import { skyLight } from './environment.js';
+import { W as WIND, windAt, windShader } from './wind.js';
 
 const loader = new THREE.TextureLoader();
 function tex(name, srgb, rep = 1) {
@@ -138,8 +140,10 @@ export function addFlame(parent, y, s = 1, nEmbers = 40, warm = false) {
       core: { value: warm ? new THREE.Vector3(1, 0.2, 0.03) : new THREE.Vector3(1, 0.95, 0.6) },
       gain: { value: warm ? 0.6 : 1.6 },
     },
+    // ticket 91: the flame leans downwind (wind.js), its tip most, more in a gust
     vertexShader:
-      'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      'varying vec2 vUv; void main(){ vUv = uv; vec4 wp = modelMatrix * vec4(position, 1.0); float hh = length(modelMatrix[1].xyz) * 1.25;\n' +
+      '  wp.xz += uWindDir * (0.12 + 0.5 * iwWind(wp.xz)) * uv.y * uv.y * hh; gl_Position = projectionMatrix * viewMatrix * wp; }',
     fragmentShader: `uniform float t; uniform vec3 core; uniform float gain; varying vec2 vUv;
       float h(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       float n(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y); }
@@ -149,6 +153,9 @@ export function addFlame(parent, y, s = 1, nEmbers = 40, warm = false) {
         vec3 c = mix(core, vec3(1.0, 0.38, 0.06), smoothstep(0.1, 0.6, y + (1.0 - body) * 0.3));
         gl_FragColor = vec4(c * body * gain, body); }`,
   });
+  flameMat.onBeforeCompile = (sh) => {
+    sh.vertexShader = windShader(sh) + sh.vertexShader;
+  };
   const flames = new THREE.Group();
   for (let k = 0; k < 3; k++) {
     const f = new THREE.Mesh(new THREE.PlaneGeometry(0.85, 1.25), flameMat);
@@ -181,9 +188,98 @@ export function addFlame(parent, y, s = 1, nEmbers = 40, warm = false) {
   embers.frustumCulled = false;
   embers.position.y = 0.3;
   h.add(embers);
-  const f = { flameMat, light: null, embers, ep, eSeed, flames, h };
+  // (smoke from every fire and built torch; not the torch in the hand, which has no embers either: at the lens it would fog the view)
+  const f = {
+    flameMat,
+    light: null,
+    embers,
+    ep,
+    eSeed,
+    flames,
+    h,
+    smoke: nEmbers ? addSmoke(h, 0, 1.2, 0, s >= 0.6 ? {} : { n: 6, rise: 2.2, size: 0.5, alpha: 0.35 }) : null,
+  };
   fires.push(f);
   return f;
+}
+
+// ticket 91: a plume of smoke that rises, swells, thins and is carried off downwind (wind.js): one cloud of soft points, moved
+// here each frame in world metres (so it leans the world's way whatever its parent's turn and scale). Fires, torches, chimneys.
+const SMOKE_VS = `attribute float aA, aS; varying float vA; uniform float uPx;
+  #include <fog_pars_vertex>
+  void main() { vec4 mvPosition = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mvPosition; vA = aA; gl_PointSize = aS * uPx / -mvPosition.z;
+    #include <fog_vertex>
+  }`;
+const SMOKE_FS = `uniform vec3 uColor, uSky; varying float vA;
+  #include <fog_pars_fragment>
+  void main() { vec2 c = gl_PointCoord - 0.5; float r = dot(c, c); if (r > 0.25) discard; gl_FragColor = vec4(uColor * uSky, vA * (1.0 - r * 4.0) * (1.0 - r * 4.0));
+    #include <fog_fragment>
+  }`;
+const _m = new THREE.Matrix4(),
+  _v = new THREE.Vector3();
+export function addSmoke(
+  parent,
+  x,
+  y,
+  z,
+  { n = 10, rise = 5, size = 2.2, alpha = 0.5, color = 0x8e8b86, life = 9 } = {},
+) {
+  const pos = new Float32Array(n * 3),
+    a = new Float32Array(n),
+    sz = new Float32Array(n),
+    g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('aA', new THREE.BufferAttribute(a, 1));
+  g.setAttribute('aS', new THREE.BufferAttribute(sz, 1));
+  const m = new THREE.ShaderMaterial({
+    vertexShader: SMOKE_VS,
+    fragmentShader: SMOKE_FS,
+    transparent: true,
+    depthWrite: false,
+    fog: true,
+    uniforms: {
+      ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
+      uColor: { value: new THREE.Color(color) },
+      uSky: skyLight,
+      uPx: { value: 600 },
+    },
+  });
+  const pts = new THREE.Points(g, m),
+    seed = Math.random() * 50,
+    src = new THREE.Vector3(x, y, z),
+    at = new THREE.Vector3();
+  pts.frustumCulled = false;
+  pts.name = 'smoke';
+  pts.renderOrder = 4;
+  parent.add(pts);
+  pts.userData.top = new THREE.Vector3();
+  pts.userData.at = at; // (where its highest puff is and where it rises from, in the world: the walk test's smoke check)
+  pts.onBeforeRender = (r) => {
+    const t = performance.now() / 1000;
+    m.uniforms.uPx.value = r.domElement.height * 0.9;
+    at.copy(src).applyMatrix4(parent.matrixWorld);
+    _m.copy(parent.matrixWorld).invert();
+    const w = windAt(at.x, at.z),
+      lean = 0.12 + 1.5 * w;
+    let hi = -1;
+    for (let i = 0; i < n; i++) {
+      const f = (t / life + i / n + seed) % 1,
+        d = f * rise * lean + Math.sin(t * 0.6 + i * 2.3) * 0.15 * f;
+      _v.set(at.x + WIND.dir.x * d, at.y + f * rise * (1 - 0.35 * w), at.z + WIND.dir.y * d);
+      if (f > hi) {
+        hi = f;
+        pts.userData.top.copy(_v);
+      }
+      _v.applyMatrix4(_m);
+      pos[i * 3] = _v.x;
+      pos[i * 3 + 1] = _v.y;
+      pos[i * 3 + 2] = _v.z;
+      sz[i] = size * (0.3 + f * 1.4);
+      a[i] = alpha * Math.min(1, f * 6) * (1 - f);
+    }
+    g.attributes.position.needsUpdate = g.attributes.aA.needsUpdate = g.attributes.aS.needsUpdate = true;
+  };
+  return pts;
 }
 // a flame whose fire is gone (a torch or a campfire taken down): out of the animated list, off its parent, its GPU parts freed
 // (the flame cards' material and geometry are its own; the halo sprite shares one material and is only detached)
@@ -196,6 +292,8 @@ export function removeFlame(f) {
   for (const m of f.flames.children) m.geometry.dispose();
   f.embers.geometry.dispose();
   f.embers.material.dispose();
+  f.smoke?.geometry.dispose();
+  f.smoke?.material.dispose();
   f.light?.dispose?.();
 }
 export const fireCount = () => fires.length; // (for the checks)

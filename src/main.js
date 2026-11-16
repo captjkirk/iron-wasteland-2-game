@@ -53,7 +53,7 @@ import { snapFrame, logEvent, frameTime, playlogState } from './playlog.js';
 import { tickWatch, checkCrates, checkMsg, solidAt } from './watch.js';
 import { updateScatter, scatterStats } from './scatter.js';
 import { buildGrass, updateGrass, grassStats } from './grass.js';
-import { wind } from './trees.js';
+import { tickWind, W as wind } from './wind.js';
 import { loadCharacters } from './characters.js';
 import { loadCreatures, eyeShine } from './creatures.js';
 import { initPortraits, drawPortraits, endPortraits, portraitStats } from './menu3d.js';
@@ -64,7 +64,7 @@ import { others, deliver, coop, joining, rules, everyone } from './coop.js';
 import { tickTracks, trackStats, groundOf, tracksMesh, fillTracks } from './tracks.js';
 import { craft, built, toggleCraft, craftOpen, placeSpot, sleep, bedNear, bedRespawn, lightSpots } from './craft.js';
 import { day, nightK, DAY_S, setDay } from './daynight.js';
-import { buildWeather, tickWeather } from './weather.js';
+import { buildWeather, tickWeather, W as weatherNow } from './weather.js';
 import { fireflyStats } from './fireflies.js';
 import { RECIPES } from './recipes.js';
 import {
@@ -414,6 +414,7 @@ function frame(now) {
     f.near += (Math.min(f.near, 10) - f.near) * nk;
     f.far += (Math.min(f.far, 150) - f.far) * nk;
   } // the night closes in (the owner: "view distance = less at night")
+  tickWind((day.n + day.t) * DAY_S, camera.position, weatherNow.boost, caveHere()); // ticket 91: the world wind (still in a cave)
   tickWeather((day.n + day.t) * DAY_S, camera.position, scene.fog, nightK(), env.haze);
   const under = player.under && camera.position.y < WATER_Y;
   if (under) {
@@ -426,7 +427,6 @@ function frame(now) {
   caveScene(scene, env, camera, isRunning()); // #8: inside a cave, no sun, sky or weather
   if (caveHere()) renderer.toneMappingExposure = 0.95; // (#8, D6: in a cave the eye opens up to the dark: "SOME light")
   renderer.toneMappingExposure *= BRIGHT; // (D6: ?bright=2 for looking at caves while building them; never set in play)
-  wind.value = clock;
   if (!caveHere()) {
     updateScatter(camera.position);
     updateGrass(camera.position);
@@ -610,7 +610,8 @@ window.__iw = {
       tris: renderer.info.render.triangles,
     };
   },
-  places,
+  wind,
+  /* ticket 91 */ places,
   /* slice 23 */ spiders,
   spawnPack /* slice 22 */,
   seed: SEED_TEXT,

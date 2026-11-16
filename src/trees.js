@@ -6,8 +6,7 @@ import { Tree } from '@dgreenheck/ez-tree';
 import { Q } from './config.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { skyLight } from './environment.js';
-
-export const wind = { value: 0 };
+import { U as WU, DECL as WDECL, GUST as WGUST, windShader } from './wind.js';
 export const BARK = {}; // each species' trunk material, for its stump (slice 21)
 const VIEWS = 8;
 
@@ -222,6 +221,43 @@ function grow(sp, v) {
   };
 }
 
+// ticket 91: a tree in the world wind (wind.js). Each leans downwind as a gust rolls over it and rocks back, a tall tree slowly
+// and stiffly (a pine's beat is about six seconds), a bush quickly; leaves also flutter. Worked out in metres at the tree's own
+// place, then turned into the instance's own frame (its yaw and scale), so the lean is the world's way whatever the tree's turn.
+// iwH is the instance's height in metres (its scale); the bend grows with the cube of the height up it, so the trunk's foot stays planted
+// and the crown moves most: a tree bends, it does not tip like a pole (the crown's tip leans as much as before).
+const SWAY = (leaf) => `
+  #ifdef USE_INSTANCING
+  { vec2 iwP = instanceMatrix[3].xz; vec3 iwX = instanceMatrix[0].xyz, iwZ = instanceMatrix[2].xyz; float iwH = length(instanceMatrix[1].xyz);
+    float iwW = iwWindLite(iwP), iwPh = dot(iwP, vec2(0.13, 0.11)), iwB = 4.5 / sqrt(iwH + 0.5), iwY = position.y * position.y * position.y;
+    float iwA = 1.4 / sqrt(iwH + 2.0) * (0.02 + 0.1 * iwW); // (the lean in radians: stiffer the taller)
+    vec2 iwD = (uWindDir * (0.55 + 0.45 * sin(uWindT * iwB + iwPh)) + vec2(-uWindDir.y, uWindDir.x) * 0.2 * sin(uWindT * iwB * 1.37 + iwPh * 2.0)) * iwA * iwH * iwY;
+    ${
+      leaf
+        ? `float iwF = sin(uWindT * 9.0 + dot(position, vec3(37.0, 23.0, 29.0))) * (0.015 + 0.06 * iwW) * uv.y;
+    iwD += uWindDir * iwF; transformed.y += iwF * 0.6 / iwH;`
+        : ''
+    }
+    transformed.x += dot(iwD, iwX.xz) / dot(iwX, iwX); transformed.z += dot(iwD, iwZ.xz) / dot(iwZ, iwZ); }
+  #endif`;
+// a material (or its shadow's depth material) that sways: its own changes to the shader stay, the sway goes in after begin_vertex
+function swaying(m, leaf, key) {
+  const own = m.onBeforeCompile;
+  m.customProgramCacheKey = () => key;
+  m.onBeforeCompile = (sh, r) => {
+    own?.call(m, sh, r);
+    const head = windShader(sh);
+    sh.vertexShader = head + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>' + SWAY(leaf));
+  };
+  return m;
+}
+const depthOf = (leaf) =>
+  swaying(
+    new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }),
+    leaf,
+    leaf ? 'iw-sway-depth-leaf' : 'iw-sway-depth',
+  );
+
 function cloneTex(t, rx, ry) {
   const c = t.clone();
   c.wrapS = c.wrapT = THREE.RepeatWrapping;
@@ -240,22 +276,14 @@ function leafMaterial(src, tint, snow) {
     metalness: 0,
     envMapIntensity: 0.85,
   });
-  m.customProgramCacheKey = () => (snow ? 'iw-leaf-snow' : 'iw-leaf');
   m.onBeforeCompile = (sh) => {
-    sh.uniforms.uWind = wind;
-    sh.vertexShader =
-      'uniform float uWind;\n' +
-      sh.vertexShader
-        .replace(
-          '#include <begin_vertex>',
-          `#include <begin_vertex>
-      #ifdef USE_INSTANCING
-        vec2 wp = instanceMatrix[3].xz; float ph = dot(wp, vec2(0.13, 0.11));
-        transformed.xz += vec2(sin(uWind * 1.3 + ph + position.y * 3.0), cos(uWind * 1.1 + ph * 1.3)) * 0.012 * position.y * uv.y;
-      #endif
+    sh.vertexShader = sh.vertexShader
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
       vSnowUp = normal.y;`,
-        )
-        .replace('void main() {', 'varying float vSnowUp;\nvoid main() {');
+      )
+      .replace('void main() {', 'varying float vSnowUp;\nvoid main() {');
     sh.fragmentShader = 'varying float vSnowUp;\n' + sh.fragmentShader;
     if (snow)
       sh.fragmentShader = sh.fragmentShader.replace(
@@ -278,7 +306,7 @@ function leafMaterial(src, tint, snow) {
       THREE.ShaderChunk.normal_fragment_begin.replace('gl_FrontFacing ? 1.0 : - 1.0', '1.0'),
     );
   };
-  return m;
+  return swaying(m, !LOW, snow ? 'iw-leaf-snow' : 'iw-leaf');
 }
 
 // ── Impostors: render each variant from 8 directions into an atlas row; billboards pick the nearest view ──
@@ -343,7 +371,10 @@ function bakeAtlas(renderer, variants, mats, res, bg) {
   renderer.shadowMap.enabled = prev.sh;
   return rt.texture;
 }
-const impVS = `
+const impVS =
+  WDECL +
+  WGUST +
+  `
   uniform vec2 uCell; uniform float uRow, uHalfW;
   varying vec2 vUv; varying float vShade;
   #include <fog_pars_vertex>
@@ -354,6 +385,8 @@ const impVS = `
     float a = th - yaw; float k = mod(floor(a / 6.2831853 * ${VIEWS}.0 + 0.5), ${VIEWS}.0);
     vec3 right = vec3(cos(th), 0.0, -sin(th));
     vec3 wp = base + right * position.x * uHalfW * s + vec3(0.0, position.y * s, 0.0);
+    float iwA = 1.4 / sqrt(s + 2.0) * (0.02 + 0.1 * iwWindLite(base.xz)); // (ticket 91: far trees lean with the near ones, SWAY's steady part)
+    wp.xz += uWindDir * (0.55 + 0.45 * sin(uWindT * 4.5 / sqrt(s + 0.5) + dot(base.xz, vec2(0.13, 0.11)))) * iwA * s * position.y * position.y * position.y;
     vUv = vec2((k + position.x * 0.5 + 0.5) * uCell.x, (uRow + (position.y + 0.02) / 1.04) * uCell.y);
     vShade = 0.9 + 0.1 * fract(sin(dot(base.xz, vec2(12.9898, 78.233))) * 43758.5453);
     vec4 mvPosition = viewMatrix * vec4(wp, 1.0); gl_Position = projectionMatrix * mvPosition;
@@ -385,10 +418,14 @@ function impostorMaterial(tex, row, rows, halfW, bright, tint = [0, 0, 0, 0]) {
       uBright: { value: bright },
       uTint: { value: new THREE.Vector4(...tint) },
       uSky: skyLight,
+      ...WU,
     },
   });
 }
 const quad = new THREE.PlaneGeometry(2, 1, 1, 1).translate(0, 0.5, 0);
+// (the shadows sway with the trees, shared by every species; on Low they stand still and leaves do not flutter, for the frame rate)
+const LOW = Q.label === 'Low',
+  DEPTH = LOW ? {} : { bark: depthOf(false), leaf: depthOf(true) };
 
 // Build every species: returns { name: { variants: [{ parts, far, halfW }] } } ready for scatter layers.
 const loaded = (t) =>
@@ -411,14 +448,18 @@ export async function buildTrees(renderer, names) {
     for (let v = 0; v < nv; v++) vs.push(grow(sp, v));
     const src = vs[0];
     await Promise.all([loaded(src.barkSrc.map), loaded(src.barkSrc.normalMap), loaded(src.leafSrc.map)]);
-    const bark = new THREE.MeshStandardMaterial({
-      map: cloneTex(src.barkSrc.map, sp.bush ? 1 : 2, sp.bush ? 2 : 6),
-      normalMap: cloneTex(src.barkSrc.normalMap, sp.bush ? 1 : 2, sp.bush ? 2 : 6),
-      color: sp.bark,
-      roughness: 0.92,
-      metalness: 0,
-      normalScale: new THREE.Vector2(1.2, 1.2),
-    });
+    const bark = swaying(
+      new THREE.MeshStandardMaterial({
+        map: cloneTex(src.barkSrc.map, sp.bush ? 1 : 2, sp.bush ? 2 : 6),
+        normalMap: cloneTex(src.barkSrc.normalMap, sp.bush ? 1 : 2, sp.bush ? 2 : 6),
+        color: sp.bark,
+        roughness: 0.92,
+        metalness: 0,
+        normalScale: new THREE.Vector2(1.2, 1.2),
+      }),
+      false,
+      'iw-bark',
+    ); // (a stump is no instance: it stands still)
     BARK[name] = bark;
     const leaf = src.leaves ? leafMaterial(src.leafSrc, sp.leaf, sp.snow) : null;
     const leafBake = src.leaves
@@ -444,7 +485,15 @@ export async function buildTrees(renderer, names) {
     }
     const shade = !(sp.low && Q.label === 'Low'); // (ticket 56: the new low shrubs cast no shadow on Low, for the frame rate)
     const dots = sp.dots
-      ? new THREE.MeshStandardMaterial({ color: sp.dots[0], roughness: sp.loot === 'food' ? 0.45 : 0.8, metalness: 0 })
+      ? swaying(
+          new THREE.MeshStandardMaterial({
+            color: sp.dots[0],
+            roughness: sp.loot === 'food' ? 0.45 : 0.8,
+            metalness: 0,
+          }),
+          false,
+          'iw-dots',
+        )
       : null;
     const atlas = bakeAtlas(
       renderer,
@@ -459,8 +508,10 @@ export async function buildTrees(renderer, names) {
       variants: vs.map((v, row) => ({
         halfW: v.halfW,
         parts: [
-          { geo: v.bark, mat: bark, cast: shade, name: name + ' bark' },
-          ...(v.leaves ? [{ geo: v.leaves, mat: leaf, cast: shade, receive: false, name: name + ' leaves' }] : []),
+          { geo: v.bark, mat: bark, cast: shade, depthMat: DEPTH.bark, name: name + ' bark' },
+          ...(v.leaves
+            ? [{ geo: v.leaves, mat: leaf, cast: shade, depthMat: DEPTH.leaf, receive: false, name: name + ' leaves' }]
+            : []),
           ...(v.dots ? [{ geo: v.dots, mat: dots, cast: false, name: name + ' dots' }] : []),
         ],
         far: [

@@ -417,9 +417,11 @@ export function sfx(name, at, vol = 1) {
   const t = ctx.currentTime + 0.005;
   (SFX[name] || VOICE[name])?.(d, t);
 }
+let windWant = 0;
 export function windLevel(v) {
-  if (windGain) windGain.gain.setTargetAtTime(cave ? 0 : v, ctx.currentTime, 0.5);
-}
+  windWant = cave ? 0 : v;
+  if (windGain) windGain.gain.setTargetAtTime(windWant, ctx.currentTime, 0.5);
+} // (windWant: what it was last asked for, for the checks: ticket 91)
 let riverWant = 0;
 export function riverLevel(v) {
   riverWant = cave ? 0 : v;
@@ -611,7 +613,7 @@ export const audioState = () => ({
   started: !!ctx,
   music: musicBus ? musicBus.gain.value : null,
   musicDuck: duckG ? duckG.gain.value : null,
-  wind: windGain ? windGain.gain.value : null,
+  wind: windWant,
   river: riverWant,
   muted,
   master: master ? master.gain.value : null,
