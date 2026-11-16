@@ -17,7 +17,7 @@ import { caveAt, caveDepth } from './cavemap.js';
 import { SEED, HALF, SAFE_R, WATER_Y, ENEMY } from './config.js';
 import { groundY, biomeAt, slopeAt } from './world.js';
 import { nearColliders, colR, placed, addCollider, floorY } from './props.js';
-import { buildings } from './plan.js';
+import { buildings, places } from './plan.js';
 import { day, DAY_S, nightK } from './daynight.js';
 import { sfx } from './audio.js';
 import { dustPuff } from './effects.js';
@@ -75,9 +75,12 @@ function findNestSites() { if (SITES) return SITES; const cand = [], s0 = SEED %
     if (Math.hypot(x, z) < SAFE_R + 40 || slopeAt(x, z) > 0.3 || groundY(x, z) < WATER_Y + 0.8) continue;
     if (![[16, 0], [-16, 0], [0, 16], [0, -16]].every(([a, c]) => biomeAt(x + a, z + c) === b)) continue; // (well inside its biome)
     if (nearColliders(x, z).some(c => c.r && Math.hypot(c.x - x, c.z - z) < colR(c, x, z) + 3.5)) continue; // (room for the mound and its webs)
+    if (places.some(q => Math.hypot(q.x - x, q.z - z) < 70)) continue; // (not by a place worth going to: its own guards are enough. The play logs of 2026-11-15: three players
+    // killed in 20 s at the radio tower, 36 m from a nest, by its spiders and the tower's guards together)
     cand.push({ x, z, b, k: hash(x, z, s0) }); }
   cand.sort((a, b) => a.k - b.k); SITES = [];
   for (const q of cand) if (SITES.filter(s => s.b === q.b).length < 3 && SITES.every(s => Math.hypot(s.x - q.x, s.z - q.z) > 110)) SITES.push({ x: q.x, z: q.z, b: q.b });
+  SITES.sort((a, b) => (a.b !== 'ruins') - (b.b !== 'ruins')); // (the Ruins' nests first: the nest check in walktest.js watches the first nest for plain spiders; the order means nothing in play)
   return SITES; }
 
 // ── A new game: the webs go; the host's game sets the nests down (a joined one gets them from the host) ──

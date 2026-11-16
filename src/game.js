@@ -504,6 +504,16 @@ function climbSpot(e, tg, ty) { let best = null, bd = 1e9;
   return best; }
 // pinned against something on the way (a fence, a wall, a rock) while hunting: the spot on its face to climb straight over it.
 // Not the player's own pieces (the fort rules decide those), nothing over 12 m, and nowhere with a ceiling over the spot
+// the nearest open ground 2 to 5 m from a creature that is stuck: not too deep, not steep, no more than 1.5 m above or below it,
+// clear of every solid; of the nearest ring that has any, the spot nearest its quarry
+function openNear(e, r, q) { const g0 = groundY(e.x, e.z);
+  for (let R = 2; R <= 5; R += 0.5) { let best = null, bd = 1e9; // (2 m at least: out of the trap's reach, not back in it)
+    for (let k = 0; k < 16; k++) { const x = e.x + Math.cos(k * Math.PI / 8) * R, z = e.z + Math.sin(k * Math.PI / 8) * R, g = groundY(x, z);
+      if ((g < WATER_Y - 0.8 && e.type !== 'bog_lurker') || slopeAt(x, z) > 1.0 || Math.abs(g - g0) > 1.5 || Math.abs(x) > HALF - 2 || Math.abs(z) > HALF - 2) continue;
+      if (nearColliders(x, z).some(c => c.r && Math.hypot(c.x - x, c.z - z) < colR(c, x, z) + r)) continue;
+      const d = q ? Math.hypot(q.x - x, q.z - z) : 0; if (d < bd) { bd = d; best = { x, z }; } }
+    if (best) return best; }
+  return null; }
 function overSpot(e, hx, hz, maxH = 12, ahead = 0.3) { const L = Math.hypot(hx, hz) || 1, r = 0.45 * ENEMY[e.type].scale; let best = null, bd = 1e9;
   for (const c of nearColliders(e.x, e.z)) { if (!c.r || c.gate || c.bp || c.top == null) continue;
     const R = colR(c, e.x, e.z), dx = e.x - c.x, dz = e.z - c.z, d = Math.hypot(dx, dz) || 1; if (d > R + r + 0.3 || (dx * hx + dz * hz) / (d * L) > -ahead) continue; // (touching it, and it is ahead)
@@ -536,7 +546,7 @@ export function hitEnemy(e, dmg, nx, nz, at, by = null) {
   if (!by) fought(false); // (a blow dealt: in a fight, no eating for a few seconds: slice 12)
   if (joining()) { send('host', { t: 'hit', id: e.id, dmg, nx: +nx.toFixed(2), nz: +nz.toFixed(2) }); e.flashT = 0.15; e.barT = 6; e.mesh.userData.anim.hit(1); // the host's game keeps its health
     const p = at || enemyCentre(e); hitBurst(p, new THREE.Vector3(nx, 0, nz), PUFFK[e.type]); floatText(p, String(dmg), dmg >= 20 ? '#ffd27a' : '#fff0d8', dmg >= 20); hitMarker(); sfx(dmg >= 20 ? 'hitHard' : 'hit', e); logEvent('hit', { enemy: e.type, dmg }); return; }
-  e.hp -= dmg; e.flashT = 0.15; e.barT = 6; e.stag = heavy ? 0.12 : 0.3; e.vx += nx * (heavy ? 2 : 6); e.vz += nz * (heavy ? 2 : 6);
+  e.hp -= dmg; e.flashT = 0.15; e.barT = 6; e.angry = 10; // (angry: hurt, it does not give up the hunt for 10 s, however far: below) e.stag = heavy ? 0.12 : 0.3; e.vx += nx * (heavy ? 2 : 6); e.vz += nz * (heavy ? 2 : 6);
   if (e.state === 'windup' && !heavy) { e.state = 'recover'; e.rT = 0.4; }
   if (e.state === 'idle' || e.state === 'lurk') alertPack(e); else if (e.state !== 'flee' && e.state !== 'windup' && e.state !== 'recover' && e.state !== 'emerge') e.state = 'chase';
   const side = Math.sign(Math.cos(e.yaw) * nz - Math.sin(e.yaw) * nx) || 1; e.mesh.userData.anim.hit(side);
@@ -803,7 +813,7 @@ export function update(dt, t) {
     const wd = ppl ? ppl.reduce((m, q) => Math.min(m, Math.hypot(q.x - e.x, q.z - e.z)), d) : d;
     if (wd > WAKE_RADIUS && !(e.hunter?.until > t)) { e.mesh.visible = wd < 200; continue; } e.mesh.visible = true; awake.push(e); // (a pack sent hunting stays awake on its way: issue #44)
     u.setDetail(camera.position.distanceTo(e.mesh.position) < 32); // fur shells near the camera
-    e.stag = Math.max(0, e.stag - dt); e.flashT = Math.max(0, e.flashT - dt); e.barT = Math.max(0, e.barT - dt); u.flash(e.flashT / 0.15);
+    e.stag = Math.max(0, e.stag - dt); if (e.angry > 0) e.angry -= dt; e.flashT = Math.max(0, e.flashT - dt); e.barT = Math.max(0, e.barT - dt); u.flash(e.flashT / 0.15);
     { const ring = e.mesh.getObjectByName('threat'), hunt = HUNTS.includes(e.state), want = hunt ? (e.state === 'windup' ? 1.0 : 0.55 + 0.12 * Math.sin(t * 5)) : e.state !== 'lurk' && d < 45 ? 0.22 : 0; // a faint ring on idle creatures in range
       ring.material.opacity += (want - ring.material.opacity) * Math.min(1, dt * 6); ring.visible = ring.material.opacity > 0.02; }
     // slice 13: at night an animal sees further, runs faster and bites harder (IW1: 1.35), unless its quarry is by a fire
@@ -825,7 +835,9 @@ export function update(dt, t) {
     if (tgGone || (safe && !e.posed)) { /* no new hunts */ }
     else if ((e.state === 'idle' || e.state === 'lurk') && d < notice && !(e.calmT > t && d > CLOSE)) alertPack(e); // (#66: an Easy danger that warned you off lets you go)
     else if (e.type === 'wolf' && e.state === 'idle' && d < 45 && !(e.watchT > t)) { const w = t + 7 + rng() * 6; for (const o of enemies) if (o.pack === e.pack) o.watchT = w; wolfSay('wolfwatch', e); } // (watching you: once a pack, every 7 to 13 s)
-    else if (e.state !== 'idle' && e.state !== 'lurk' && d > Math.max(aggro * 2.6, notice * 1.3) && !(e.hunter?.until > t)) e.state = 'idle'; // (a sent pack holds on until it arrives)
+    else if (e.state !== 'idle' && e.state !== 'lurk' && d > Math.max(aggro * 2.6, notice * 1.3) && !(e.hunter?.until > t) && !(e.angry > 0)) e.state = 'idle'; // (a sent pack holds on until it arrives)
+    // (Jared, November 15, 2026, co-op on storm-heron-59: bears shot from range "chased him, then stopped and walked away while being
+    // hit": past the give-up distance, about 63 m by day, a bear quit even mid-hit; now a blow holds its hunt 10 s: e.angry)
     if (e.hunter && (d < notice || tgGone || safe)) e.hunter.until = 0;
     if (hunting && !tgGone && d < 45) tg.huntedAt = t; // (the trickle waits while anything near hunts them)
     if ((e.type === 'rat' || e.type === 'dust_hound') && !e.fled && e.hp < e.maxHp * 0.3 && e.state !== 'idle') { e.state = 'flee'; e.fleeT = 3; e.fled = true; }
@@ -916,6 +928,13 @@ export function update(dt, t) {
         return [0.3, 1, 2.5].every(k => { const x = e.x + hx * k, z = e.z + hz * k; return !bad(x, z) && !nearColliders(x, z).some(q => q.r && Math.hypot(q.x - x, q.z - z) < colR(q, x, z) + r); }); };
       e.det = side * Math.PI; for (const a of [0.8, 1.35, 1.9, 2.5]) { if (clear(a * side)) { e.det = a * side; break; } if (clear(-a * side)) { e.det = -a * side; break; } }
       e.detT = 1.2 + rng() * 1.2; e.pin = 0; }
+    // the play logs of 2026-11-15: a hunting wolf in water just too deep for it, a hound in a crack in a dune and an ice crawler in
+    // a pocket among rocks went nowhere for 5 to 14 s (every step undone, every turn off blocked). One that has gone nowhere for
+    // 1.5 s while meaning to move scrambles out to the nearest open ground 2 to 5 m off (on the side of its quarry), over half a second
+    if (host && e.y == null && !e.cl) { const a = e.prog ||= { x: e.x, z: e.z, t: 0 };
+      if (e.scr) { const k = Math.min(1, dt / Math.max(dt, e.scr.t)); e.x += (e.scr.x - e.x) * k; e.z += (e.scr.z - e.z) * k; e.pin = 0; if ((e.scr.t -= dt) <= 0) e.scr = null; }
+      if (want <= 1e-3 || e.scr || Math.hypot(e.x - a.x, e.z - a.z) > 0.6) { a.x = e.x; a.z = e.z; a.t = 0; }
+      else if ((a.t += dt) > 1.5) { a.t = 0; const o = openNear(e, 0.45 * st.scale, tg); if (o) e.scr = { x: o.x, z: o.z, t: 0.5 }; } }
     const ty = joining() ? e.nyaw ?? e.yaw : e.state === 'siege' && e.wfx != null ? Math.atan2(-e.wfx, -e.wfz) : face ? Math.atan2(-tx, -tz) : (mx || mz) ? Math.atan2(-mx, -mz) : e.yaw; let dd = ty - e.yaw; dd = Math.atan2(Math.sin(dd), Math.cos(dd)); e.yaw += dd * Math.min(1, dt * 8);
     if (host && e.y != null && (!e.cl || e.cl.ph === 'go')) { const u = standAt(e.x, e.z, e.y + 0.35), g = groundY(e.x, e.z); // up on something: its feet go with what it stands on; off the edge, it drops
       if (u >= e.y - 0.4 && u > g + 0.3) { e.y = u; e.fallV = 0; } else { e.fallV = (e.fallV || 0) + 18 * dt; e.y -= e.fallV * dt; if (e.y <= Math.max(g, u)) { e.y = null; e.fallV = 0; } } }

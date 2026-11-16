@@ -45,12 +45,12 @@ export function watchStart() { acc = 0; crated = false; was.clear(); spell.clear
 function lasting(key, bad, type, data) { if (!bad) { was.delete(key); spell.delete(key); return; }
   if (was.get(key) === bad && !spell.has(key)) { spell.add(key); note(type, data()); } was.set(key, bad); }
 
-function body(who, id, x, z, y, extra = {}) { const k = who + ':' + id;
+function body(who, id, x, z, y, extra = {}, own = null) { /* (own: its own solid, a spider nest's mound: not a problem to be in) */ const k = who + ':' + id;
   if (broken(x, z, y)) return lasting(k + ':nan', 'nan', 'bad-pos', () => ({ who, x, z, y, ...extra }));
   lasting(k + ':out', outside(x, z) && 'out', 'out-of-world', () => ({ who, x: r1(x), z: r1(z), ...extra }));
   if (outside(x, z)) return;
   const g = groundY(x, z); lasting(k + ':under', y < g - 0.6 && 'under', 'under-ground', () => ({ who, x: r1(x), z: r1(z), y: r1(y), ground: r1(g), biome: biomeAt(x, z), ...extra }));
-  const c = solidAt(x, z, y, who === 'player' ? 0.3 : 0.25); lasting(k + ':solid', c, 'in-solid', () => ({ who, x: r1(x), z: r1(z), y: r1(y), solid: solidName(c), biome: biomeAt(x, z), ...extra })); }
+  const c = solidAt(x, z, y, who === 'player' ? 0.3 : 0.25, own); lasting(k + ':solid', c, 'in-solid', () => ({ who, x: r1(x), z: r1(z), y: r1(y), solid: solidName(c), biome: biomeAt(x, z), ...extra })); }
 
 // a crate nobody can open: inside another solid, buried, floating with nothing under it, out of the world, or walled in
 // (no spot 1.3 m round it where a player could stand)
@@ -66,7 +66,7 @@ export function checkCrates() { let n = 0; caches.forEach((q, i) => { if (q.brok
 
 // a hunting (or fleeing) creature that has gone nowhere for 5 s while its quarry is more than 5 m off; a shooter at range
 // stands still on purpose
-function stuckCreature(e, dt) { const live = e.state === 'chase' || e.state === 'flee';
+function stuckCreature(e, dt) { const live = (e.state === 'chase' || e.state === 'flee') && ENEMY[e.type]?.speed > 0; // (a spider nest never moves: the play logs of 2026-11-15)
   let h = held.get(e); if (!live) { held.delete(e); return; } if (!h || h.state !== e.state) held.set(e, h = { x: e.x, z: e.z, t: 0, state: e.state, said: false });
   h.t += dt; if (Math.hypot(e.x - h.x, e.z - h.z) > 1) { if (Math.hypot(e.x - h.x, e.z - h.z) > 3) h.said = false; h.x = e.x; h.z = e.z; h.t = 0; return; }
   if (h.t < 5 || h.said) return; let d = 1e9; for (const p of everyone()) d = Math.min(d, Math.hypot(p.x - e.x, p.z - e.z));
@@ -80,7 +80,7 @@ export function tickWatch(dt) { acc += dt; if (acc < 0.5) return; const step = a
   if (!crated) { crated = true; checkCrates(); }
   for (const e of enemies) { if (e.dead || e.gone || e.state === 'lurk' || e.state === 'emerge') continue; /* (buried in the mud on purpose) */ let near = false; for (const p of everyone()) if (Math.hypot(p.x - e.x, p.z - e.z) < 70) { near = true; break; }
     if (!near) { held.delete(e); continue; } // asleep: out of everyone's waking range
-    body(e.type, e.id, e.x, e.z, e.mesh.position.y + 0.05, { state: e.state }); stuckCreature(e, step); }
+    body(e.type, e.id, e.x, e.z, e.mesh.position.y + 0.05, { state: e.state }, e.mesh.userData.col); stuckCreature(e, step); }
   for (const k of pickups) { if (!k.landed || watchedLoot.has(k)) continue; watchedLoot.add(k); const { x, z } = k.mesh.position;
     const why = outside(x, z) ? 'out of the world' : (c => c && 'inside ' + solidName(c))(solidAt(x, z, groundY(x, z) + 0.1, 0.1));
     if (why) note('loot-unreachable', { kind: k.kind, x: r1(x), z: r1(z), biome: biomeAt(x, z), why }); }
