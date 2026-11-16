@@ -7,17 +7,39 @@ export const params = new URLSearchParams(location.search);
 // which the headless checks keep so their shots and walks stay comparable); any other text is hashed to a number.
 // A joined co-op game builds the host's world: before anything is built it asks the host's server for the host's seed.
 export const DEFAULT_SEED = 20261103;
-export function cleanSeed(t) { return String(t ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40); }
-export function seedNumber(t) { if (/^\d{1,10}$/.test(t)) return Number(t) >>> 0; // FNV-1a, so a typed word always names the same world
-  let h = 0x811c9dc5; for (let i = 0; i < t.length; i++) h = Math.imul(h ^ t.charCodeAt(i), 0x01000193); return h >>> 0; }
-const W1 = 'ashen amber bitter black bleak broken copper crimson dusky ember fallen feral frozen gilded glass grey hollow iron jade lonely lost mossy pale quiet red rusty salt silent silver smoky stone storm tawny thorn wild windy'.split(' ');
-const W2 = 'anvil badger barrow beacon briar cairn crow ember fang fen ford forge fox gate hare hearth heron hollow kestrel lantern marsh mesa moth otter owl pike raven reach ridge spire stag thistle tor vale wolf wren'.split(' ');
+export function cleanSeed(t) {
+  return String(t ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
+}
+export function seedNumber(t) {
+  if (/^\d{1,10}$/.test(t)) return Number(t) >>> 0; // FNV-1a, so a typed word always names the same world
+  let h = 0x811c9dc5;
+  for (let i = 0; i < t.length; i++) h = Math.imul(h ^ t.charCodeAt(i), 0x01000193);
+  return h >>> 0;
+}
+const W1 =
+  'ashen amber bitter black bleak broken copper crimson dusky ember fallen feral frozen gilded glass grey hollow iron jade lonely lost mossy pale quiet red rusty salt silent silver smoky stone storm tawny thorn wild windy'.split(
+    ' ',
+  );
+const W2 =
+  'anvil badger barrow beacon briar cairn crow ember fang fen ford forge fox gate hare hearth heron hollow kestrel lantern marsh mesa moth otter owl pike raven reach ridge spire stag thistle tor vale wolf wren'.split(
+    ' ',
+  );
 const pick = (l) => l[Math.floor(Math.random() * l.length)];
 export const randomSeed = () => `${pick(W1)}-${pick(W2)}-${1 + Math.floor(Math.random() * 99)}`;
 const isLocal = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
 // net.js reads the same answer: headless checks probe only when asked (?net or ?join), as a plain file server's 404 is a page error
-export const netInfo = globalThis.navigator?.webdriver && !params.has('net') && !params.has('join') || !globalThis.fetch ? Promise.resolve(null)
-  : fetch('/net/info', { signal: AbortSignal.timeout?.(5000) }).then(r => r.ok ? r.json() : null).then(j => j && typeof j === 'object' ? j : null).catch(() => null);
+export const netInfo =
+  (globalThis.navigator?.webdriver && !params.has('net') && !params.has('join')) || !globalThis.fetch
+    ? Promise.resolve(null)
+    : fetch('/net/info', { signal: AbortSignal.timeout?.(5000) })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((j) => (j && typeof j === 'object' ? j : null))
+        .catch(() => null);
 // a joiner only where a game server answers (another computer's page, or ?join): a copy on a plain web host has none
 const info = !isLocal || params.has('join') ? await netInfo : null;
 export const JOINER = !!info;
@@ -26,78 +48,417 @@ export const JOINER = !!info;
 // A joiner opened with no world in its address builds nothing until it knows the host's: the server's answer, else the host
 // game's own, asked each second (November 15, 2026: five joiners whose server answer had no seed each built a random world, 6 to
 // 38 s of loading, only to throw it away on the host's welcome)
-async function askHost() { const id = 'ask' + Math.random().toString(36).slice(2, 10), es = new EventSource(`/net/listen?id=${id}&role=join`); let iv;
-  const s = await new Promise(ok => { es.onmessage = (e) => { for (const m of JSON.parse(e.data).m) if (m.t === 'seed' && m.s) ok(m.s); };
-    const ask = () => { fetch(`/net/send?id=${id}&to=host`, { method: 'POST', body: '[{"t":"seed?"}]' }).catch(() => {}); fetch('/net/info').then(r => r.json()).then(j => j?.seed && ok(j.seed)).catch(() => {}); };
-    const el = document.getElementById('loading'); if (el) el.textContent = 'Asking the host computer which world it is on…'; ask(); iv = setInterval(ask, 1000); });
-  clearInterval(iv); es.close(); return cleanSeed(s); }
-const hostSeed = JOINER && !params.has('reseed') ? cleanSeed(info.seed) || (params.get('seed') ? '' : await askHost()) : '';
-export const SEED_TEXT = hostSeed || cleanSeed(params.get('seed')) || (globalThis.navigator?.webdriver ? String(DEFAULT_SEED) : randomSeed());
-export const SEED = seedNumber(SEED_TEXT), CLASSIC = SEED === DEFAULT_SEED;
+async function askHost() {
+  const id = 'ask' + Math.random().toString(36).slice(2, 10),
+    es = new EventSource(`/net/listen?id=${id}&role=join`);
+  let iv;
+  const s = await new Promise((ok) => {
+    es.onmessage = (e) => {
+      for (const m of JSON.parse(e.data).m) if (m.t === 'seed' && m.s) ok(m.s);
+    };
+    const ask = () => {
+      fetch(`/net/send?id=${id}&to=host`, { method: 'POST', body: '[{"t":"seed?"}]' }).catch(() => {});
+      fetch('/net/info')
+        .then((r) => r.json())
+        .then((j) => j?.seed && ok(j.seed))
+        .catch(() => {});
+    };
+    const el = document.getElementById('loading');
+    if (el) el.textContent = 'Asking the host computer which world it is on…';
+    ask();
+    iv = setInterval(ask, 1000);
+  });
+  clearInterval(iv);
+  es.close();
+  return cleanSeed(s);
+}
+const hostSeed =
+  JOINER && !params.has('reseed') ? cleanSeed(info.seed) || (params.get('seed') ? '' : await askHost()) : '';
+export const SEED_TEXT =
+  hostSeed || cleanSeed(params.get('seed')) || (globalThis.navigator?.webdriver ? String(DEFAULT_SEED) : randomSeed());
+export const SEED = seedNumber(SEED_TEXT),
+  CLASSIC = SEED === DEFAULT_SEED;
 // a world that is kept after a game over (game.js): one whose name was typed on the start menu (main.js marks it), or the classic one
 export const KEEP = CLASSIC || params.has('keep');
 // the seed rides in the address, so a reload (a quality change, back to character select) keeps this world
-if (params.get('seed') !== SEED_TEXT && globalThis.history?.replaceState) { params.set('seed', SEED_TEXT); history.replaceState(null, '', '?' + params.toString() + location.hash); }
+if (params.get('seed') !== SEED_TEXT && globalThis.history?.replaceState) {
+  params.set('seed', SEED_TEXT);
+  history.replaceState(null, '', '?' + params.toString() + location.hash);
+}
 
 // World: about 1 km square, a height sample every 2 m.
-export const WORLD = 1024, HALF = WORLD / 2, CELL = 2, SEG = WORLD / CELL, N = SEG + 1;
-export const WATER_Y = 0, WAKE_RADIUS = 70;
+export const WORLD = 1024,
+  HALF = WORLD / 2,
+  CELL = 2,
+  SEG = WORLD / CELL,
+  N = SEG + 1;
+export const WATER_Y = 0,
+  WAKE_RADIUS = 70;
 
 // Quality presets: the family's computers vary. Vegetation: grass blades per m2 is 26 x grassDensity out to grassDist;
 // trees are full meshes inside treeNear and baked billboards (impostors) beyond; bushes likewise at bushNear; ferns,
 // reeds and flowers stop at smallDist; rocks and wrecks at propFar. Medium is the default; the choice is kept in localStorage.
 // fireLights (slice 13): how many point lights the nearest fires and torches get at night (each one costs every pixel).
 export const QUALITY = {
-  low:    { label: 'Low',    pixelRatio: 1,   antialias: false, shadows: true, shadowSize: 1024, shadowExtent: 40,  drawDist: 380,  lod0: 110, water: 'simple', waterRes: 0,   albedoRes: 512,  anisotropy: 2, furShells: 4, fireLights: 2, grassDensity: 0.3, grassDist: 22, treeNear: 32, bushNear: 18, smallDist: 26, propFar: 220, impostorRes: 128, tracks: 300 },
-  medium: { label: 'Medium', pixelRatio: 1.5, antialias: true,  shadows: true, shadowSize: 2048, shadowExtent: 70,  drawDist: 650,  lod0: 190, water: 'mirror', waterRes: 384, albedoRes: 1024, anisotropy: 4, furShells: 10, fireLights: 3, grassDensity: 0.6, grassDist: 38, treeNear: 55, bushNear: 30, smallDist: 40, propFar: 380, impostorRes: 256, tracks: 600 },
-  high:   { label: 'High',   pixelRatio: 2,   antialias: true,  shadows: true, shadowSize: 4096, shadowExtent: 110, drawDist: 1100, lod0: 320, water: 'mirror', waterRes: 512, albedoRes: 1024, anisotropy: 8, furShells: 16, fireLights: 5, grassDensity: 1.0, grassDist: 60, treeNear: 95, bushNear: 50, smallDist: 65, propFar: 700, impostorRes: 256, tracks: 1000 },
+  low: {
+    label: 'Low',
+    pixelRatio: 1,
+    antialias: false,
+    shadows: true,
+    shadowSize: 1024,
+    shadowExtent: 40,
+    drawDist: 380,
+    lod0: 110,
+    water: 'simple',
+    waterRes: 0,
+    albedoRes: 512,
+    anisotropy: 2,
+    furShells: 4,
+    fireLights: 2,
+    grassDensity: 0.3,
+    grassDist: 22,
+    treeNear: 32,
+    bushNear: 18,
+    smallDist: 26,
+    propFar: 220,
+    impostorRes: 128,
+    tracks: 300,
+  },
+  medium: {
+    label: 'Medium',
+    pixelRatio: 1.5,
+    antialias: true,
+    shadows: true,
+    shadowSize: 2048,
+    shadowExtent: 70,
+    drawDist: 650,
+    lod0: 190,
+    water: 'mirror',
+    waterRes: 384,
+    albedoRes: 1024,
+    anisotropy: 4,
+    furShells: 10,
+    fireLights: 3,
+    grassDensity: 0.6,
+    grassDist: 38,
+    treeNear: 55,
+    bushNear: 30,
+    smallDist: 40,
+    propFar: 380,
+    impostorRes: 256,
+    tracks: 600,
+  },
+  high: {
+    label: 'High',
+    pixelRatio: 2,
+    antialias: true,
+    shadows: true,
+    shadowSize: 4096,
+    shadowExtent: 110,
+    drawDist: 1100,
+    lod0: 320,
+    water: 'mirror',
+    waterRes: 512,
+    albedoRes: 1024,
+    anisotropy: 8,
+    furShells: 16,
+    fireLights: 5,
+    grassDensity: 1.0,
+    grassDist: 60,
+    treeNear: 95,
+    bushNear: 50,
+    smallDist: 65,
+    propFar: 700,
+    impostorRes: 256,
+    tracks: 1000,
+  },
 };
-function storedQuality() { try { return localStorage.getItem('iw2.quality'); } catch { return null; } }
-export const QUALITY_KEY = [params.get('q'), storedQuality(), 'medium'].find(k => k && QUALITY[k]);
+function storedQuality() {
+  try {
+    return localStorage.getItem('iw2.quality');
+  } catch {
+    return null;
+  }
+}
+export const QUALITY_KEY = [params.get('q'), storedQuality(), 'medium'].find((k) => k && QUALITY[k]);
 export const Q = QUALITY[QUALITY_KEY];
-export function setQuality(key) { try { localStorage.setItem('iw2.quality', key); } catch { /* private window: the URL carries it */ }
-  const p = new URLSearchParams(location.search); p.set('q', key); location.search = p.toString(); }
+export function setQuality(key) {
+  try {
+    localStorage.setItem('iw2.quality', key);
+  } catch {
+    /* private window: the URL carries it */
+  }
+  const p = new URLSearchParams(location.search);
+  p.set('q', key);
+  location.search = p.toString();
+}
 
 // The five characters, from IW1 src/constants.js CHARS (names, colours, speed, HP, kit). Slice 9's balance: slower swings,
 // one target per melee blow (the Knight's cleave catches a second for half); sec is each one's IW1 secondary (F), secCd its cooldown.
 // close: the Gunslinger's pistol-whip (Z, right stick click), a weaker melee blow on its own short cooldown (the owner, 2026-11-04).
 export const CHARS = [
-  { id:'knight',     player:'Hudson',  title:'Iron Knight',   color:0x4a6d8c, dark:0x2d4a63, speed:128, maxHp:200, atk:'melee',  dmg:30, range:2.6, cd:0.9,  cleave:2, sec:'War cry',      secCd:30, desc:'Highest HP. Sword and shield.' },
-  { id:'gunslinger', player:'Zachary', title:'Gunslinger',    color:0xcc8833, dark:0x7a4a1a, speed:200, maxHp:120, atk:'ranged', dmg:14, range:0,   cd:0.5,  sec:'Fan the hammer', secCd:12, close:{ dmg:12, range:1.9, cd:0.6 }, desc:'Fastest. Revolver.' },
-  { id:'architect',  player:'Jared',   title:'The Architect', color:0x3a9a55, dark:0x1a6030, speed:165, maxHp:140, atk:'melee',  dmg:22, range:2.4, cd:0.75, sec:'Auto-turret',  secCd:45, desc:'Master builder. Wrench.' },
-  { id:'charmer',    player:'Lauren',  title:'The Charmer',   color:0xd988bb, dark:0x995577, speed:175, maxHp:130, atk:'ranged', dmg:14, range:0,   cd:0.7,  sec:'Charm flower', secCd:8,  desc:'Bouquet toss.' },
-  { id:'ranger',     player:'Abigail', title:'The Ranger',    color:0x557733, dark:0x334422, speed:185, maxHp:120, atk:'ranged', dmg:24, range:0,   cd:0.8,  sec:'Knife strike', secCd:1.2, desc:'Bow. Scout.' },
+  {
+    id: 'knight',
+    player: 'Hudson',
+    title: 'Iron Knight',
+    color: 0x4a6d8c,
+    dark: 0x2d4a63,
+    speed: 128,
+    maxHp: 200,
+    atk: 'melee',
+    dmg: 30,
+    range: 2.6,
+    cd: 0.9,
+    cleave: 2,
+    sec: 'War cry',
+    secCd: 30,
+    desc: 'Highest HP. Sword and shield.',
+  },
+  {
+    id: 'gunslinger',
+    player: 'Zachary',
+    title: 'Gunslinger',
+    color: 0xcc8833,
+    dark: 0x7a4a1a,
+    speed: 200,
+    maxHp: 120,
+    atk: 'ranged',
+    dmg: 14,
+    range: 0,
+    cd: 0.5,
+    sec: 'Fan the hammer',
+    secCd: 12,
+    close: { dmg: 12, range: 1.9, cd: 0.6 },
+    desc: 'Fastest. Revolver.',
+  },
+  {
+    id: 'architect',
+    player: 'Jared',
+    title: 'The Architect',
+    color: 0x3a9a55,
+    dark: 0x1a6030,
+    speed: 165,
+    maxHp: 140,
+    atk: 'melee',
+    dmg: 22,
+    range: 2.4,
+    cd: 0.75,
+    sec: 'Auto-turret',
+    secCd: 45,
+    desc: 'Master builder. Wrench.',
+  },
+  {
+    id: 'charmer',
+    player: 'Lauren',
+    title: 'The Charmer',
+    color: 0xd988bb,
+    dark: 0x995577,
+    speed: 175,
+    maxHp: 130,
+    atk: 'ranged',
+    dmg: 14,
+    range: 0,
+    cd: 0.7,
+    sec: 'Charm flower',
+    secCd: 8,
+    desc: 'Bouquet toss.',
+  },
+  {
+    id: 'ranger',
+    player: 'Abigail',
+    title: 'The Ranger',
+    color: 0x557733,
+    dark: 0x334422,
+    speed: 185,
+    maxHp: 120,
+    atk: 'ranged',
+    dmg: 24,
+    range: 0,
+    cd: 0.8,
+    sec: 'Knife strike',
+    secCd: 1.2,
+    desc: 'Bow. Scout.',
+  },
 ];
 // Enemies, from IW1 ENEMY_STATS (hp, speed px/s, dmg, attack interval ms, aggro px). Slice 21 (#50, Jared and Zachary's
 // play, 2026-11-14: "too easy"; their bites did 4 to 7 against 140 to 200 health): animal bites about 1.4x IW1's, bear and lurker sturdier
 export const ENEMY = {
-  wolf:        { hp:60,  speed:75,  dmg:9,  atk:1600, aggro:190, scale:1.0,  body:0x77777f, belly:0x9a9aa0, loot:['food','fiber'] },
-  rat:         { hp:30,  speed:105, dmg:6,  atk:1200, aggro:110, scale:0.55, body:0x6a5040, belly:0x8a6a55, loot:['metal'] },
-  bear:        { hp:160, speed:50,  dmg:22, atk:2400, aggro:290, scale:1.6,  body:0x5a3a24, belly:0x6e4a30, loot:['food','fiber','fiber'], danger:true },
-  ice_crawler: { hp:45,  speed:130, dmg:10,  atk:1400, aggro:160, scale:0.9,  body:0x9cc4dc, belly:0xd8eef8, loot:['metal'] },
+  wolf: {
+    hp: 60,
+    speed: 75,
+    dmg: 9,
+    atk: 1600,
+    aggro: 190,
+    scale: 1.0,
+    body: 0x77777f,
+    belly: 0x9a9aa0,
+    loot: ['food', 'fiber'],
+  },
+  rat: {
+    hp: 30,
+    speed: 105,
+    dmg: 6,
+    atk: 1200,
+    aggro: 110,
+    scale: 0.55,
+    body: 0x6a5040,
+    belly: 0x8a6a55,
+    loot: ['metal'],
+  },
+  bear: {
+    hp: 160,
+    speed: 50,
+    dmg: 22,
+    atk: 2400,
+    aggro: 290,
+    scale: 1.6,
+    body: 0x5a3a24,
+    belly: 0x6e4a30,
+    loot: ['food', 'fiber', 'fiber'],
+    danger: true,
+  },
+  ice_crawler: {
+    hp: 45,
+    speed: 130,
+    dmg: 10,
+    atk: 1400,
+    aggro: 160,
+    scale: 0.9,
+    body: 0x9cc4dc,
+    belly: 0xd8eef8,
+    loot: ['metal'],
+  },
   // Jared, November 15, 2026: "lurkers need a ranged attack option.... poison spit?": past 6 m it rears, hisses and spits a slow
   // glob (as the pale spider's web, its spit rules and SPIT_GAP shared); a hit poisons (8 health over 4 s at Normal, under one
   // bite; scaled by the difficulty as bites are), it never holds the feet; up close it still bites
-  bog_lurker:  { hp:65,  speed:55,  dmg:17, atk:2000, aggro:80,  scale:1.1,  body:0x3e5232, belly:0x5f7048, loot:['fiber','food'], spit:{ near:6, far:14, tele:1, speed:9, every:8, poison:{ dps:2, secs:4 } } },
-  dust_hound:  { hp:28,  speed:118, dmg:8,  atk:1500, aggro:200, scale:0.8,  body:0xa8845a, belly:0xc8a478, loot:['food','metal'] },
+  bog_lurker: {
+    hp: 65,
+    speed: 55,
+    dmg: 17,
+    atk: 2000,
+    aggro: 80,
+    scale: 1.1,
+    body: 0x3e5232,
+    belly: 0x5f7048,
+    loot: ['fiber', 'food'],
+    spit: { near: 6, far: 14, tele: 1, speed: 9, every: 8, poison: { dps: 2, secs: 4 } },
+  },
+  dust_hound: {
+    hp: 28,
+    speed: 118,
+    dmg: 8,
+    atk: 1500,
+    aggro: 200,
+    scale: 0.8,
+    body: 0xa8845a,
+    belly: 0xc8a478,
+    loot: ['food', 'metal'],
+  },
   // slice 22 (#51, Jared, 2026-11-14: "there's no spiders either yet"): IW1's ruins spider (hp 40, speed 70, dmg 8; a web every
   // 8 s; drops fiber), its bite 1.4x as slice 21 did the others; the nest (the dens rule of #9) stands still and sends spiders out
-  spider:      { hp:65,  speed:70,  dmg:11, atk:1500, aggro:150, scale:1.55, body:0x2a1e15, belly:0x15100c, loot:['fiber','fiber'], spider:'wolf' },
+  spider: {
+    hp: 65,
+    speed: 70,
+    dmg: 11,
+    atk: 1500,
+    aggro: 150,
+    scale: 1.55,
+    body: 0x2a1e15,
+    belly: 0x15100c,
+    loot: ['fiber', 'fiber'],
+    spider: 'wolf',
+  },
   // Jared, November 14, 2026: "I want there to be maybe 3-5 varieties of spiders if possible": the pale one of the Fungal Hollow is
   // quicker and sees further; the widow is small and fragile with the worst bite; the brute is huge, slow and very tough
   // the pale one spits web (#66, Jared, November 15, 2026: "rear its back end and shoot webbing at you to slow you down/temporarily
   // trap you (can't be unavoidable and can't mean death every time)"): from near to far m it stands tele s with its back end up,
   // hissing, then spits a glob at speed m/s (step aside); a hit holds the feet hold s, then slows for slow s (on Easy only
   // slows); one spider spits at most every `every` s, and nobody is spat at again within SPIT_GAP s (longer than a hold and its slow)
-  spider_pale: { hp:65,  speed:82,  dmg:10, atk:1300, aggro:175, scale:1.45, body:0xc8c0ae, belly:0x6a6254, loot:['fiber','fiber'], spider:'pale', spit:{ near:5, far:16, tele:0.9, speed:10, hold:1, slow:2, every:7 } },
-  spider_widow:{ hp:45,  speed:76,  dmg:17, atk:1700, aggro:140, scale:1.25, body:0x161214, belly:0x0a0808, loot:['fiber','food'], spider:'widow', poison:{ dps:2, secs:5 } },
-  spider_brute:{ hp:150, speed:52,  dmg:19, atk:2100, aggro:160, scale:2.1,  body:0x3a2618, belly:0x160e08, loot:['fiber','fiber','fiber','food'], spider:'brute', danger:true },
+  spider_pale: {
+    hp: 65,
+    speed: 82,
+    dmg: 10,
+    atk: 1300,
+    aggro: 175,
+    scale: 1.45,
+    body: 0xc8c0ae,
+    belly: 0x6a6254,
+    loot: ['fiber', 'fiber'],
+    spider: 'pale',
+    spit: { near: 5, far: 16, tele: 0.9, speed: 10, hold: 1, slow: 2, every: 7 },
+  },
+  spider_widow: {
+    hp: 45,
+    speed: 76,
+    dmg: 17,
+    atk: 1700,
+    aggro: 140,
+    scale: 1.25,
+    body: 0x161214,
+    belly: 0x0a0808,
+    loot: ['fiber', 'food'],
+    spider: 'widow',
+    poison: { dps: 2, secs: 5 },
+  },
+  spider_brute: {
+    hp: 150,
+    speed: 52,
+    dmg: 19,
+    atk: 2100,
+    aggro: 160,
+    scale: 2.1,
+    body: 0x3a2618,
+    belly: 0x160e08,
+    loot: ['fiber', 'fiber', 'fiber', 'food'],
+    spider: 'brute',
+    danger: true,
+  },
   // (Jared's play on Dev, November 14, 2026: "too easy to kill. maybe poison bites?": every kind about 1.6x its health; the widow's bite poisons: poison.js)
-  spider_nest: { hp:150, speed:0,   dmg:0,  atk:1e9,  aggro:0,   scale:1.0,  body:0xd9d6cc, belly:0xd9d6cc, loot:['fiber','fiber','fiber','fiber'], nest:'spider' },
+  spider_nest: {
+    hp: 150,
+    speed: 0,
+    dmg: 0,
+    atk: 1e9,
+    aggro: 0,
+    scale: 1.0,
+    body: 0xd9d6cc,
+    belly: 0xd9d6cc,
+    loot: ['fiber', 'fiber', 'fiber', 'fiber'],
+    nest: 'spider',
+  },
   // raiders (IW1 RAIDER_STATS; shoot is the firing range in px): they hold their camps, shooters and heavies fire from range
-  brawler:     { hp:130, speed:110, dmg:20, atk:1100, aggro:230, scale:1.0, loot:['metal','food','ammo'], raider:true },
-  shooter:     { hp:80,  speed:90,  dmg:16, atk:1200, aggro:280, scale:1.0, loot:['metal','food','ammo'], raider:true, shoot:280 },
-  heavy:       { hp:200, speed:75,  dmg:28, atk:1400, aggro:230, scale:1.0, loot:['metal','metal','food','ammo'], raider:true, shoot:200 },
+  brawler: {
+    hp: 130,
+    speed: 110,
+    dmg: 20,
+    atk: 1100,
+    aggro: 230,
+    scale: 1.0,
+    loot: ['metal', 'food', 'ammo'],
+    raider: true,
+  },
+  shooter: {
+    hp: 80,
+    speed: 90,
+    dmg: 16,
+    atk: 1200,
+    aggro: 280,
+    scale: 1.0,
+    loot: ['metal', 'food', 'ammo'],
+    raider: true,
+    shoot: 280,
+  },
+  heavy: {
+    hp: 200,
+    speed: 75,
+    dmg: 28,
+    atk: 1400,
+    aggro: 230,
+    scale: 1.0,
+    loot: ['metal', 'metal', 'food', 'ammo'],
+    raider: true,
+    shoot: 200,
+  },
 };
 // Dangers (#66, Jared, November 15, 2026: "Some enemies you do not want to mess with early"; "An exploding arrow takes them out
 // too fast"): the bear and the brute spider. Their hide takes half of a blow from anyone without their bench upgrade; no blow
@@ -106,35 +467,54 @@ export const ENEMY = {
 // docs/decisions/2026-11-15-fear-early.md has the measurements
 export const SPIT_GAP = 5;
 // (EASY_CALM: how long an Easy danger that warned you off lets you be; on Easy its warning also shakes no camera: the stranger's review)
-export const HIDE = 0.5, WARN_T = 1.2, CHARGE = { t: 2.5, k: 1.8 }, CLOSE = 6, EASY_CALM = 20;
+export const HIDE = 0.5,
+  WARN_T = 1.2,
+  CHARGE = { t: 2.5, k: 1.8 },
+  CLOSE = 6,
+  EASY_CALM = 20;
 // Abigail's fire arrow (her bench upgrade) needs RELIGHT s to light the next: at her full pace (0.8 s) every other arrow, and the first after a pause
 export const RELIGHT = 1.5;
 // Biomes: IW1's seven. The start is a Greenbelt valley ringed by mountains (world.js); ruins and fungal joined in run 2.
 // off/amp shape the rolling ground; mtn is how much mountain range the biome allows.
 export const BIOME = {
-  waste:  { off: 5,   amp: 7,   mtn: 0.35, enemies:['dust_hound','rat','rat'],           label:'The Waste' },
-  grass:  { off: 6,   amp: 9,   mtn: 0.6,  enemies:['wolf','wolf','rat','bear'],         label:'Greenbelt' },
-  desert: { off: 4,   amp: 5,   mtn: 0.25, enemies:['dust_hound','dust_hound'],          label:'Glass Desert' },
-  tundra: { off: 14,  amp: 14,  mtn: 1.0,  enemies:['ice_crawler','ice_crawler','wolf'], label:'Frostline' },
-  swamp:  { off: 0.6, amp: 1.4, mtn: 0.0,  enemies:['bog_lurker','rat'],                 label:'The Bog' },
-  ruins:  { off: 5,   amp: 4,   mtn: 0.3,  enemies:['rat','rat','wolf','dust_hound','spider','spider','spider_widow','spider_brute'], label:'The Ruins' },
-  fungal: { off: 3,   amp: 6,   mtn: 0.45, enemies:['bog_lurker','rat','bog_lurker','spider','spider_pale','spider_pale','spider_widow'], label:'Fungal Hollow' },
+  waste: { off: 5, amp: 7, mtn: 0.35, enemies: ['dust_hound', 'rat', 'rat'], label: 'The Waste' },
+  grass: { off: 6, amp: 9, mtn: 0.6, enemies: ['wolf', 'wolf', 'rat', 'bear'], label: 'Greenbelt' },
+  desert: { off: 4, amp: 5, mtn: 0.25, enemies: ['dust_hound', 'dust_hound'], label: 'Glass Desert' },
+  tundra: { off: 14, amp: 14, mtn: 1.0, enemies: ['ice_crawler', 'ice_crawler', 'wolf'], label: 'Frostline' },
+  swamp: { off: 0.6, amp: 1.4, mtn: 0.0, enemies: ['bog_lurker', 'rat'], label: 'The Bog' },
+  ruins: {
+    off: 5,
+    amp: 4,
+    mtn: 0.3,
+    enemies: ['rat', 'rat', 'wolf', 'dust_hound', 'spider', 'spider', 'spider_widow', 'spider_brute'],
+    label: 'The Ruins',
+  },
+  fungal: {
+    off: 3,
+    amp: 6,
+    mtn: 0.45,
+    enemies: ['bog_lurker', 'rat', 'bog_lurker', 'spider', 'spider_pale', 'spider_pale', 'spider_widow'],
+    label: 'Fungal Hollow',
+  },
 };
-export const BIOME_NAMES = Object.keys(BIOME), NB = BIOME_NAMES.length;
+export const BIOME_NAMES = Object.keys(BIOME),
+  NB = BIOME_NAMES.length;
 // The safe valley (IW1: nothing spawns inside the safe radius, a campfire heals). CAMP is the campfire.
-export const SAFE_R = 118, CAMP = { x: -7, z: 7 };
-export const PASS_N = 3, PASS_OUT = 5; // (a spawn adds no more to a pass's narrow part once it holds PASS_N; about PASS_OUT wait just beyond: the follow-ups to #66)
+export const SAFE_R = 118,
+  CAMP = { x: -7, z: 7 };
+export const PASS_N = 3,
+  PASS_OUT = 5; // (a spawn adds no more to a pass's narrow part once it holds PASS_N; about PASS_OUT wait just beyond: the follow-ups to #66)
 
 // Terrain texture layers (Poly Haven CC0, see CREDITS.md): file stem, metres per tile, roughness.
 export const LAYERS = [
-  { name: 'grass',  tile: 9,  rough: 0.95 },
-  { name: 'forest', tile: 5,  rough: 0.95 },
-  { name: 'dirt',   tile: 6,  rough: 0.95 },
-  { name: 'rock',   tile: 17, rough: 0.85 },
-  { name: 'sand',   tile: 7,  rough: 0.9 },
-  { name: 'snow',   tile: 8,  rough: 0.7 },
-  { name: 'mud',    tile: 5,  rough: 0.55 },
-  { name: 'paving', tile: 4,  rough: 0.9 },
-  { name: 'gravel', tile: 3,  rough: 0.9 },
-  { name: 'moss',   tile: 6,  rough: 0.8 },
+  { name: 'grass', tile: 9, rough: 0.95 },
+  { name: 'forest', tile: 5, rough: 0.95 },
+  { name: 'dirt', tile: 6, rough: 0.95 },
+  { name: 'rock', tile: 17, rough: 0.85 },
+  { name: 'sand', tile: 7, rough: 0.9 },
+  { name: 'snow', tile: 8, rough: 0.7 },
+  { name: 'mud', tile: 5, rough: 0.55 },
+  { name: 'paving', tile: 4, rough: 0.9 },
+  { name: 'gravel', tile: 3, rough: 0.9 },
+  { name: 'moss', tile: 6, rough: 0.8 },
 ];

@@ -34,24 +34,49 @@ if (uEdge.y > 0.0) {
 #endif
 `;
   THREE.UniformsLib.fog.uEdge = { value: U };
-  for (const k in THREE.ShaderLib) if (THREE.ShaderLib[k].uniforms.fogColor) THREE.ShaderLib[k].uniforms.uEdge = { value: U };
+  for (const k in THREE.ShaderLib)
+    if (THREE.ShaderLib[k].uniforms.fogColor) THREE.ShaderLib[k].uniforms.uEdge = { value: U };
 }
 
 // and a wall of the same mist standing 24 m past the edge, all round: solid from the ground to a little over the eye, then
 // thinning into the sky (land drawn into fog alone ended in a flat cut-out against the sky), faded out from far off, drifting
-let wall = null; const col = new THREE.Color();
-export function buildEdgeMist(scene) { if (!LOOK) return;
-  const g = new THREE.CylinderGeometry((HALF + 24) * Math.SQRT2, (HALF + 24) * Math.SQRT2, 1600, 4, 1, true); g.rotateY(Math.PI / 4); // (a square, open top and bottom)
-  wall = new THREE.Mesh(g, new THREE.ShaderMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide, uniforms: { uEdge: { value: U }, uCol: { value: col }, uA: { value: LOOK[3] } },
-    vertexShader: 'varying vec3 vW; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }',
-    fragmentShader: `uniform vec4 uEdge; uniform vec3 uCol; uniform float uA; varying vec3 vW;
+let wall = null;
+const col = new THREE.Color();
+export function buildEdgeMist(scene) {
+  if (!LOOK) return;
+  const g = new THREE.CylinderGeometry((HALF + 24) * Math.SQRT2, (HALF + 24) * Math.SQRT2, 1600, 4, 1, true);
+  g.rotateY(Math.PI / 4); // (a square, open top and bottom)
+  wall = new THREE.Mesh(
+    g,
+    new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      uniforms: { uEdge: { value: U }, uCol: { value: col }, uA: { value: LOOK[3] } },
+      vertexShader:
+        'varying vec3 vW; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }',
+      fragmentShader: `uniform vec4 uEdge; uniform vec3 uCol; uniform float uA; varying vec3 vW;
       void main() { float h = vW.y - cameraPosition.y, d = length(vW.xz - cameraPosition.xz);
         float drift = 0.85 + 0.15 * sin(vW.x * 0.013 + vW.z * 0.011 + uEdge.x * 0.07) * sin(vW.y * 0.02 - uEdge.x * 0.03);
         gl_FragColor = vec4(uCol, uA * drift * (1.0 - smoothstep(-10.0, 140.0 + 20.0 * sin(uEdge.x * 0.011), h)) * (1.0 - smoothstep(260.0, 460.0, d)));
         #include <colorspace_fragment>
-      }` }));
-  wall.frustumCulled = false; wall.name = 'edge mist'; scene.add(wall); }
+      }`,
+    }),
+  );
+  wall.frustumCulled = false;
+  wall.name = 'edge mist';
+  scene.add(wall);
+}
 
 // each frame, after the fog's colour is settled: the game clock in seconds, and whether the camera is out of the world (a cave)
-export function tickEdgeFog(t, away, fog) { if (!LOOK) return; U.x = t; U.y = away ? 0 : LOOK[0]; U.z = LOOK[1]; U.w = LOOK[2];
-  if (wall) { wall.visible = !away; col.copy(fog.color); } } // (linear, turned to the screen's colours as it is drawn: in a water mirror it stays linear, as the mist on the land does, the review)
+export function tickEdgeFog(t, away, fog) {
+  if (!LOOK) return;
+  U.x = t;
+  U.y = away ? 0 : LOOK[0];
+  U.z = LOOK[1];
+  U.w = LOOK[2];
+  if (wall) {
+    wall.visible = !away;
+    col.copy(fog.color);
+  }
+} // (linear, turned to the screen's colours as it is drawn: in a water mirror it stays linear, as the mist on the land does, the review)

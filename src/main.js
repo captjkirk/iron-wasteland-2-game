@@ -1,9 +1,37 @@
 // Boot: renderer, world, environment, game loop, and the test hooks the headless check uses.
 import { tickEdgeFog, buildEdgeMist } from './edgefog.js'; // (first: it changes the shaders' fog step before any is built)
 import * as THREE from 'three';
-import { CAMP, CHARS, BIOME, Q, QUALITY, QUALITY_KEY, setQuality, WATER_Y, HALF, SEED_TEXT, params, cleanSeed, JOINER } from './config.js';
+import {
+  CAMP,
+  CHARS,
+  BIOME,
+  Q,
+  QUALITY,
+  QUALITY_KEY,
+  setQuality,
+  WATER_Y,
+  HALF,
+  SEED_TEXT,
+  params,
+  cleanSeed,
+  JOINER,
+} from './config.js';
 import { places } from './places.js';
-import { groundY, findBiome, seeds, river, lakes, biomeAt, forestAt, slopeAt, canyonAt, PASSES, SHAPE, LEAN, reachable } from './world.js';
+import {
+  groundY,
+  findBiome,
+  seeds,
+  river,
+  lakes,
+  biomeAt,
+  forestAt,
+  slopeAt,
+  canyonAt,
+  PASSES,
+  SHAPE,
+  LEAN,
+  reachable,
+} from './world.js';
 import { buildTerrain, edgeLand } from './terrain.js';
 import { buildEnvironment, FOG_COLOR } from './environment.js';
 import { buildBog, localFog } from './bog.js';
@@ -11,7 +39,16 @@ import { markExplored, fogReach, exploredStats } from './explore.js';
 import { buildDeepWater, S as deepShadow } from './water.js';
 import { buildProps, placed, nearColliders, colR, standAt } from './props.js';
 import { buildCamp, tickCamp, campTent, fireCount, hasFlame } from './camp.js';
-import { buildBuildings, tickBuildings, buildings, caches, raiderCamps, ladders, larder, lampSpots } from './buildings.js';
+import {
+  buildBuildings,
+  tickBuildings,
+  buildings,
+  caches,
+  raiderCamps,
+  ladders,
+  larder,
+  lampSpots,
+} from './buildings.js';
 import { snapFrame, logEvent, frameTime, playlogState } from './playlog.js';
 import { tickWatch, checkCrates, checkMsg, solidAt } from './watch.js';
 import { updateScatter, scatterStats } from './scatter.js';
@@ -30,12 +67,64 @@ import { day, nightK, DAY_S, setDay } from './daynight.js';
 import { buildWeather, tickWeather } from './weather.js';
 import { fireflyStats } from './fireflies.js';
 import { RECIPES } from './recipes.js';
-import { startBuild, placeNow, endBuild, building, rotateBuild, damageBuilt, toggleGate, tearTarget, repairTarget, pieceBars, refundOf, clearBuilt, wallAhead, PIECE, putPiece } from './build.js';
+import {
+  startBuild,
+  placeNow,
+  endBuild,
+  building,
+  rotateBuild,
+  damageBuilt,
+  toggleGate,
+  tearTarget,
+  repairTarget,
+  pieceBars,
+  refundOf,
+  clearBuilt,
+  wallAhead,
+  PIECE,
+  putPiece,
+} from './build.js';
 import { ammo, clipSize } from './supplies.js';
 import { felled, fell, harvestTarget, saplingStats } from './harvest.js';
 import { tickTorch, torchLights, torchBar } from './torch.js';
 import { quiver, stuckArrows } from './arrows.js';
-import { warmCreatures, pickups, initGame, hurtPlayer, gotPickup, selected, liveShots, spreadAt, upgraded, aimGround, togglePause, startGame, setCam, update, placeCamera, hud, menuPad, isRunning, worldWaits, getCamMode, player, enemies, spawnEnemy, spawnAround, attack, teleport, creatureCollide, look, hitEnemy, press, secondary, turrets, dropLoot, spawnPack, gameOver } from './game.js';
+import {
+  warmCreatures,
+  pickups,
+  initGame,
+  hurtPlayer,
+  gotPickup,
+  selected,
+  liveShots,
+  spreadAt,
+  upgraded,
+  aimGround,
+  togglePause,
+  startGame,
+  setCam,
+  update,
+  placeCamera,
+  hud,
+  menuPad,
+  isRunning,
+  worldWaits,
+  getCamMode,
+  player,
+  enemies,
+  spawnEnemy,
+  spawnAround,
+  attack,
+  teleport,
+  creatureCollide,
+  look,
+  hitEnemy,
+  press,
+  secondary,
+  turrets,
+  dropLoot,
+  spawnPack,
+  gameOver,
+} from './game.js';
 import * as spiders from './spiders.js';
 import { buildRelics, relics, altar, stats as relicStats, state as relicState, applyRelics } from './relics.js'; // #53
 import { buildCaves, caveScene, caveDark, caveLights, caveHere, caveFade, caves, caveAt, caveCam } from './caves.js'; // #8
@@ -43,33 +132,78 @@ import { caveDepth, beyond } from './cavemap.js';
 
 const status = document.getElementById('loading');
 const renderer = new THREE.WebGLRenderer({ antialias: Q.antialias, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(devicePixelRatio, Q.pixelRatio)); renderer.setSize(innerWidth, innerHeight);
-renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.62;
+renderer.setPixelRatio(Math.min(devicePixelRatio, Q.pixelRatio));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.62;
 renderer.localClippingEnabled = true; // buildings cut away round the player indoors (buildings.js)
-renderer.shadowMap.enabled = Q.shadows; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.enabled = Q.shadows;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.prepend(renderer.domElement);
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, Q.drawDist); scene.add(camera);
+const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, Q.drawDist);
+scene.add(camera);
 
 // quality picker on the menu (a change reloads the page, since antialiasing is fixed at start)
-const qrow = document.getElementById('quality'); document.documentElement.dataset.q = QUALITY_KEY; // (Low draws the panels without blur: index.html)
-for (const [k, v] of Object.entries(QUALITY)) { const b = document.createElement('button'); b.textContent = v.label; b.type = 'button'; b.className = 'q' + (k === QUALITY_KEY ? ' on' : ''); b.setAttribute('aria-pressed', String(k === QUALITY_KEY));
-  b.onclick = () => { if (k !== QUALITY_KEY) { logEvent('quality', { from: QUALITY_KEY, to: k }); setQuality(k); } }; qrow.appendChild(b); }
+const qrow = document.getElementById('quality');
+document.documentElement.dataset.q = QUALITY_KEY; // (Low draws the panels without blur: index.html)
+for (const [k, v] of Object.entries(QUALITY)) {
+  const b = document.createElement('button');
+  b.textContent = v.label;
+  b.type = 'button';
+  b.className = 'q' + (k === QUALITY_KEY ? ' on' : '');
+  b.setAttribute('aria-pressed', String(k === QUALITY_KEY));
+  b.onclick = () => {
+    if (k !== QUALITY_KEY) {
+      logEvent('quality', { from: QUALITY_KEY, to: k });
+      setQuality(k);
+    }
+  };
+  qrow.appendChild(b);
+}
 
 // the world's seed (slice 13c): its name on the menu and the pause screen; New world rolls another, a typed name plays that one
-{ const name = document.getElementById('seedname'), inp = document.getElementById('seedin'), play = document.getElementById('playseed');
-  name.textContent = SEED_TEXT; document.getElementById('pauseworld').innerHTML = `World <b>${SEED_TEXT}</b> · type its name on the start menu to play it again`;
-  const go = (t) => { logEvent('world-pick', { from: SEED_TEXT, to: t || 'random' }); if (t) { params.set('seed', t); params.set('keep', '1'); } else { params.delete('seed'); params.delete('keep'); } location.search = params.toString(); };
+{
+  const name = document.getElementById('seedname'),
+    inp = document.getElementById('seedin'),
+    play = document.getElementById('playseed');
+  name.textContent = SEED_TEXT;
+  document.getElementById('pauseworld').innerHTML =
+    `World <b>${SEED_TEXT}</b> · type its name on the start menu to play it again`;
+  const go = (t) => {
+    logEvent('world-pick', { from: SEED_TEXT, to: t || 'random' });
+    if (t) {
+      params.set('seed', t);
+      params.set('keep', '1');
+    } else {
+      params.delete('seed');
+      params.delete('keep');
+    }
+    location.search = params.toString();
+  };
   // what this world is like: the two lands it leans toward (world.js), or the classic world
-  const like = LEAN.length ? `Mostly ${BIOME[LEAN[0]].label} and ${BIOME[LEAN[1]].label}. ` : 'The classic world. ', note = document.getElementById('seednote');
+  const like = LEAN.length ? `Mostly ${BIOME[LEAN[0]].label} and ${BIOME[LEAN[1]].label}. ` : 'The classic world. ',
+    note = document.getElementById('seednote');
   note.textContent = like + note.textContent;
-  if (JOINER) { document.getElementById('seedtools').remove(); note.textContent = like + 'The host\'s world: every game that joins builds the same one.'; }
-  else { document.getElementById('newworld').onclick = () => go(null);
-    inp.addEventListener('input', () => { play.disabled = !cleanSeed(inp.value) || cleanSeed(inp.value) === SEED_TEXT; });
+  if (JOINER) {
+    document.getElementById('seedtools').remove();
+    note.textContent = like + "The host's world: every game that joins builds the same one.";
+  } else {
+    document.getElementById('newworld').onclick = () => go(null);
+    inp.addEventListener('input', () => {
+      play.disabled = !cleanSeed(inp.value) || cleanSeed(inp.value) === SEED_TEXT;
+    });
     // (the menu's own keys, 1 to 5 and Enter, must not fire while a name is typed)
     // (Esc, Up and Down leave the box for the menu, so a keyboard is never trapped in it; Left and Right still edit the name)
-    inp.addEventListener('keydown', (e) => { if (/^(Escape|ArrowUp|ArrowDown)$/.test(e.code)) return leaveSeedBox(e); e.stopPropagation(); if (e.key === 'Enter' && !play.disabled) go(cleanSeed(inp.value)); });
-    inp.addEventListener('keyup', (e) => e.stopPropagation()); play.onclick = () => go(cleanSeed(inp.value)); } }
+    inp.addEventListener('keydown', (e) => {
+      if (/^(Escape|ArrowUp|ArrowDown)$/.test(e.code)) return leaveSeedBox(e);
+      e.stopPropagation();
+      if (e.key === 'Enter' && !play.disabled) go(cleanSeed(inp.value));
+    });
+    inp.addEventListener('keyup', (e) => e.stopPropagation());
+    play.onclick = () => go(cleanSeed(inp.value));
+  }
+}
 const env = buildEnvironment(scene, renderer, camera);
 const charsLoading = Promise.all([loadCharacters(), loadCreatures()]); // in parallel with the terrain and trees
 status.textContent = 'Loading terrain textures…';
@@ -77,101 +211,498 @@ status.textContent = 'Loading terrain textures…';
 // against the host's 2 s, and the log could not say where the time went (the gate of slice 12)
 // code: when the last code file arrived (Zach's Mac spent 26 to 28 s before boot, an M1 2.4 s: this says whether that is
 // fetching the code or running it, slice 13a)
-const stages = { code: Math.round(Math.max(0, ...performance.getEntriesByType('resource').filter(e => /\.m?js(\?|$)/.test(e.name)).map(e => e.responseEnd))), boot: Math.round(performance.now()) }, stage = (k) => { stages[k] = Math.round(performance.now()); };
-await buildTerrain(scene, renderer); buildEdgeMist(scene); stage('terrain');
-await buildProps(scene, renderer, (t) => status.textContent = t); stage('props');
-buildGrass(scene); buildBog(scene, env.normals); buildDeepWater(scene, env.normals); buildWeather(scene); await buildCamp(scene); await buildBuildings(scene); buildCaves(scene); buildRelics(scene); stage('world');
-await charsLoading; stage('chars');
-initGame({ scene, camera, renderer, env }); initPortraits(scene); stage('init');
-await warmCreatures(); stage('warm'); // (issue #44: every creature's shaders compiled now, not on its first sight in play)
+const stages = {
+    code: Math.round(
+      Math.max(
+        0,
+        ...performance
+          .getEntriesByType('resource')
+          .filter((e) => /\.m?js(\?|$)/.test(e.name))
+          .map((e) => e.responseEnd),
+      ),
+    ),
+    boot: Math.round(performance.now()),
+  },
+  stage = (k) => {
+    stages[k] = Math.round(performance.now());
+  };
+await buildTerrain(scene, renderer);
+buildEdgeMist(scene);
+stage('terrain');
+await buildProps(scene, renderer, (t) => (status.textContent = t));
+stage('props');
+buildGrass(scene);
+buildBog(scene, env.normals);
+buildDeepWater(scene, env.normals);
+buildWeather(scene);
+await buildCamp(scene);
+await buildBuildings(scene);
+buildCaves(scene);
+buildRelics(scene);
+stage('world');
+await charsLoading;
+stage('chars');
+initGame({ scene, camera, renderer, env });
+initPortraits(scene);
+stage('init');
+await warmCreatures();
+stage('warm'); // (issue #44: every creature's shaders compiled now, not on its first sight in play)
 // the offline cache (sw.js) keeps everything this load fetched, the CDN's Three.js too (slice 13a)
-navigator.serviceWorker?.ready.then(r => r.active?.postMessage(performance.getEntriesByType('resource').map(e => e.name)));
-bindTour(); status.textContent = ''; document.getElementById('go').disabled = false; document.getElementById('title-go').disabled = false; document.getElementById('title-go').focus({ preventScroll: true });
+navigator.serviceWorker?.ready.then((r) =>
+  r.active?.postMessage(performance.getEntriesByType('resource').map((e) => e.name)),
+);
+bindTour();
+status.textContent = '';
+document.getElementById('go').disabled = false;
+document.getElementById('title-go').disabled = false;
+document.getElementById('title-go').focus({ preventScroll: true });
 // LAN co-op (slice 10): the menu says how to play together
 // this page was reloaded to build the host's world (coop.js), or a new world after a game over (game.js): walk out as asked
-netReady.then(() => { const el = document.getElementById('netinfo');
-  let again = null, fell = null; try { again = sessionStorage.getItem('iw2.rejoin'); fell = JSON.parse(sessionStorage.getItem('iw2.fallen')); sessionStorage.removeItem('iw2.rejoin'); sessionStorage.removeItem('iw2.fallen'); } catch { /* no storage: press JOIN again */ }
-  if (fell) { const f = document.getElementById('fallen'); f.classList.remove('hidden'); f.querySelector('h2').textContent = fell[0]; f.querySelector('p').textContent = fell[1]; } // (the last game's result, carried over)
-  if (again !== null && CHARS[+again]) { armTour(); startGame(+again); } // (#16: the walk-out that reloaded this page keeps its first-time tour)
-  if (!net.role) return; el.classList.remove('hidden');
+netReady.then(() => {
+  const el = document.getElementById('netinfo');
+  let again = null,
+    fell = null;
+  try {
+    again = sessionStorage.getItem('iw2.rejoin');
+    fell = JSON.parse(sessionStorage.getItem('iw2.fallen'));
+    sessionStorage.removeItem('iw2.rejoin');
+    sessionStorage.removeItem('iw2.fallen');
+  } catch {
+    /* no storage: press JOIN again */
+  }
+  if (fell) {
+    const f = document.getElementById('fallen');
+    f.classList.remove('hidden');
+    f.querySelector('h2').textContent = fell[0];
+    f.querySelector('p').textContent = fell[1];
+  } // (the last game's result, carried over)
+  if (again !== null && CHARS[+again]) {
+    armTour();
+    startGame(+again);
+  } // (#16: the walk-out that reloaded this page keeps its first-time tour)
+  if (!net.role) return;
+  el.classList.remove('hidden');
   // this page was reloaded to build the host's world (coop.js): join as the player already asked
-  if (net.role === 'join') { el.textContent = `Playing together: this joins the game hosted at ${location.host}.`; }
-  else el.textContent = net.info.lan ? `Play together: on the family's other computers, open ${net.info.addr} in a browser and press JOIN.` : 'Play together on the home network: start the server with  python3 scripts/serve.py --lan'; }); logEvent('loaded', { seed: SEED_TEXT, quality: QUALITY_KEY, ms: Math.round(performance.now()), w: innerWidth, h: innerHeight, ...device(), stages });
+  if (net.role === 'join') {
+    el.textContent = `Playing together: this joins the game hosted at ${location.host}.`;
+  } else
+    el.textContent = net.info.lan
+      ? `Play together: on the family's other computers, open ${net.info.addr} in a browser and press JOIN.`
+      : 'Play together on the home network: start the server with  python3 scripts/serve.py --lan';
+});
+logEvent('loaded', {
+  seed: SEED_TEXT,
+  quality: QUALITY_KEY,
+  ms: Math.round(performance.now()),
+  w: innerWidth,
+  h: innerHeight,
+  ...device(),
+  stages,
+});
 // which graphics chip and screen this is, and how many pixels each frame draws (the play log's loaded event)
-function device() { const gl = renderer.getContext(), x = gl.getExtension('WEBGL_debug_renderer_info');
-  return { gpu: String(x ? gl.getParameter(x.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)), dpr: devicePixelRatio, pr: renderer.getPixelRatio(), px: `${renderer.domElement.width}x${renderer.domElement.height}`, cores: navigator.hardwareConcurrency || 0 }; }
+function device() {
+  const gl = renderer.getContext(),
+    x = gl.getExtension('WEBGL_debug_renderer_info');
+  return {
+    gpu: String(x ? gl.getParameter(x.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)),
+    dpr: devicePixelRatio,
+    pr: renderer.getPixelRatio(),
+    px: `${renderer.domElement.width}x${renderer.domElement.height}`,
+    cores: navigator.hardwareConcurrency || 0,
+  };
+}
 // automatic render scale (the gate of slice 12: a family MacBook played at 21 fps on Medium and 25 to 35 on Low): while
 // a game runs under 28 fps for 5 s, each frame draws 15% fewer pixels across, down to 60% of the preset's; the log notes each step
-let scale = 1, slowRun = 0; const baseRatio = renderer.getPixelRatio();
-function autoScale(dt) { if (navigator.webdriver || !isRunning() || fps <= 0) return; slowRun = fps < 28 ? slowRun + dt : 0; if (slowRun < 5 || scale < 0.62) return;
-  slowRun = 0; scale = Math.max(0.6, scale * 0.85); renderer.setPixelRatio(baseRatio * scale); renderer.setSize(innerWidth, innerHeight); logEvent('res-scale', { scale: +scale.toFixed(2), fps, px: `${renderer.domElement.width}x${renderer.domElement.height}` }); }
+let scale = 1,
+  slowRun = 0;
+const baseRatio = renderer.getPixelRatio();
+function autoScale(dt) {
+  if (navigator.webdriver || !isRunning() || fps <= 0) return;
+  slowRun = fps < 28 ? slowRun + dt : 0;
+  if (slowRun < 5 || scale < 0.62) return;
+  slowRun = 0;
+  scale = Math.max(0.6, scale * 0.85);
+  renderer.setPixelRatio(baseRatio * scale);
+  renderer.setSize(innerWidth, innerHeight);
+  logEvent('res-scale', {
+    scale: +scale.toFixed(2),
+    fps,
+    px: `${renderer.domElement.width}x${renderer.domElement.height}`,
+  });
+}
 
 // the raider camps' fires (the camp's own fire has its own light, camp.js)
-let CF = null; const campFires = () => CF ||= raiderCamps.map(c => ({ x: c.x, y: groundY(c.x, c.z) + 0.4, z: c.z, key: 'campfire' }));
+let CF = null;
+const campFires = () =>
+  (CF ||= raiderCamps.map((c) => ({ x: c.x, y: groundY(c.x, c.z) + 0.4, z: c.z, key: 'campfire' })));
 
 // ── Loop ──
 const BRIGHT = Math.max(0.5, Math.min(4, +new URLSearchParams(location.search).get('bright') || 1));
-let nextFrameAt = 0, last = performance.now(), frames = 0, fpsT = 0, fps = 0, clock = 0, rendered = 0, freeCam = null;
+let nextFrameAt = 0,
+  last = performance.now(),
+  frames = 0,
+  fpsT = 0,
+  fps = 0,
+  clock = 0,
+  rendered = 0,
+  freeCam = null;
 const menuCam = { a: 2.2 };
 function frame(now) {
   requestAnimationFrame(frame);
   // slice 21 (Jared, 2026-11-14: "my computer is getting really warm as I play"; his 120 Hz screen drew up to 120 frames a
   // second): at most about 60 a second; a skipped tick costs nothing. A 30 a second battery saver is #34's
   // (review: a fixed 16 ms floor halved 75 and 90 Hz screens; a running deadline keeps any rate near 60)
-  if (now < nextFrameAt - 2) return; nextFrameAt = Math.max(nextFrameAt + 1000 / 60, now - 1000 / 60);
-  frameTime(now - last, isRunning()); const dt = Math.max(0, Math.min(0.05, (now - last) / 1000)); last = now; clock += dt;
-  frames++; fpsT += dt; if (fpsT > 0.5) { fps = Math.round(frames / fpsT); frames = 0; fpsT = 0; }
+  if (now < nextFrameAt - 2) return;
+  nextFrameAt = Math.max(nextFrameAt + 1000 / 60, now - 1000 / 60);
+  frameTime(now - last, isRunning());
+  const dt = Math.max(0, Math.min(0.05, (now - last) / 1000));
+  last = now;
+  clock += dt;
+  frames++;
+  fpsT += dt;
+  if (fpsT > 0.5) {
+    fps = Math.round(frames / fpsT);
+    frames = 0;
+    fpsT = 0;
+  }
   hintsTick(); // #16: the hints outside play follow the keyboard or the pad, whichever was used last
-  if (isRunning()) { update(dt, clock); placeCamera(dt); caveCam(camera, player, getCamMode()); /* #8 */ hud(fps, dt); autoScale(dt); }
-  else { menuPad(); if (menuStep() === 'chars') drawPortraits(renderer, dt, selected()); // (only while the carousel shows)
-    menuCam.a += dt * 0.03; const x = 20 + Math.cos(menuCam.a) * 150, z = Math.sin(menuCam.a) * 150;
-    camera.position.set(x, Math.max(groundY(x, z), WATER_Y) + 55, z); camera.lookAt(40, 8, 0); env.follow(new THREE.Vector3(40, groundY(40, 0), 0)); }
-  if (freeCam) { camera.position.copy(freeCam.pos); camera.lookAt(freeCam.target); camera.fov = freeCam.fov; camera.updateProjectionMatrix(); env.follow(freeCam.target); }
+  if (isRunning()) {
+    update(dt, clock);
+    placeCamera(dt);
+    caveCam(camera, player, getCamMode());
+    /* #8 */ hud(fps, dt);
+    autoScale(dt);
+  } else {
+    menuPad();
+    if (menuStep() === 'chars') drawPortraits(renderer, dt, selected()); // (only while the carousel shows)
+    menuCam.a += dt * 0.03;
+    const x = 20 + Math.cos(menuCam.a) * 150,
+      z = Math.sin(menuCam.a) * 150;
+    camera.position.set(x, Math.max(groundY(x, z), WATER_Y) + 55, z);
+    camera.lookAt(40, 8, 0);
+    env.follow(new THREE.Vector3(40, groundY(40, 0), 0));
+  }
+  if (freeCam) {
+    camera.position.copy(freeCam.pos);
+    camera.lookAt(freeCam.target);
+    camera.fov = freeCam.fov;
+    camera.updateProjectionMatrix();
+    env.follow(freeCam.target);
+  }
   // slice 13: the hour lights the world: sky, sun or moon, fog, the far trees; fires and torches light the night
   const dk = Math.max(nightK(), caveDark()); // (#8: a cave is as dark as night: eyes shine, fires and torches light it fully)
-  env.setTime(day.t); eyeShine(dk); tickTorch(isRunning() && !worldWaits() ? dt : 0, camera, isRunning() && getCamMode() === 'first', dk); env.fireLights(isRunning() ? [...torchLights(), ...lightSpots(), ...campFires(), ...caveLights(), ...lampSpots()] : [], camera, dk, clock);
-  localFog(scene.fog, FOG_COLOR, env.fogNear, env.fogFar, camera.position.x, camera.position.z); scene.fog.color.multiply(env.fogTint);
-  if (isRunning() && !caveHere()) { markExplored(player.x, player.z); const r = fogReach(camera.position.x, camera.position.z, dt); scene.fog.near *= 0.2 + 0.8 * r; scene.fog.far *= r; } // (#19 part 1: unseen ground is foggier)
-  { const nk = nightK(), f = scene.fog; f.near += (Math.min(f.near, 10) - f.near) * nk; f.far += (Math.min(f.far, 150) - f.far) * nk; } // the night closes in (the owner: "view distance = less at night")
+  env.setTime(day.t);
+  eyeShine(dk);
+  tickTorch(isRunning() && !worldWaits() ? dt : 0, camera, isRunning() && getCamMode() === 'first', dk);
+  env.fireLights(
+    isRunning() ? [...torchLights(), ...lightSpots(), ...campFires(), ...caveLights(), ...lampSpots()] : [],
+    camera,
+    dk,
+    clock,
+  );
+  localFog(scene.fog, FOG_COLOR, env.fogNear, env.fogFar, camera.position.x, camera.position.z);
+  scene.fog.color.multiply(env.fogTint);
+  if (isRunning() && !caveHere()) {
+    markExplored(player.x, player.z);
+    const r = fogReach(camera.position.x, camera.position.z, dt);
+    scene.fog.near *= 0.2 + 0.8 * r;
+    scene.fog.far *= r;
+  } // (#19 part 1: unseen ground is foggier)
+  {
+    const nk = nightK(),
+      f = scene.fog;
+    f.near += (Math.min(f.near, 10) - f.near) * nk;
+    f.far += (Math.min(f.far, 150) - f.far) * nk;
+  } // the night closes in (the owner: "view distance = less at night")
   tickWeather((day.n + day.t) * DAY_S, camera.position, scene.fog, nightK(), env.haze);
-  const under = player.under && camera.position.y < WATER_Y; if (under) { scene.fog.color.set(0x0a262b).multiply(env.fogTint); scene.fog.near = 0.5; scene.fog.far = 20; } document.body.classList.toggle('under', under); deepShadow.camUnder = under; // under the surface
+  const under = player.under && camera.position.y < WATER_Y;
+  if (under) {
+    scene.fog.color.set(0x0a262b).multiply(env.fogTint);
+    scene.fog.near = 0.5;
+    scene.fog.far = 20;
+  }
+  document.body.classList.toggle('under', under);
+  deepShadow.camUnder = under; // under the surface
   caveScene(scene, env, camera, isRunning()); // #8: inside a cave, no sun, sky or weather
   if (caveHere()) renderer.toneMappingExposure = 0.95; // (#8, D6: in a cave the eye opens up to the dark: "SOME light")
   renderer.toneMappingExposure *= BRIGHT; // (D6: ?bright=2 for looking at caves while building them; never set in play)
-  wind.value = clock; if (!caveHere()) { updateScatter(camera.position); updateGrass(camera.position); } // (#8: none of it grows in a cave)
+  wind.value = clock;
+  if (!caveHere()) {
+    updateScatter(camera.position);
+    updateGrass(camera.position);
+  } // (#8: none of it grows in a cave)
   tickBuildings(camera.position, player.x, player.z, player.y, isRunning() && getCamMode() === 'first' && !freeCam);
   if (isRunning()) tickTracks(scene, clock, everyone(), enemies, camera.position); // (slice 43: prints on the ground)
-  env.tick(dt); tickCamp(dt, clock); if (edgeLand) edgeLand.visible = !beyond(camera.position.z); tickEdgeFog((day.n + day.t) * DAY_S, beyond(camera.position.z), scene.fog); renderer.render(scene, camera); snapFrame(renderer.domElement); rendered++;
+  env.tick(dt);
+  tickCamp(dt, clock);
+  if (edgeLand) edgeLand.visible = !beyond(camera.position.z);
+  tickEdgeFog((day.n + day.t) * DAY_S, beyond(camera.position.z), scene.fog);
+  renderer.render(scene, camera);
+  snapFrame(renderer.domElement);
+  rendered++;
 }
 requestAnimationFrame(frame);
 // slice 21 (#60; Jared's logs of 2026-11-14: his game was hidden 12 times while he answered Claude, and each time the world stood
 // still for Zachary): a hidden window gets no frames, so while a host's window is hidden with someone joined, a worker's
 // clock (not slowed in the background as page timers are) runs the world 20 times a second, undrawn
-let bgClock = null; try { bgClock = new Worker(URL.createObjectURL(new Blob(['setInterval(() => postMessage(0), 50)'], { type: 'text/javascript' }))); } catch { /* no workers here: a hidden host's world waits, as before */ }
-if (bgClock) bgClock.onmessage = () => { const now = performance.now(); if (!document.hidden || !coop() || joining() || !isRunning() || now - last < 40) return;
-  const dt = Math.max(0, Math.min(0.05, (now - last) / 1000)); last = now; clock += dt; update(dt, clock); };
-const fit = () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); };
-addEventListener('resize', fit); fit(); // (and once now: a window resized while the world was building drew in a corner until the next resize, Jared, 2026-11-15)
+let bgClock = null;
+try {
+  bgClock = new Worker(
+    URL.createObjectURL(new Blob(['setInterval(() => postMessage(0), 50)'], { type: 'text/javascript' })),
+  );
+} catch {
+  /* no workers here: a hidden host's world waits, as before */
+}
+if (bgClock)
+  bgClock.onmessage = () => {
+    const now = performance.now();
+    if (!document.hidden || !coop() || joining() || !isRunning() || now - last < 40) return;
+    const dt = Math.max(0, Math.min(0.05, (now - last) / 1000));
+    last = now;
+    clock += dt;
+    update(dt, clock);
+  };
+const fit = () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+};
+addEventListener('resize', fit);
+fit(); // (and once now: a window resized while the world was building drew in a corner until the next resize, Jared, 2026-11-15)
 
 // Test hooks for the headless check (scripts/shots.js): not used by play.
-window.__iw = { relics: { list: relics, altar, state: relicState, apply: applyRelics, get hunts() { return relicStats.hunts; } }, /* #53 */ caveLights, torchBar, gameOver, caves, caveAt, caveHere, caveFade, caveDepth, caveLook: () => ({ sky: env.sky.visible, sun: env.sun.intensity, fogFar: scene.fog.far, fogDark: Math.max(scene.fog.color.r, scene.fog.color.g, scene.fog.color.b) < 0.1, /* (a cave's haze: dark, tinted) */ ibl: scene.environmentIntensity, far: camera.far }), /* #8 */ tracks: { stats: trackStats, groundOf, mesh: tracksMesh, fill: fillTracks }, /* slice 43 */ selected, larder, /* places round 2 */ portraits: portraitStats, get rules() { return rules; }, /* the start menu (menu.js) */ fireflies: fireflyStats, explored: exploredStats, others, net, built, deliver, /* the gate of slice 12 */ logEvent, playlogState, tickWatch, checkCrates, checkMsg, solidAt, pickups, HALF, /* slice 13d */
+window.__iw = {
+  relics: {
+    list: relics,
+    altar,
+    state: relicState,
+    apply: applyRelics,
+    get hunts() {
+      return relicStats.hunts;
+    },
+  },
+  /* #53 */ caveLights,
+  torchBar,
+  gameOver,
+  caves,
+  caveAt,
+  caveHere,
+  caveFade,
+  caveDepth,
+  caveLook: () => ({
+    sky: env.sky.visible,
+    sun: env.sun.intensity,
+    fogFar: scene.fog.far,
+    fogDark: Math.max(scene.fog.color.r, scene.fog.color.g, scene.fog.color.b) < 0.1,
+    /* (a cave's haze: dark, tinted) */ ibl: scene.environmentIntensity,
+    far: camera.far,
+  }),
+  /* #8 */ tracks: { stats: trackStats, groundOf, mesh: tracksMesh, fill: fillTracks },
+  /* slice 43 */ selected,
+  larder,
+  /* places round 2 */ portraits: portraitStats,
+  get rules() {
+    return rules;
+  },
+  /* the start menu (menu.js) */ fireflies: fireflyStats,
+  explored: exploredStats,
+  others,
+  net,
+  built,
+  deliver,
+  /* the gate of slice 12 */ logEvent,
+  playlogState,
+  tickWatch,
+  checkCrates,
+  checkMsg,
+  solidAt,
+  pickups,
+  HALF /* slice 13d */,
   // a build recipe opens build mode; for the checks, craft() of one places it at once where the ghost stands (slice 12)
-  craft: (key) => { const r = RECIPES.find(q => q.key === key); if (r.type !== 'build') return craft(r); if (!craft(r)) return false; const ok = placeNow(); endBuild(); return ok; },
-  lightSpots: () => [...torchLights(), ...lightSpots()], fireCount, hasFlame, saplingStats, setDay, /* slice 26 */ startBuild: (key) => startBuild(RECIPES.find(q => q.key === key)), placeNow, endBuild, building, rotateBuild, damageBuilt, toggleGate, tearTarget, repairTarget, pieceBars, refundOf, clearBuilt, wallAhead, PIECE, putPiece, liveShots, ammo, clipSize, gotPickup, spreadAt, upgraded, aimGround, /* slice 12 */ toggleCraft, craftOpen, placeSpot, sleep, bedNear, bedRespawn, felled, fell, harvestTarget, quiver, stuckArrows, // slice 11
-   hurtPlayer, get running() { return isRunning(); }, togglePause, renderer, scene, camera, startGame, player, setCam, attack, secondary, turrets, dropLoot, spawnEnemy, enemies, hitEnemy, seeds, river, lakes, findBiome, teleport, creatureCollide, look, groundY, quality: QUALITY_KEY,
-  get rendered() { return rendered; },
-  get state() { return { x: +player.x.toFixed(1), z: +player.z.toFixed(1), y: +player.y.toFixed(1), hp: player.hp, cam: getCamMode(), enemies: enemies.length, fps, biome: biomeAt(player.x, player.z),
-    props: Object.fromEntries(Object.entries(placed).map(([k, v]) => [k, v.length])), calls: renderer.info.render.calls, tris: renderer.info.render.triangles }; },
-  places, /* slice 23 */ spiders, spawnPack, /* slice 22 */
-  seed: SEED_TEXT, SHAPE, LEAN, reachable, /* slice 13c */ placed, PASSES, CAMP, canyonAt, day, nightK, DAY_S, /* slice 13 */ press, nearColliders, colR, slopeAt, buildings, caches, raiderCamps, ladders, standAt, deepShadow,
-  spawnAround, /* round 4 */ seed: SEED_TEXT, SHAPE, LEAN, reachable, /* slice 13c */ placed, PASSES, CAMP, campTent, /* #60 */ canyonAt, day, nightK, DAY_S, /* slice 13 */ press, nearColliders, colR, slopeAt, buildings, caches, raiderCamps, ladders, standAt, deepShadow,
-  findCanyon() { let best = null, bd = 1e9; // the nearest stretch of canyon floor
-    for (let z = -440; z < 440; z += 4) for (let x = -440; x < 440; x += 4) { if (canyonAt(x, z) < 0.92 || groundY(x, z) < WATER_Y + 1) continue; const d = Math.hypot(x, z); if (d < bd) { bd = d; best = { x, z }; } } return best; },
-  findForest() { let best = null, bd = 1e9; // a walkable spot inside a grass-biome forest, nearest the spawn
-    for (let z = -400; z < 400; z += 6) for (let x = -400; x < 400; x += 6) { if (biomeAt(x, z) !== 'grass' || forestAt(x, z) < 0.85 || groundY(x, z) < WATER_Y + 1 || slopeAt(x, z) > 0.3) continue;
-      const d = Math.hypot(x, z); if (d < bd) { bd = d; best = { x, z }; } } return best; },
+  craft: (key) => {
+    const r = RECIPES.find((q) => q.key === key);
+    if (r.type !== 'build') return craft(r);
+    if (!craft(r)) return false;
+    const ok = placeNow();
+    endBuild();
+    return ok;
+  },
+  lightSpots: () => [...torchLights(), ...lightSpots()],
+  fireCount,
+  hasFlame,
+  saplingStats,
+  setDay,
+  /* slice 26 */ startBuild: (key) => startBuild(RECIPES.find((q) => q.key === key)),
+  placeNow,
+  endBuild,
+  building,
+  rotateBuild,
+  damageBuilt,
+  toggleGate,
+  tearTarget,
+  repairTarget,
+  pieceBars,
+  refundOf,
+  clearBuilt,
+  wallAhead,
+  PIECE,
+  putPiece,
+  liveShots,
+  ammo,
+  clipSize,
+  gotPickup,
+  spreadAt,
+  upgraded,
+  aimGround,
+  /* slice 12 */ toggleCraft,
+  craftOpen,
+  placeSpot,
+  sleep,
+  bedNear,
+  bedRespawn,
+  felled,
+  fell,
+  harvestTarget,
+  quiver,
+  stuckArrows, // slice 11
+  hurtPlayer,
+  get running() {
+    return isRunning();
+  },
+  togglePause,
+  renderer,
+  scene,
+  camera,
+  startGame,
+  player,
+  setCam,
+  attack,
+  secondary,
+  turrets,
+  dropLoot,
+  spawnEnemy,
+  enemies,
+  hitEnemy,
+  seeds,
+  river,
+  lakes,
+  findBiome,
+  teleport,
+  creatureCollide,
+  look,
+  groundY,
+  quality: QUALITY_KEY,
+  get rendered() {
+    return rendered;
+  },
+  get state() {
+    return {
+      x: +player.x.toFixed(1),
+      z: +player.z.toFixed(1),
+      y: +player.y.toFixed(1),
+      hp: player.hp,
+      cam: getCamMode(),
+      enemies: enemies.length,
+      fps,
+      biome: biomeAt(player.x, player.z),
+      props: Object.fromEntries(Object.entries(placed).map(([k, v]) => [k, v.length])),
+      calls: renderer.info.render.calls,
+      tris: renderer.info.render.triangles,
+    };
+  },
+  places,
+  /* slice 23 */ spiders,
+  spawnPack /* slice 22 */,
+  seed: SEED_TEXT,
+  SHAPE,
+  LEAN,
+  reachable,
+  /* slice 13c */ placed,
+  PASSES,
+  CAMP,
+  canyonAt,
+  day,
+  nightK,
+  DAY_S,
+  /* slice 13 */ press,
+  nearColliders,
+  colR,
+  slopeAt,
+  buildings,
+  caches,
+  raiderCamps,
+  ladders,
+  standAt,
+  deepShadow,
+  spawnAround,
+  /* round 4 */ seed: SEED_TEXT,
+  SHAPE,
+  LEAN,
+  reachable,
+  /* slice 13c */ placed,
+  PASSES,
+  CAMP,
+  campTent,
+  /* #60 */ canyonAt,
+  day,
+  nightK,
+  DAY_S,
+  /* slice 13 */ press,
+  nearColliders,
+  colR,
+  slopeAt,
+  buildings,
+  caches,
+  raiderCamps,
+  ladders,
+  standAt,
+  deepShadow,
+  findCanyon() {
+    let best = null,
+      bd = 1e9; // the nearest stretch of canyon floor
+    for (let z = -440; z < 440; z += 4)
+      for (let x = -440; x < 440; x += 4) {
+        if (canyonAt(x, z) < 0.92 || groundY(x, z) < WATER_Y + 1) continue;
+        const d = Math.hypot(x, z);
+        if (d < bd) {
+          bd = d;
+          best = { x, z };
+        }
+      }
+    return best;
+  },
+  findForest() {
+    let best = null,
+      bd = 1e9; // a walkable spot inside a grass-biome forest, nearest the spawn
+    for (let z = -400; z < 400; z += 6)
+      for (let x = -400; x < 400; x += 6) {
+        if (biomeAt(x, z) !== 'grass' || forestAt(x, z) < 0.85 || groundY(x, z) < WATER_Y + 1 || slopeAt(x, z) > 0.3)
+          continue;
+        const d = Math.hypot(x, z);
+        if (d < bd) {
+          bd = d;
+          best = { x, z };
+        }
+      }
+    return best;
+  },
   // a still creature at (x, z) facing yaw: idle, not wandering (for the lineup shots)
-  pose(type, x, z, yaw) { spawnEnemy(x, z, type); const e = enemies[enemies.length - 1]; e.posed = true; e.yaw = yaw; e.wander = 1e9; e.wmove = false; if (e.state === 'lurk') e.state = 'idle'; return e; },
-  get veg() { return { scatter: scatterStats(), grass: grassStats() }; },
-  view(px, py, pz, tx, ty, tz, fov = 60) { freeCam = px === null ? null : { pos: new THREE.Vector3(px, py, pz), target: new THREE.Vector3(tx, ty, tz), fov };
-    document.body.classList.toggle('freecam', !!freeCam); for (const c of camera.children) c.visible = !freeCam && getCamMode() === 'first'; } };
+  pose(type, x, z, yaw) {
+    spawnEnemy(x, z, type);
+    const e = enemies[enemies.length - 1];
+    e.posed = true;
+    e.yaw = yaw;
+    e.wander = 1e9;
+    e.wmove = false;
+    if (e.state === 'lurk') e.state = 'idle';
+    return e;
+  },
+  get veg() {
+    return { scatter: scatterStats(), grass: grassStats() };
+  },
+  view(px, py, pz, tx, ty, tz, fov = 60) {
+    freeCam = px === null ? null : { pos: new THREE.Vector3(px, py, pz), target: new THREE.Vector3(tx, ty, tz), fov };
+    document.body.classList.toggle('freecam', !!freeCam);
+    for (const c of camera.children) c.visible = !freeCam && getCamMode() === 'first';
+  },
+};

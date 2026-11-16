@@ -1,14 +1,59 @@
 // Gameplay from the prototype: player, enemies, loot, input (keyboard, mouse, gamepads), the three cameras and the HUD.
 import * as THREE from 'three';
-import { QUALITY_KEY, PX, params, HALF, WATER_Y, WAKE_RADIUS, CHARS, ENEMY, BIOME, SAFE_R, HIDE, WARN_T, CHARGE, CLOSE, RELIGHT, SPIT_GAP, EASY_CALM, PASS_N, PASS_OUT, CAMP } from './config.js';
+import {
+  QUALITY_KEY,
+  PX,
+  params,
+  HALF,
+  WATER_Y,
+  WAKE_RADIUS,
+  CHARS,
+  ENEMY,
+  BIOME,
+  SAFE_R,
+  HIDE,
+  WARN_T,
+  CHARGE,
+  CLOSE,
+  RELIGHT,
+  SPIT_GAP,
+  EASY_CALM,
+  PASS_N,
+  PASS_OUT,
+  CAMP,
+} from './config.js';
 import { campfire, campTent } from './camp.js';
-import { caches, raiderCamps, lampSpots, ladderAt, buildings, foodNear, foodName, takeFood, larder, FOOD_EACH } from './buildings.js';
+import {
+  caches,
+  raiderCamps,
+  lampSpots,
+  ladderAt,
+  buildings,
+  foodNear,
+  foodName,
+  takeFood,
+  larder,
+  FOOD_EACH,
+} from './buildings.js';
 import { tickDeep, resetDeep, ripple } from './water.js';
 import { day, tickDay, resetDay, nightK, isNight, phase } from './daynight.js';
 const DEEP_BITE = 20; // the lake serpent's bite (slice 13: 15 before, from the shadow)
 import { rng } from './noise.js';
 import { groundY, biomeAt, slopeAt, riverDist, PASSES } from './world.js';
-import { nearColliders, colR, placed, hideOccluders, addCollider, standAt, steps, STEP, rockCol, headroom, slabAcross, floorAt } from './props.js';
+import {
+  nearColliders,
+  colR,
+  placed,
+  hideOccluders,
+  addCollider,
+  standAt,
+  steps,
+  STEP,
+  rockCol,
+  headroom,
+  slabAcross,
+  floorAt,
+} from './props.js';
 import { markDirty } from './scatter.js';
 import { part, box, rockG, MAT, merged } from './models.js';
 import { buildCreature } from './creatures.js';
@@ -20,120 +65,456 @@ import { FINDS } from './cavemap.js'; // (a cave find's name and colour)
 import { startCaves, tickCaves, caveDark, caveLights } from './caves.js'; // #8
 import { startRelics, tickRelics, relicNear, relicPrompt, carryPrompt } from './relics.js'; // #53
 import { beyond, caveAt, caveDepth } from './cavemap.js';
-import { initEffects, tickEffects, hitBurst, splash, dustPuff, floatText, healthBars, hitMarker, buildLoot, nameTags } from './effects.js';
-import { unlockAudio, toggleMute, isMuted, sfx, setListener, windLevel, riverLevel, ambient, setMusicVolume, setMusicPaused, setMusicMode } from './audio.js';
+import {
+  initEffects,
+  tickEffects,
+  hitBurst,
+  splash,
+  dustPuff,
+  floatText,
+  healthBars,
+  hitMarker,
+  buildLoot,
+  nameTags,
+} from './effects.js';
+import {
+  unlockAudio,
+  toggleMute,
+  isMuted,
+  sfx,
+  setListener,
+  windLevel,
+  riverLevel,
+  ambient,
+  setMusicVolume,
+  setMusicPaused,
+  setMusicMode,
+} from './audio.js';
 import { W } from './weather.js';
 const BIOME_WIND = { tundra: 0.03, waste: 0.025, desert: 0.02 };
 import { buildCharacter, buildViewModel } from './characters.js';
 import { logEvent, tickLog, savePlayLog, startVideo, recording } from './playlog.js';
 import { tickWatch, watchStart, solidAt } from './watch.js';
 import { buildMenu, menuKey, showStep, moveFocus, padIn } from './menu.js';
-import { others, coop, joining, gone, nearestP, everyone, hurt, salvagedProp, ateFood, requestJoin, tickCoop, followHost, nextGame, freshWorld, net, send, clearOthers, rules, pvp, modeKey, modeName, RIVAL, level, LEVELS } from './coop.js';
-import { craftOpen, toggleCraft, craftKey, craftPad, renderMenu, bedNear, sleep, wake, tickSleep, bedRespawn, hasBed, fireSpots, benchNear, lightSpots } from './craft.js';
+import {
+  others,
+  coop,
+  joining,
+  gone,
+  nearestP,
+  everyone,
+  hurt,
+  salvagedProp,
+  ateFood,
+  requestJoin,
+  tickCoop,
+  followHost,
+  nextGame,
+  freshWorld,
+  net,
+  send,
+  clearOthers,
+  rules,
+  pvp,
+  modeKey,
+  modeName,
+  RIVAL,
+  level,
+  LEVELS,
+} from './coop.js';
+import {
+  craftOpen,
+  toggleCraft,
+  craftKey,
+  craftPad,
+  renderMenu,
+  bedNear,
+  sleep,
+  wake,
+  tickSleep,
+  bedRespawn,
+  hasBed,
+  fireSpots,
+  benchNear,
+  lightSpots,
+} from './craft.js';
 import { tickHarvest, harvestTarget, harvestName, harvestDoing, prepHarvest } from './harvest.js';
 import { quiver, useArrow, stick, dropFrom, tickArrows, clearArrows } from './arrows.js';
 import { torchWarm, carriedWarm, byFlame, torchOn, toggleTorch, FEARS_FIRE, torchLights } from './torch.js';
-import { building, buildKey, buildPad, placeNow, endBuild, rotateBuild, tickBuild, tickTear, tearTarget, tickRepair, repairTarget, fixCostText, fixGain, pieceName, refundOf, gateNear, toggleGate, wallAhead, fortSize, damageBuilt, pieceBars } from './build.js';
+import {
+  building,
+  buildKey,
+  buildPad,
+  placeNow,
+  endBuild,
+  rotateBuild,
+  tickBuild,
+  tickTear,
+  tearTarget,
+  tickRepair,
+  repairTarget,
+  fixCostText,
+  fixGain,
+  pieceName,
+  refundOf,
+  gateNear,
+  toggleGate,
+  wallAhead,
+  fortSize,
+  damageBuilt,
+  pieceBars,
+} from './build.js';
 import { built } from './craft.js';
 import { attachGear, eatPose } from './characters.js';
 import { startSpiders, tickSpiders, webSlow, spit, holdK, held } from './spiders.js';
 import { poison, tickPoison, clearPoison } from './poison.js';
 import { clearTracks } from './tracks.js';
 import { tourTick, capLine, kc, endTour } from './tour.js'; // #16: key caps and the first-time tour
-import { ammo, resetSupplies, tickSupplies, fought, useRound, useFlower, reload, addRounds, clipSize, foodCount, fireNear, HEAL, MAX_ROUNDS } from './supplies.js';
+import {
+  ammo,
+  resetSupplies,
+  tickSupplies,
+  fought,
+  useRound,
+  useFlower,
+  reload,
+  addRounds,
+  clipSize,
+  foodCount,
+  fireNear,
+  HEAL,
+  MAX_ROUNDS,
+} from './supplies.js';
 
 let scene, camera, renderer, env, viewModel;
-const muzzleFlash = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffd890, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false })); muzzleFlash.t = 0;
-export function initGame(ctx) { ({ scene, camera, renderer, env } = ctx); viewModel = new THREE.Group(); camera.add(viewModel); muzzleFlash.position.set(0.24, 0.03, -0.85); muzzleFlash.visible = false; camera.add(muzzleFlash); initEffects(scene, camera); initFireflies(scene); bindInput(); buildMenu(); bindSettings(); prepHarvest(); turretMats(); } // (the turret's textures load and are recoloured now, not at its first use)
+const muzzleFlash = new THREE.Mesh(
+  new THREE.SphereGeometry(0.05, 8, 6),
+  new THREE.MeshBasicMaterial({
+    color: 0xffd890,
+    transparent: true,
+    opacity: 0.95,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  }),
+);
+muzzleFlash.t = 0;
+export function initGame(ctx) {
+  ({ scene, camera, renderer, env } = ctx);
+  viewModel = new THREE.Group();
+  camera.add(viewModel);
+  muzzleFlash.position.set(0.24, 0.03, -0.85);
+  muzzleFlash.visible = false;
+  camera.add(muzzleFlash);
+  initEffects(scene, camera);
+  initFireflies(scene);
+  bindInput();
+  buildMenu();
+  bindSettings();
+  prepHarvest();
+  turretMats();
+} // (the turret's textures load and are recoloured now, not at its first use)
 
 export const enemies = [];
-let packN = 0, enemyN = 0;
+let packN = 0,
+  enemyN = 0;
 export function spawnEnemy(x, z, type, pack = ++packN, slot = 0, size = 1) {
-  const st = ENEMY[type], mesh = buildCreature(type); mesh.scale.setScalar(st.scale); mesh.position.set(x, groundY(x, z), z); scene.add(mesh);
+  const st = ENEMY[type],
+    mesh = buildCreature(type);
+  mesh.scale.setScalar(st.scale);
+  mesh.position.set(x, groundY(x, z), z);
+  scene.add(mesh);
   mesh.add(...threatMarks(type));
   const lurk = type === 'bog_lurker' && (biomeAt(x, z) === 'swamp' || groundY(x, z) < WATER_Y + 0.3); // (issue #44: on the Fungal Hollow's dry ground it roams in sight)
-  const e = { id: ++enemyN, type, mesh, x, z, hp: st.hp, maxHp: st.hp, vx: 0, vz: 0, yaw: rng() * 6.28, state: lurk ? 'lurk' : 'idle', wander: 0, atkT: 0, stag: 0, flashT: 0, dead: 0,
-    pack, slot, size, flank: (slot - (size - 1) / 2) * 0.85, circle: rng() < 0.5 ? 1 : -1, voiceT: 2 + rng() * 4, barT: 0, emT: 0, wT: 0, rT: 0 }; enemies.push(e);
-  if (mesh.userData.anim && 'ph' in mesh.userData.anim) mesh.userData.anim.ph = slot * 0.618034 % 1; // (a pack out of step: each its own point in the stride, by its place in the pack; creatures.js)
+  const e = {
+    id: ++enemyN,
+    type,
+    mesh,
+    x,
+    z,
+    hp: st.hp,
+    maxHp: st.hp,
+    vx: 0,
+    vz: 0,
+    yaw: rng() * 6.28,
+    state: lurk ? 'lurk' : 'idle',
+    wander: 0,
+    atkT: 0,
+    stag: 0,
+    flashT: 0,
+    dead: 0,
+    pack,
+    slot,
+    size,
+    flank: (slot - (size - 1) / 2) * 0.85,
+    circle: rng() < 0.5 ? 1 : -1,
+    voiceT: 2 + rng() * 4,
+    barT: 0,
+    emT: 0,
+    wT: 0,
+    rT: 0,
+  };
+  enemies.push(e);
+  if (mesh.userData.anim && 'ph' in mesh.userData.anim) mesh.userData.anim.ph = (slot * 0.618034) % 1; // (a pack out of step: each its own point in the stride, by its place in the pack; creatures.js)
   return e;
 }
 // slice 22 (#51): a pack of n of one kind set down round (x, z), one pack that wakes together; returns them (for #52's radio-tower
 // guards: set each one's `home` to keep them by the tower until they see someone, as the raiders keep to their camps)
-export function spawnPack(x, z, type, n = 4) { const id = ++packN; return Array.from({ length: n }, (_, k) => { const a = k / n * 6.283; return spawnEnemy(x + Math.cos(a) * 2.5, z + Math.sin(a) * 2.5, type, id, k, n); }); }
+export function spawnPack(x, z, type, n = 4) {
+  const id = ++packN;
+  return Array.from({ length: n }, (_, k) => {
+    const a = (k / n) * 6.283;
+    return spawnEnemy(x + Math.cos(a) * 2.5, z + Math.sin(a) * 2.5, type, id, k, n);
+  });
+}
 // issue #44: the 1.1 s freeze 32 s into Jared's play, as the first bears and wolves came into view: the first creature of
 // each kind on screen compiled its shaders then (on this Mac's M5 GPU 150 to 600 ms a kind, more on older machines). While
 // the world loads, one of each (fur shells on, threat ring showing) is compiled and drawn once in front of the camera, so
 // play starts with them ready. They are kept (not disposed): disposing their own materials would free the shared programs
 export async function warmCreatures() {
-  const g = new THREE.Group(); camera.updateMatrixWorld(); g.position.copy(camera.position).add(camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(9)); g.quaternion.copy(camera.quaternion);
-  Object.keys(ENEMY).forEach((type, i) => { const m = buildCreature(type); m.scale.setScalar(ENEMY[type].scale); m.add(...threatMarks(type)); m.userData.setDetail?.(true);
-    const ring = m.getObjectByName('threat'); ring.visible = true; ring.material.opacity = 0.5; m.position.set((i - 4) * 1.8, -1, 0); g.add(m); });
+  const g = new THREE.Group();
+  camera.updateMatrixWorld();
+  g.position.copy(camera.position).add(camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(9));
+  g.quaternion.copy(camera.quaternion);
+  Object.keys(ENEMY).forEach((type, i) => {
+    const m = buildCreature(type);
+    m.scale.setScalar(ENEMY[type].scale);
+    m.add(...threatMarks(type));
+    m.userData.setDetail?.(true);
+    const ring = m.getObjectByName('threat');
+    ring.visible = true;
+    ring.material.opacity = 0.5;
+    m.position.set((i - 4) * 1.8, -1, 0);
+    g.add(m);
+  });
   // (none culled: at load the camera is far from the sun's shadow box (40 m round the start), so the shadow pass skipped every
   // culled piece and the raiders' double-sided gear built its shadow program on the first raider in view, November 15, 2026)
-  g.traverse(o => { o.frustumCulled = false; });
-  scene.add(g); scene.updateMatrixWorld(); try { await renderer.compileAsync(g, camera, scene); } catch { /* (compiled by the draw below) */ } renderer.render(scene, camera); scene.remove(g); WARM = g; }
+  g.traverse((o) => {
+    o.frustumCulled = false;
+  });
+  scene.add(g);
+  scene.updateMatrixWorld();
+  try {
+    await renderer.compileAsync(g, camera, scene);
+  } catch {
+    /* (compiled by the draw below) */
+  }
+  renderer.render(scene, camera);
+  scene.remove(g);
+  WARM = g;
+}
 let WARM = null;
 // Under every creature: a soft dark contact blob (it grounds them and lifts them off bright ground at range), and a
 // red threat ring that shows while it hunts you and flares during a wind-up, so a pack at 20 m is easy to pick out.
 let MARKS = null;
 function threatMarks(type) {
-  if (!MARKS) { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-    gr.addColorStop(0, 'rgba(0,0,0,0.55)'); gr.addColorStop(0.6, 'rgba(0,0,0,0.3)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
-    MARKS = { blob: new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }),
-      ring: new THREE.RingGeometry(0.78, 0.92, 40).rotateX(-Math.PI / 2), disc: new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2) }; }
-  const len = { wolf: 1.9, dust_hound: 1.7, bear: 2.2, rat: 1.6, ice_crawler: 1.9, bog_lurker: 1.8, spider: 2.3, spider_pale: 2.3, spider_widow: 2.3, spider_brute: 2.3, spider_nest: 3.4 }[type] || 1.8;
-  const blob = new THREE.Mesh(MARKS.disc, MARKS.blob); blob.scale.set(len * 0.62, 1, len); blob.position.y = 0.04; blob.name = 'blob';
-  const ring = new THREE.Mesh(ENEMY[type]?.danger ? (MARKS.teeth ||= toothed()) : MARKS.ring, new THREE.MeshBasicMaterial({ color: 0xff3a22, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false })); // (its fade with the fog is ringSeen's)
-  ring.scale.setScalar(len * 0.62); ring.position.y = 0.06; ring.visible = false; ring.name = 'threat'; return [blob, ring];
+  if (!MARKS) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const g = c.getContext('2d'),
+      gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, 'rgba(0,0,0,0.55)');
+    gr.addColorStop(0.6, 'rgba(0,0,0,0.3)');
+    gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = gr;
+    g.fillRect(0, 0, 64, 64);
+    MARKS = {
+      blob: new THREE.MeshBasicMaterial({
+        map: new THREE.CanvasTexture(c),
+        transparent: true,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+      }),
+      ring: new THREE.RingGeometry(0.78, 0.92, 40).rotateX(-Math.PI / 2),
+      disc: new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2),
+    };
+  }
+  const len =
+    {
+      wolf: 1.9,
+      dust_hound: 1.7,
+      bear: 2.2,
+      rat: 1.6,
+      ice_crawler: 1.9,
+      bog_lurker: 1.8,
+      spider: 2.3,
+      spider_pale: 2.3,
+      spider_widow: 2.3,
+      spider_brute: 2.3,
+      spider_nest: 3.4,
+    }[type] || 1.8;
+  const blob = new THREE.Mesh(MARKS.disc, MARKS.blob);
+  blob.scale.set(len * 0.62, 1, len);
+  blob.position.y = 0.04;
+  blob.name = 'blob';
+  const ring = new THREE.Mesh(
+    ENEMY[type]?.danger ? (MARKS.teeth ||= toothed()) : MARKS.ring,
+    new THREE.MeshBasicMaterial({
+      color: 0xff3a22,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      fog: false,
+    }),
+  ); // (its fade with the fog is ringSeen's)
+  ring.scale.setScalar(len * 0.62);
+  ring.position.y = 0.06;
+  ring.visible = false;
+  ring.name = 'threat';
+  return [blob, ring];
 }
 // #66 follow-up (Jared, 2026-11-15, playing Dev: "enemies with the circles are too obvious in places where you can't otherwise
 // see"): the ring is unlit and glows, so it showed creatures the dark, the fog or a wall hid. Now it is never plainer than its
 // creature: dimmed by the same dark (unless a flame is near it), faded by the same fog, and gone when no line from the eye reaches it.
 const LIT = []; // (this frame's flames: carried and built torches, fires, lamps)
-function ringSeen(e) { const f = scene.fog, c = camera.position, d = Math.hypot(e.x - c.x, e.z - c.z);
+function ringSeen(e) {
+  const f = scene.fog,
+    c = camera.position,
+    d = Math.hypot(e.x - c.x, e.z - c.z);
   const fk = f?.isFog ? Math.min(1, Math.max(0, (f.far - d) / Math.max(1, f.far - f.near))) : 1;
-  let lk = 1 - 0.95 * Math.max(nightK(), caveDark()); /* (a cave is as dark as night, as main.js lights it) */ for (const q of LIT) lk = Math.max(lk, Math.min(1, Math.max(0, (10 - Math.hypot(q.x - e.x, q.z - e.z)) / 6))); // (full within 4 m of a flame, none past 10 m)
-  return e.inEye ? fk * lk : 0; }
+  let lk = 1 - 0.95 * Math.max(nightK(), caveDark());
+  /* (a cave is as dark as night, as main.js lights it) */ for (const q of LIT)
+    lk = Math.max(lk, Math.min(1, Math.max(0, (10 - Math.hypot(q.x - e.x, q.z - e.z)) / 6))); // (full within 4 m of a flame, none past 10 m)
+  return e.inEye ? fk * lk : 0;
+}
 // is any of it in the eye's line: its middle or either side, past the ground and every solid circle the line crosses (each circle
 // tested against the whole line, so a thin wall run cannot slip between samples)
-function inEye(e, h) { const c = camera.position, dx = e.x - c.x, dz = e.z - c.z, L = Math.hypot(dx, dz) || 1, sx = -dz / L * 0.6, sz = dx / L * 0.6, ty = e.mesh.position.y + h * 0.5, qs = new Set();
-  for (let u = 0; u < L + 6; u += 6) for (const q of nearColliders(c.x + dx * Math.min(1, u / L), c.z + dz * Math.min(1, u / L))) if (q.r && q.top != null) qs.add(q); // (8 m cells: every 6 m covers the line)
-  for (const k of [0, 1, -1]) { const tx = e.x + sx * k, tz = e.z + sz * k, ex = tx - c.x, ez = tz - c.z, L2 = ex * ex + ez * ez || 1; let clear = true;
-    for (let i = 1; i < 16 && clear; i++) { const t = i / 16; if (groundY(c.x + ex * t, c.z + ez * t) > c.y + (ty - c.y) * t) clear = false; }
-    for (const q of qs) { if (!clear) break; const t = ((q.x - c.x) * ex + (q.z - c.z) * ez) / L2; if (t <= 0 || t >= 1) continue; // (not the circle it stands in, nor one at the eye)
-      const px = c.x + ex * t, pz = c.z + ez * t, py = c.y + (ty - c.y) * t; if (Math.hypot(q.x - px, q.z - pz) < colR(q, px, pz) && q.top > py && !(q.bot > py)) clear = false; }
-    if (clear) return true; }
-  return false; }
+function inEye(e, h) {
+  const c = camera.position,
+    dx = e.x - c.x,
+    dz = e.z - c.z,
+    L = Math.hypot(dx, dz) || 1,
+    sx = (-dz / L) * 0.6,
+    sz = (dx / L) * 0.6,
+    ty = e.mesh.position.y + h * 0.5,
+    qs = new Set();
+  for (let u = 0; u < L + 6; u += 6)
+    for (const q of nearColliders(c.x + dx * Math.min(1, u / L), c.z + dz * Math.min(1, u / L)))
+      if (q.r && q.top != null) qs.add(q); // (8 m cells: every 6 m covers the line)
+  for (const k of [0, 1, -1]) {
+    const tx = e.x + sx * k,
+      tz = e.z + sz * k,
+      ex = tx - c.x,
+      ez = tz - c.z,
+      L2 = ex * ex + ez * ez || 1;
+    let clear = true;
+    for (let i = 1; i < 16 && clear; i++) {
+      const t = i / 16;
+      if (groundY(c.x + ex * t, c.z + ez * t) > c.y + (ty - c.y) * t) clear = false;
+    }
+    for (const q of qs) {
+      if (!clear) break;
+      const t = ((q.x - c.x) * ex + (q.z - c.z) * ez) / L2;
+      if (t <= 0 || t >= 1) continue; // (not the circle it stands in, nor one at the eye)
+      const px = c.x + ex * t,
+        pz = c.z + ez * t,
+        py = c.y + (ty - c.y) * t;
+      if (Math.hypot(q.x - px, q.z - pz) < colR(q, px, pz) && q.top > py && !(q.bot > py)) clear = false;
+    }
+    if (clear) return true;
+  }
+  return false;
+}
 // #66: a danger's warning, on every game (the host's, and a joined one from the host's world message): it rears and roars,
 // and the ground shakes by how near this game's own player is (not on Easy: the stranger's review)
-export function dangerCue(e) { e.mesh.userData.anim.attack(); sfx(e.type, e, 1.3); sfx('thud', e); const pd = Math.hypot(player.x - e.x, player.z - e.z);
-  if (level() !== LEVELS.easy && pd < 30 && running) player.shake = Math.max(player.shake || 0, 0.3 * (1 - pd / 30)); }
+export function dangerCue(e) {
+  e.mesh.userData.anim.attack();
+  sfx(e.type, e, 1.3);
+  sfx('thud', e);
+  const pd = Math.hypot(player.x - e.x, player.z - e.z);
+  if (level() !== LEVELS.easy && pd < 30 && running) player.shake = Math.max(player.shake || 0, 0.3 * (1 - pd / 30));
+}
 // #66: a danger's ring has twelve teeth round its rim (a shape, not a colour, says "this one is different": Jared is colourblind)
-function toothed() { const sh = new THREE.Shape(), n = 12, hole = new THREE.Path();
-  for (let i = 0; i <= n * 2; i++) { const a = i / (n * 2) * Math.PI * 2, r = i % 2 ? 1.12 : 0.9; sh[i ? 'lineTo' : 'moveTo'](Math.cos(a) * r, Math.sin(a) * r); }
-  hole.absarc(0, 0, 0.76, 0, Math.PI * 2, true); sh.holes.push(hole); return new THREE.ShapeGeometry(sh, 4).rotateX(-Math.PI / 2); }
+function toothed() {
+  const sh = new THREE.Shape(),
+    n = 12,
+    hole = new THREE.Path();
+  for (let i = 0; i <= n * 2; i++) {
+    const a = (i / (n * 2)) * Math.PI * 2,
+      r = i % 2 ? 1.12 : 0.9;
+    sh[i ? 'lineTo' : 'moveTo'](Math.cos(a) * r, Math.sin(a) * r);
+  }
+  hole.absarc(0, 0, 0.76, 0, Math.PI * 2, true);
+  sh.holes.push(hole);
+  return new THREE.ShapeGeometry(sh, 4).rotateX(-Math.PI / 2);
+}
 // the follow-ups to #66 (Jared: the narrow passes out of the Greenbelt were crowded): the ring's mountains are too steep to
 // spawn on, so every spawn round a player near the valley's edge landed in a pass, 41 of them after a minute at each mouth
 // on the classic world, none just beyond. Now a spawn into a pass's narrow part is refused once that pass holds PASS_N
 // creatures, and each pass has a few waiting where it opens onto its land (topped up while a player is within 200 m of the spot)
-const inPass = (x, z) => { const r = Math.hypot(x, z), a = Math.atan2(z, x); return r < 250 ? PASSES.findIndex(q => Math.abs(Math.atan2(Math.sin(a - q.a), Math.cos(a - q.a))) * r < 32) : -1; };
-const outside = (q) => ({ x: Math.cos(q.a) * 285, z: Math.sin(q.a) * 285 }), around = (o, R) => enemies.filter(e => !e.dead && !e.home && Math.hypot(e.x - o.x, e.z - o.z) < R).length;
-const crowded = (x, z, n) => { const k = inPass(x, z); return k >= 0 && enemies.filter(e => !e.dead && !e.home && Math.hypot(e.x, e.z) >= SAFE_R && inPass(e.x, e.z) === k).length + n > PASS_N; }; // (n: the whole pack, so one never overfills a pass; the stranger's review)
+const inPass = (x, z) => {
+  const r = Math.hypot(x, z),
+    a = Math.atan2(z, x);
+  return r < 250 ? PASSES.findIndex((q) => Math.abs(Math.atan2(Math.sin(a - q.a), Math.cos(a - q.a))) * r < 32) : -1;
+};
+const outside = (q) => ({ x: Math.cos(q.a) * 285, z: Math.sin(q.a) * 285 }),
+  around = (o, R) => enemies.filter((e) => !e.dead && !e.home && Math.hypot(e.x - o.x, e.z - o.z) < R).length;
+const crowded = (x, z, n) => {
+  const k = inPass(x, z);
+  return (
+    k >= 0 &&
+    enemies.filter((e) => !e.dead && !e.home && Math.hypot(e.x, e.z) >= SAFE_R && inPass(e.x, e.z) === k).length + n >
+      PASS_N
+  );
+}; // (n: the whole pack, so one never overfills a pass; the stranger's review)
 // round 4 (gilded-hollow-29: a rat stood for minutes in a sealed pocket between a ruins house's walls, a pack member set down
 // 2.5 m from its pack's middle): no creature is spawned in a building's footprint (and a metre round it) or in a solid
-const clearSpot = (x, z) => !buildings.some(b => { if (!b.w) return false; const dx = x - b.x, dz = z - b.z, lx = dx * b.ca + dz * b.sa, lz = -dx * b.sa + dz * b.ca; return Math.abs(lx - (b.cx || 0)) < b.w / 2 + 1 && Math.abs(lz - (b.cz || 0)) < b.d / 2 + 1; })
-  && !nearColliders(x, z).some(c => c.r && !(c.bot != null && groundY(x, z) + 1.7 < c.bot) && Math.hypot(c.x - x, c.z - z) < colR(c, x, z) + 0.5);
+const clearSpot = (x, z) =>
+  !buildings.some((b) => {
+    if (!b.w) return false;
+    const dx = x - b.x,
+      dz = z - b.z,
+      lx = dx * b.ca + dz * b.sa,
+      lz = -dx * b.sa + dz * b.ca;
+    return Math.abs(lx - (b.cx || 0)) < b.w / 2 + 1 && Math.abs(lz - (b.cz || 0)) < b.d / 2 + 1;
+  }) &&
+  !nearColliders(x, z).some(
+    (c) => c.r && !(c.bot != null && groundY(x, z) + 1.7 < c.bot) && Math.hypot(c.x - x, c.z - z) < colR(c, x, z) + 0.5,
+  );
 export function spawnAround(cx, cz, count, minD = 25, maxD = 90, land = null, ok = null) {
-  let made = 0, tries = 0;
-  while (made < count && tries++ < count * 20) { const a = rng() * 6.28, d = minD + rng() * (maxD - minD), x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d;
-    if (Math.abs(x) > HALF - 60 || Math.abs(z) > HALF - 60 || Math.hypot(x, z) < SAFE_R + 12) continue; /* nothing spawns in the safe valley */
-    if (groundY(x, z) < (biomeAt(x, z) === 'swamp' ? WATER_Y - 0.4 : WATER_Y + 0.4) || slopeAt(x, z) > 0.7 || (ok && !ok(x, z)) || !clearSpot(x, z)) continue;
-    const list = BIOME[land || biomeAt(x, z)].enemies; const type = list[Math.floor(rng() * list.length)];
+  let made = 0,
+    tries = 0;
+  while (made < count && tries++ < count * 20) {
+    const a = rng() * 6.28,
+      d = minD + rng() * (maxD - minD),
+      x = cx + Math.cos(a) * d,
+      z = cz + Math.sin(a) * d;
+    if (Math.abs(x) > HALF - 60 || Math.abs(z) > HALF - 60 || Math.hypot(x, z) < SAFE_R + 12)
+      continue; /* nothing spawns in the safe valley */
+    if (
+      groundY(x, z) < (biomeAt(x, z) === 'swamp' ? WATER_Y - 0.4 : WATER_Y + 0.4) ||
+      slopeAt(x, z) > 0.7 ||
+      (ok && !ok(x, z)) ||
+      !clearSpot(x, z)
+    )
+      continue;
+    const list = BIOME[land || biomeAt(x, z)].enemies;
+    const type = list[Math.floor(rng() * list.length)];
     // wolves and hounds run in packs, rats in small swarms
     // (slice 21: wolves and hounds 3 to 5, rats 2 to 4)
-    const pack = Math.max(1, Math.round(((type === 'wolf' || type === 'dust_hound' ? 3 + Math.floor(rng() * 3) : type === 'rat' ? 2 + Math.floor(rng() * 3) : 1) + (isNight() && type !== 'bear' ? 1 : 0)) * level().pack)), id = ++packN; // (slice 33: the difficulty) // (slice 13: a pack runs one bigger at night)
+    const pack = Math.max(
+        1,
+        Math.round(
+          ((type === 'wolf' || type === 'dust_hound'
+            ? 3 + Math.floor(rng() * 3)
+            : type === 'rat'
+              ? 2 + Math.floor(rng() * 3)
+              : 1) +
+            (isNight() && type !== 'bear' ? 1 : 0)) *
+            level().pack,
+        ),
+      ),
+      id = ++packN; // (slice 33: the difficulty) // (slice 13: a pack runs one bigger at night)
     if (crowded(x, z, pack)) continue;
-    for (let k = 0; k < pack; k++) { const px = x + (rng() - 0.5) * 5, pz = z + (rng() - 0.5) * 5, free = clearSpot(px, pz); spawnEnemy(free ? px : x, free ? pz : z, type, id, k, pack); } made += pack; } // (a member's spot shut in: at the pack's middle, which is clear; the crowd push spreads them)
+    for (let k = 0; k < pack; k++) {
+      const px = x + (rng() - 0.5) * 5,
+        pz = z + (rng() - 0.5) * 5,
+        free = clearSpot(px, pz);
+      spawnEnemy(free ? px : x, free ? pz : z, type, id, k, pack);
+    }
+    made += pack;
+  } // (a member's spot shut in: at the pack's middle, which is clear; the crowd push spreads them)
 }
 // issue #44 (Jared's play, 2026-11-12: "no enemies really showing up?"): a steady trickle of threats. A player out of the
 // valley whom nothing has hunted for 45 to 75 s (a third less at night) has a pack sent at them: an idle pack 35 to 62 m
@@ -144,216 +525,791 @@ const HUNT_WAIT = (nk) => (25 + rng() * 20) * (1 - 0.35 * nk) * level().hunt; //
 function sendHunt(q, t, nk) {
   // (from where it can run to them: within 10 m of their height, and the straight way in has no deep water and no rise too
   // steep to scramble; a pack sent across the river sat on its far bank, the walk check's first try)
-  const qy = groundY(q.x, q.z), level = (x, z) => { if (Math.abs(groundY(x, z) - qy) >= 10) return false; const L = Math.hypot(q.x - x, q.z - z), n = Math.ceil(L / 2.5);
-    for (let k = 1; k < n; k++) { const px = x + (q.x - x) * k / n, pz = z + (q.z - z) * k / n, y = groundY(px, pz), y0 = groundY(x + (q.x - x) * (k - 1) / n, z + (q.z - z) * (k - 1) / n);
-      if (y < WATER_Y - 0.6 || (slopeAt(px, pz) > 1.3 && y > y0)) return false; } return true; };
-  let pick = null, bd = 1e9; for (const e of enemies) { if (e.dead || e.home || e.posed || e.hunter?.until > t || (e.state !== 'idle' && e.state !== 'lurk')) continue;
-    const d = Math.hypot(e.x - q.x, e.z - q.z); if (d > 35 && d < 62 && level(e.x, e.z) && Math.abs(d - 50) < bd) { bd = Math.abs(d - 50); pick = e; } }
-  const land = biomeAt(q.x, q.z), n0 = enemies.length; if (!pick) spawnAround(q.x, q.z, 1, 45, 60, BIOME[land] ? land : null, level);
-  const pack = pick ? enemies.filter(o => o.pack === pick.pack && !o.dead) : enemies.slice(n0); if (!pack.length) return;
-  for (const e of pack) { e.hunter = { until: t + 30 }; if (e.state === 'lurk') { e.state = 'emerge'; e.emT = 0.8; } else e.state = 'chase'; }
+  const qy = groundY(q.x, q.z),
+    level = (x, z) => {
+      if (Math.abs(groundY(x, z) - qy) >= 10) return false;
+      const L = Math.hypot(q.x - x, q.z - z),
+        n = Math.ceil(L / 2.5);
+      for (let k = 1; k < n; k++) {
+        const px = x + ((q.x - x) * k) / n,
+          pz = z + ((q.z - z) * k) / n,
+          y = groundY(px, pz),
+          y0 = groundY(x + ((q.x - x) * (k - 1)) / n, z + ((q.z - z) * (k - 1)) / n);
+        if (y < WATER_Y - 0.6 || (slopeAt(px, pz) > 1.3 && y > y0)) return false;
+      }
+      return true;
+    };
+  let pick = null,
+    bd = 1e9;
+  for (const e of enemies) {
+    if (e.dead || e.home || e.posed || e.hunter?.until > t || (e.state !== 'idle' && e.state !== 'lurk')) continue;
+    const d = Math.hypot(e.x - q.x, e.z - q.z);
+    if (d > 35 && d < 62 && level(e.x, e.z) && Math.abs(d - 50) < bd) {
+      bd = Math.abs(d - 50);
+      pick = e;
+    }
+  }
+  const land = biomeAt(q.x, q.z),
+    n0 = enemies.length;
+  if (!pick) spawnAround(q.x, q.z, 1, 45, 60, BIOME[land] ? land : null, level);
+  const pack = pick ? enemies.filter((o) => o.pack === pick.pack && !o.dead) : enemies.slice(n0);
+  if (!pack.length) return;
+  for (const e of pack) {
+    e.hunter = { until: t + 30 };
+    if (e.state === 'lurk') {
+      e.state = 'emerge';
+      e.emT = 0.8;
+    } else e.state = 'chase';
+  }
   if (pack[0].type === 'wolf') wolfSay('wolfcall', pack[0]); // (a pack sent at you calls as it sets off)
-  logEvent('hunt', { enemy: pack[0].type, n: pack.length, d: Math.round(Math.hypot(pack[0].x - q.x, pack[0].z - q.z)), woke: !!pick, biome: land, night: nk > 0.5 || undefined });
-  sfx(pack[0].type, pack[0]); return true; }
-function alertPack(e) { for (const o of enemies) if (o.pack === e.pack && !o.dead && (o.state === 'idle' || o.state === 'lurk')) {
-  if (o.state === 'lurk') { o.state = 'emerge'; o.emT = 0.8; } else o.state = 'chase'; }
-  sfx(e.type, e); if (e.type === 'wolf') wolfSay('wolfcall', e); }
+  logEvent('hunt', {
+    enemy: pack[0].type,
+    n: pack.length,
+    d: Math.round(Math.hypot(pack[0].x - q.x, pack[0].z - q.z)),
+    woke: !!pick,
+    biome: land,
+    night: nk > 0.5 || undefined,
+  });
+  sfx(pack[0].type, pack[0]);
+  return true;
+}
+function alertPack(e) {
+  for (const o of enemies)
+    if (o.pack === e.pack && !o.dead && (o.state === 'idle' || o.state === 'lurk')) {
+      if (o.state === 'lurk') {
+        o.state = 'emerge';
+        o.emT = 0.8;
+      } else o.state = 'chase';
+    }
+  sfx(e.type, e);
+  if (e.type === 'wolf') wolfSay('wolfcall', e);
+}
 // wolves (the follow-ups to #66, Jared: wolves seemed silent until they bit): their calls carry (half as loud at 20 m, heard to
 // 120 m; a howl to 170 m) and come from where they stand, on every player's game. A pack that has seen you and is watching
 // gives a low call (from 45 m, before it comes for you); one that comes for you gives a sharp yipping call, and its wolves
 // call again now and then on the way; at night, now and then, a pack 50 to 160 m off howls (no longer a howl from nowhere)
-function wolfSay(n, e, k = 1) { sfx(n, e, k); send('all', { t: 'say', n, x: +e.x.toFixed(1), z: +e.z.toFixed(1), k }); }
+function wolfSay(n, e, k = 1) {
+  sfx(n, e, k);
+  send('all', { t: 'say', n, x: +e.x.toFixed(1), z: +e.z.toFixed(1), k });
+}
 
 // ── Pickups and projectiles ─────────────────────────────────────────────
-export const pickups = []; const shots = []; let lootN = 0;
+export const pickups = [];
+const shots = [];
+let lootN = 0;
 // slice 21: loot that lands inside a rock, a spire or a scrap pile is set down just outside it (the play of 2026-11-14 lost three
 // pieces of wood that way, inside an ice spire and a scrap pile: "it's like it couldn't be picked up"). The same on every game, so
 // a joined game's copy lands where the host's does
-function unbury(p) { for (let n = 0; n < 4; n++) { const c = solidAt(p.x, p.z, groundY(p.x, p.z) + 0.1, 0.1); if (!c) break;
-    const dx = p.x - c.x, dz = p.z - c.z, d = Math.hypot(dx, dz), R = colR(c, p.x, p.z) + 0.5; p.x = c.x + (d > 1e-3 ? dx / d : 1) * R; p.z = c.z + (d > 1e-3 ? dz / d : 0) * R; }
-  p.y = groundY(p.x, p.z) + 0.3; }
-export function dropLoot(x, z, kind, r = 0) { const a = rng() * 6.28, s = 1 + rng() * 1.5, v = [Math.cos(a) * s, 3.5 + rng() * 1.5, Math.sin(a) * s], id = ++lootN; x += Math.cos(a) * r; z += Math.sin(a) * r; // (r: thrown from the body's edge, not out of its middle, so it does not land inside a big corpse)
-  addPickup(id, kind, x, z, false, v); send('all', { t: 'loot', id, kind, x: +x.toFixed(2), z: +z.toFixed(2), v: v.map(q => +q.toFixed(2)) }); }
+function unbury(p) {
+  for (let n = 0; n < 4; n++) {
+    const c = solidAt(p.x, p.z, groundY(p.x, p.z) + 0.1, 0.1);
+    if (!c) break;
+    const dx = p.x - c.x,
+      dz = p.z - c.z,
+      d = Math.hypot(dx, dz),
+      R = colR(c, p.x, p.z) + 0.5;
+    p.x = c.x + (d > 1e-3 ? dx / d : 1) * R;
+    p.z = c.z + (d > 1e-3 ? dz / d : 0) * R;
+  }
+  p.y = groundY(p.x, p.z) + 0.3;
+}
+export function dropLoot(x, z, kind, r = 0) {
+  const a = rng() * 6.28,
+    s = 1 + rng() * 1.5,
+    v = [Math.cos(a) * s, 3.5 + rng() * 1.5, Math.sin(a) * s],
+    id = ++lootN;
+  x += Math.cos(a) * r;
+  z += Math.sin(a) * r; // (r: thrown from the body's edge, not out of its middle, so it does not land inside a big corpse)
+  addPickup(id, kind, x, z, false, v);
+  send('all', { t: 'loot', id, kind, x: +x.toFixed(2), z: +z.toFixed(2), v: v.map((q) => +q.toFixed(2)) });
+}
 // a pickup on the ground (co-op: the host's; a joined game draws the ones the host tells it of, landed when it joins late)
-export function addPickup(id, kind, x, z, landed, v = [0, 0, 0]) { const m = buildLoot(kind); m.position.set(x, groundY(x, z) + (landed ? 0.35 : 0.6), z); scene.add(m);
-  pickups.push({ id, kind, mesh: m, t: rng() * 6, vx: v[0], vy: v[1], vz: v[2], landed, age: 0 }); }
+export function addPickup(id, kind, x, z, landed, v = [0, 0, 0]) {
+  const m = buildLoot(kind);
+  m.position.set(x, groundY(x, z) + (landed ? 0.35 : 0.6), z);
+  scene.add(m);
+  pickups.push({ id, kind, mesh: m, t: rng() * 6, vx: v[0], vy: v[1], vz: v[2], landed, age: 0 });
+}
 const PROJ = {};
 function projMesh(kind) {
-  if (!PROJ.gun) { const glow = (c) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
-    const tracerGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.9, 5).rotateX(Math.PI / 2), tracerMat = glow(0xffe0a0); // shared: raiders fire often
+  if (!PROJ.gun) {
+    const glow = (c) =>
+      new THREE.MeshBasicMaterial({
+        color: c,
+        transparent: true,
+        opacity: 0.9,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+    const tracerGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.9, 5).rotateX(Math.PI / 2),
+      tracerMat = glow(0xffe0a0); // shared: raiders fire often
     PROJ.gun = () => new THREE.Mesh(tracerGeo, tracerMat);
-    const wood = new THREE.MeshStandardMaterial({ color: 0x8a6a42, roughness: 0.6 }), steel = new THREE.MeshStandardMaterial({ color: 0x9aa0a8, metalness: 1, roughness: 0.35 }), feather = new THREE.MeshStandardMaterial({ color: 0xa8482e, roughness: 0.85, side: THREE.DoubleSide }); // red fletching: a spent arrow is found in the grass
-    PROJ.ranger = () => { const g = new THREE.Group(); g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.75, 6).rotateX(Math.PI / 2), wood));
-      const tip = new THREE.Mesh(new THREE.ConeGeometry(0.018, 0.07, 4).rotateX(Math.PI / 2), steel); tip.position.z = 0.4; g.add(tip); // the tip leads: lookAt turns +Z along the flight
-      for (let k = 0; k < 3; k++) { const f = new THREE.Mesh(new THREE.PlaneGeometry(0.036, 0.13), feather); f.position.z = -0.32; f.rotation.set(Math.PI / 2, k * 2.09, 0); f.position.x = Math.cos(k * 2.09) * 0.024; f.position.y = Math.sin(k * 2.09) * 0.024; g.add(f); } g.userData.arrow = true; return g; };
-    const petal = new THREE.MeshStandardMaterial({ color: 0xff7ab0, roughness: 0.6 }), petal2 = new THREE.MeshStandardMaterial({ color: 0xfff0f4, roughness: 0.6 }), stem = new THREE.MeshStandardMaterial({ color: 0x4a7a32, roughness: 0.7 });
-    PROJ.charmer = () => { const g = new THREE.Group(); for (let k = 0; k < 5; k++) { const b = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), k % 2 ? petal2 : petal); b.position.set(Math.cos(k * 1.3) * 0.05, Math.sin(k * 1.3) * 0.05, -0.05); g.add(b); }
-      g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.02, 0.2, 5).rotateX(Math.PI / 2), stem)); g.children.at(-1).position.z = 0.08; return g; }; }
-  if (!PROJ.shield) { const paint = new THREE.MeshStandardMaterial({ color: 0x4a6d8c, metalness: 0.3, roughness: 0.5 }), rim = new THREE.MeshStandardMaterial({ color: 0xb8b0a0, metalness: 1, roughness: 0.35 });
+    const wood = new THREE.MeshStandardMaterial({ color: 0x8a6a42, roughness: 0.6 }),
+      steel = new THREE.MeshStandardMaterial({ color: 0x9aa0a8, metalness: 1, roughness: 0.35 }),
+      feather = new THREE.MeshStandardMaterial({ color: 0xa8482e, roughness: 0.85, side: THREE.DoubleSide }); // red fletching: a spent arrow is found in the grass
+    PROJ.ranger = () => {
+      const g = new THREE.Group();
+      g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.75, 6).rotateX(Math.PI / 2), wood));
+      const tip = new THREE.Mesh(new THREE.ConeGeometry(0.018, 0.07, 4).rotateX(Math.PI / 2), steel);
+      tip.position.z = 0.4;
+      g.add(tip); // the tip leads: lookAt turns +Z along the flight
+      for (let k = 0; k < 3; k++) {
+        const f = new THREE.Mesh(new THREE.PlaneGeometry(0.036, 0.13), feather);
+        f.position.z = -0.32;
+        f.rotation.set(Math.PI / 2, k * 2.09, 0);
+        f.position.x = Math.cos(k * 2.09) * 0.024;
+        f.position.y = Math.sin(k * 2.09) * 0.024;
+        g.add(f);
+      }
+      g.userData.arrow = true;
+      return g;
+    };
+    const petal = new THREE.MeshStandardMaterial({ color: 0xff7ab0, roughness: 0.6 }),
+      petal2 = new THREE.MeshStandardMaterial({ color: 0xfff0f4, roughness: 0.6 }),
+      stem = new THREE.MeshStandardMaterial({ color: 0x4a7a32, roughness: 0.7 });
+    PROJ.charmer = () => {
+      const g = new THREE.Group();
+      for (let k = 0; k < 5; k++) {
+        const b = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), k % 2 ? petal2 : petal);
+        b.position.set(Math.cos(k * 1.3) * 0.05, Math.sin(k * 1.3) * 0.05, -0.05);
+        g.add(b);
+      }
+      g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.02, 0.2, 5).rotateX(Math.PI / 2), stem));
+      g.children.at(-1).position.z = 0.08;
+      return g;
+    };
+  }
+  if (!PROJ.shield) {
+    const paint = new THREE.MeshStandardMaterial({ color: 0x4a6d8c, metalness: 0.3, roughness: 0.5 }),
+      rim = new THREE.MeshStandardMaterial({ color: 0xb8b0a0, metalness: 1, roughness: 0.35 });
     // (tilted on its line of flight, so it reads as a thrown shield and not a plate floating flat: round 2 of slice 12)
-    PROJ.shield = () => { const g = new THREE.Group(), h = new THREE.Group(); h.add(new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.05, 22), paint), new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.025, 6, 26).rotateX(Math.PI / 2), rim)); const boss = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 6), rim); boss.position.y = 0.04; h.add(boss); h.rotation.z = 0.6; g.add(h); return g; };
-    const nail = new THREE.MeshStandardMaterial({ color: 0xc8ccd0, metalness: 1, roughness: 0.3 }), streak = new THREE.MeshBasicMaterial({ color: 0xffc070, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false });
-    PROJ.nail = () => { const g = new THREE.Group(); g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.13, 5).rotateX(Math.PI / 2), nail)); const t = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.6, 4).rotateX(Math.PI / 2), streak); t.position.z = -0.32; g.add(t); return g; };
-    PROJ.ember = new THREE.MeshBasicMaterial({ color: 0xff8a2a, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }); }
+    PROJ.shield = () => {
+      const g = new THREE.Group(),
+        h = new THREE.Group();
+      h.add(
+        new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.05, 22), paint),
+        new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.025, 6, 26).rotateX(Math.PI / 2), rim),
+      );
+      const boss = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 6), rim);
+      boss.position.y = 0.04;
+      h.add(boss);
+      h.rotation.z = 0.6;
+      g.add(h);
+      return g;
+    };
+    const nail = new THREE.MeshStandardMaterial({ color: 0xc8ccd0, metalness: 1, roughness: 0.3 }),
+      streak = new THREE.MeshBasicMaterial({
+        color: 0xffc070,
+        transparent: true,
+        opacity: 0.7,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+    PROJ.nail = () => {
+      const g = new THREE.Group();
+      g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.13, 5).rotateX(Math.PI / 2), nail));
+      const t = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.6, 4).rotateX(Math.PI / 2), streak);
+      t.position.z = -0.32;
+      g.add(t);
+      return g;
+    };
+    PROJ.ember = new THREE.MeshBasicMaterial({
+      color: 0xff8a2a,
+      transparent: true,
+      opacity: 0.95,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+  }
   return PROJ[kind === 'gunslinger' ? 'gun' : kind]();
 }
 let auraNext = false;
 // each kind of shot: speed (m/s), life (s), gravity, its sound
-const SHOT = { gunslinger: [70, 1.4, 0, 'shot'], charmer: [22, 1.4, 9, 'toss'], ranger: [42, 3, 2, 'bow'], shield: [18, 3, 0, 'heavy'], nail: [55, 0.4, 0, 'thunk'] };
+const SHOT = {
+  gunslinger: [70, 1.4, 0, 'shot'],
+  charmer: [22, 1.4, 9, 'toss'],
+  ranger: [42, 3, 2, 'bow'],
+  shield: [18, 3, 0, 'heavy'],
+  nail: [55, 0.4, 0, 'thunk'],
+};
 export function fireShot(origin, dir, dmg, kind, hostile = false, turret = false, ghost = false) {
-  const m = projMesh(kind), [sp, life, grav, snd] = SHOT[kind]; m.position.copy(origin); m.lookAt(origin.clone().add(dir)); scene.add(m);
-  const s = { mesh: m, v: dir.clone().multiplyScalar(sp), life, dmg, grav, kind, hostile, ghost, o: origin.clone() }; shots.push(s);
+  const m = projMesh(kind),
+    [sp, life, grav, snd] = SHOT[kind];
+  m.position.copy(origin);
+  m.lookAt(origin.clone().add(dir));
+  scene.add(m);
+  const s = { mesh: m, v: dir.clone().multiplyScalar(sp), life, dmg, grav, kind, hostile, ghost, o: origin.clone() };
+  shots.push(s);
   // slice 12: Abigail's fire arrows (an ember at the tip) and Lauren's charm aura are upgrades; others' games are told
-  if (!ghost && !hostile && !turret && kind === 'ranger' && upgraded('ranger') && !(player.fireT > 0)) { s.boom = true; player.fireT = RELIGHT; } // (#66: one fire arrow, then RELIGHT s to light the next)
+  if (!ghost && !hostile && !turret && kind === 'ranger' && upgraded('ranger') && !(player.fireT > 0)) {
+    s.boom = true;
+    player.fireT = RELIGHT;
+  } // (#66: one fire arrow, then RELIGHT s to light the next)
   if (!ghost && kind === 'charmer' && auraNext) s.aura = true; // (the charm flower only, not her bouquet toss)
-  if (ghost === 'boom') s.boom = true; if (ghost === 'aura') s.aura = true; if (s.boom) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), PROJ.ember); e.position.z = 0.42; m.add(e); }
-  if (!ghost && (hostile || !turret)) send('all', { t: 'shot', o: origin.toArray().map(q => +q.toFixed(2)), d: dir.toArray().map(q => +q.toFixed(3)), k: kind, h: hostile ? 1 : 0, u: s.boom || s.aura ? 1 : 0 });
+  if (ghost === 'boom') s.boom = true;
+  if (ghost === 'aura') s.aura = true;
+  if (s.boom) {
+    const e = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), PROJ.ember);
+    e.position.z = 0.42;
+    m.add(e);
+  }
+  if (!ghost && (hostile || !turret))
+    send('all', {
+      t: 'shot',
+      o: origin.toArray().map((q) => +q.toFixed(2)),
+      d: dir.toArray().map((q) => +q.toFixed(3)),
+      k: kind,
+      h: hostile ? 1 : 0,
+      u: s.boom || s.aura ? 1 : 0,
+    });
   sfx(snd, ghost ? { x: origin.x, z: origin.z } : undefined, kind === 'nail' ? 0.7 : 1); // another game's shot sounds from where it is
-  if (kind === 'gunslinger' && (hostile || turret || camMode !== 'first')) hitBurst(origin, dir, 'dust', turret ? 8 : 5); // not in the first-person camera's face
+  if (kind === 'gunslinger' && (hostile || turret || camMode !== 'first'))
+    hitBurst(origin, dir, 'dust', turret ? 8 : 5); // not in the first-person camera's face
   if (kind === 'gunslinger' && !hostile && !turret && !ghost && camMode === 'first') muzzleFlash.t = 0.06;
   return s;
 }
 
 // a raider's shot: a tracer from about its gun hand toward the player's chest, wider of the mark the further away
 // (slice 12: the same spread rule as the players' shots, on a steadier base wobble of its own)
-function enemyShot(e, dmg, tg) { const o = new THREE.Vector3(e.x, e.mesh.position.y + 1.35, e.z), aim = new THREE.Vector3(tg.x, tg.y + 1.2, tg.z), d = o.distanceTo(aim);
-  const dir = spreadDir(aim.sub(o).normalize(), 0.1 + spreadAt(d)); o.addScaledVector(dir, 0.6);
-  fireShot(o, dir, dmg, 'gunslinger', true).from = e.type; }
+function enemyShot(e, dmg, tg) {
+  const o = new THREE.Vector3(e.x, e.mesh.position.y + 1.35, e.z),
+    aim = new THREE.Vector3(tg.x, tg.y + 1.2, tg.z),
+    d = o.distanceTo(aim);
+  const dir = spreadDir(aim.sub(o).normalize(), 0.1 + spreadAt(d));
+  o.addScaledVector(dir, 0.6);
+  fireShot(o, dir, dmg, 'gunslinger', true).from = e.type;
+}
 // where an arrow struck: in a creature, the point on its flight nearest the body's middle, at body height; otherwise the
 // surface between the last clear sample a and the struck one b, found by halving (a trunk's bark is inside its collider)
-function struck(s, a, b, stop) { const e = s.inE;
-  if (e) { const dir = s.v.clone().normalize(), ray = new THREE.Raycaster(b.clone().addScaledVector(dir, -2.5), dir, 0, 5); ray.camera = camera; /* (a sprite in it, a spider's eye glow, needs the camera: without it the frame threw and the arrow struck again every frame) */ const hit = ray.intersectObject(e.mesh, true).find(h => h.object.isMesh && h.object.name !== 'blob' && h.object.name !== 'threat' && !h.object.parent?.userData.arrow);
+function struck(s, a, b, stop) {
+  const e = s.inE;
+  if (e) {
+    const dir = s.v.clone().normalize(),
+      ray = new THREE.Raycaster(b.clone().addScaledVector(dir, -2.5), dir, 0, 5);
+    ray.camera = camera;
+    /* (a sprite in it, a spider's eye glow, needs the camera: without it the frame threw and the arrow struck again every frame) */ const hit =
+      ray
+        .intersectObject(e.mesh, true)
+        .find(
+          (h) =>
+            h.object.isMesh &&
+            h.object.name !== 'blob' &&
+            h.object.name !== 'threat' &&
+            !h.object.parent?.userData.arrow,
+        );
     if (hit) return hit.point.addScaledVector(dir, 0.24); // its body, skinned pose and all: the head well in
-    const dx = b.x - a.x, dz = b.z - a.z, L = dx * dx + dz * dz || 1, t = Math.max(0, Math.min(1, ((e.x - a.x) * dx + (e.z - a.z) * dz) / L)), q = a.clone().lerp(b, t), y0 = e.mesh.position.y, h = e.mesh.userData.height * e.mesh.scale.x;
-    q.y = Math.max(y0 + h * 0.3, Math.min(y0 + h * 0.45, q.y)); return q.addScaledVector(dir, 0.2); }
-  const inside = (q) => q.y < groundY(q.x, q.z) || (stop && Math.hypot(stop.x - q.x, stop.z - q.z) < colR(stop, q.x, q.z) * (stop.ref && /pine|oak|aspen|tree/.test(stop.ref.type) ? 0.7 : 1));
-  const lo = a.clone(), hi = b.clone(), m = new THREE.Vector3(); for (let k = 0; k < 8; k++) { m.copy(lo).add(hi).multiplyScalar(0.5); if (inside(m)) hi.copy(m); else lo.copy(m); } return hi; }
+    const dx = b.x - a.x,
+      dz = b.z - a.z,
+      L = dx * dx + dz * dz || 1,
+      t = Math.max(0, Math.min(1, ((e.x - a.x) * dx + (e.z - a.z) * dz) / L)),
+      q = a.clone().lerp(b, t),
+      y0 = e.mesh.position.y,
+      h = e.mesh.userData.height * e.mesh.scale.x;
+    q.y = Math.max(y0 + h * 0.3, Math.min(y0 + h * 0.45, q.y));
+    return q.addScaledVector(dir, 0.2);
+  }
+  const inside = (q) =>
+    q.y < groundY(q.x, q.z) ||
+    (stop &&
+      Math.hypot(stop.x - q.x, stop.z - q.z) <
+        colR(stop, q.x, q.z) * (stop.ref && /pine|oak|aspen|tree/.test(stop.ref.type) ? 0.7 : 1));
+  const lo = a.clone(),
+    hi = b.clone(),
+    m = new THREE.Vector3();
+  for (let k = 0; k < 8; k++) {
+    m.copy(lo).add(hi).multiplyScalar(0.5);
+    if (inside(m)) hi.copy(m);
+    else lo.copy(m);
+  }
+  return hi;
+}
 // ── Ranged spread (slice 12; the owner, 2026-11-04: "a bit more spread to where you hit the further away you are from
 // your target"): the aim wanders by an angle that is nil out to 8 m and grows with the distance to what the shot is
 // aimed at (an enemy near the line of aim, else the ground), so close shots land and long ones can miss. The wander is
 // half as much up and down as side to side, so the crosshair still means something.
 export const spreadAt = (d) => Math.max(0, Math.min(0.09, (d - 8) * 0.0032));
-function aimDist(o, dir) { let best = 1e9;
-  for (const e of enemies) { if (e.dead || e.state === 'lurk') continue; const c = enemyCentre(e).sub(o), t = c.dot(dir); if (t > 0 && t < best && c.addScaledVector(dir, -t).length() < 1 + t * 0.04) best = t; }
-  if (best < 1e9) return best; const q = new THREE.Vector3(); for (let t = 1; t < 60; t++) { q.copy(o).addScaledVector(dir, t); if (q.y < groundY(q.x, q.z)) return t; } return 60; }
-export function spreadDir(dir, a) { if (!(a > 0)) return dir; const right = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)); if (right.lengthSq() < 1e-6) right.set(1, 0, 0); right.normalize();
-  const up = new THREE.Vector3().crossVectors(right, dir).normalize(); return dir.clone().addScaledVector(right, (rng() + rng() - 1) * a).addScaledVector(up, (rng() + rng() - 1) * a * 0.5).normalize(); }
+function aimDist(o, dir) {
+  let best = 1e9;
+  for (const e of enemies) {
+    if (e.dead || e.state === 'lurk') continue;
+    const c = enemyCentre(e).sub(o),
+      t = c.dot(dir);
+    if (t > 0 && t < best && c.addScaledVector(dir, -t).length() < 1 + t * 0.04) best = t;
+  }
+  if (best < 1e9) return best;
+  const q = new THREE.Vector3();
+  for (let t = 1; t < 60; t++) {
+    q.copy(o).addScaledVector(dir, t);
+    if (q.y < groundY(q.x, q.z)) return t;
+  }
+  return 60;
+}
+export function spreadDir(dir, a) {
+  if (!(a > 0)) return dir;
+  const right = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0));
+  if (right.lengthSq() < 1e-6) right.set(1, 0, 0);
+  right.normalize();
+  const up = new THREE.Vector3().crossVectors(right, dir).normalize();
+  return dir
+    .clone()
+    .addScaledVector(right, (rng() + rng() - 1) * a)
+    .addScaledVector(up, (rng() + rng() - 1) * a * 0.5)
+    .normalize();
+}
 const aimed = (o, dir) => spreadDir(dir, spreadAt(aimDist(o, dir)));
 // how close a shot's path this frame came to the point (x, z), in the ground plane
-function segD(a, b, x, z) { const dx = b.x - a.x, dz = b.z - a.z, L = dx * dx + dz * dz || 1, t = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / L)); return Math.hypot(a.x + dx * t - x, a.z + dz * t - z); }
+function segD(a, b, x, z) {
+  const dx = b.x - a.x,
+    dz = b.z - a.z,
+    L = dx * dx + dz * dz || 1,
+    t = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / L));
+  return Math.hypot(a.x + dx * t - x, a.z + dz * t - z);
+}
 
 // ── Player ────────────────────────────────────────────────────────────
-export const player = { ch: null, mesh: null, x: 0, z: 0, y: 0, vy: 0, yaw: 0, pitch: -0.15, hp: 1, onGround: true, atkT: 0, swing: 0, walk: 0,
-  inv: { wood: 0, metal: 0, fiber: 0, food: 0 }, up: {}, kills: 0, hurtT: 0, faceYaw: 0, secT: 0, rallyT: 0, fan: 0, fanT: 0, swimY: WATER_Y - 1.25, breath: 1, under: false, mantle: null, climbing: false };
-const CAMS = ['first', 'angled', 'top'], CAM_LABEL = { first: 'First person', angled: 'Angled (third person)', top: 'Top-down' };
-let camMode = params.get('cam') && CAMS.includes(params.get('cam')) ? params.get('cam') : 'angled', topYaw = 0, running = false, paused = false;
+export const player = {
+  ch: null,
+  mesh: null,
+  x: 0,
+  z: 0,
+  y: 0,
+  vy: 0,
+  yaw: 0,
+  pitch: -0.15,
+  hp: 1,
+  onGround: true,
+  atkT: 0,
+  swing: 0,
+  walk: 0,
+  inv: { wood: 0, metal: 0, fiber: 0, food: 0 },
+  up: {},
+  kills: 0,
+  hurtT: 0,
+  faceYaw: 0,
+  secT: 0,
+  rallyT: 0,
+  fan: 0,
+  fanT: 0,
+  swimY: WATER_Y - 1.25,
+  breath: 1,
+  under: false,
+  mantle: null,
+  climbing: false,
+};
+const CAMS = ['first', 'angled', 'top'],
+  CAM_LABEL = { first: 'First person', angled: 'Angled (third person)', top: 'Top-down' };
+let camMode = params.get('cam') && CAMS.includes(params.get('cam')) ? params.get('cam') : 'angled',
+  topYaw = 0,
+  running = false,
+  paused = false;
 
-export function startGame(i) { clearTracks(); // (slice 43)
+export function startGame(i) {
+  clearTracks(); // (slice 43)
   if (joining() && !net.host) return requestJoin(i); // walks out when the host welcomes it (coop.js)
   if (freshWorld(i)) return; // everyone fell last game: this walk-out builds a new world first (coop.js)
   // (the other players are forgotten: each comes back with their next message, standing)
-  clearOthers(); resetExplored(); const ch = CHARS[i]; player.ch = ch; player.maxHp = ch.maxHp; player.hp = ch.maxHp; player.startT = performance.now(); player.kills = 0; player.inv = { wood: 0, metal: 0, fiber: 0, food: 0 };
-  quiver.n = quiver.start; clearArrows(); player.bed = null; player.chop = null; toggleCraft(false); // slice 11: a full quiver, no bed to wake in yet
-  player.up = {}; player.fireT = 0; spitAt.clear(); player.tear = null; player.torch = null; player.shieldT = 0; endBuild(); resetSupplies(); player.inv.cooked = 0; // slice 12: upgrades are bought again each game; what is built stays in the world
-  if (player.mesh) scene.remove(player.mesh); player.mesh = buildCharacter(ch); scene.add(player.mesh);
-  viewModel.clear(); viewModel.add(buildViewModel(ch)); player.dead = 0; player.down = 0; player.out = false; player.revT = 0; player.graceT = 0; player.secT = player.rallyT = player.fan = 0; player.blow = false;
-  for (const q of turrets) removeTurret(q); turrets.length = 0; strikeCD.clear(); player.knifeT = 0; muzzleFlash.t = 0; for (const q of pulses) q.t = q.T; // a new game starts clean
-  player.breath = 1; player.drownT = 0; player.mantle = null; player.fallTop = null; resetDeep(); player.sleep = null; if (!joining()) resetDay(); // (a joined game takes the host's clock)
-  ({ x: player.x, z: player.z } = campSpot()); player.y = groundY(player.x, player.z); player.pk = 0;
-  for (const e of enemies) { scene.remove(e.mesh); e.mesh.userData.dispose?.(); } enemies.length = 0;
-  if (!joining()) { spawnAround(0, 0, 26, SAFE_R + 15, SAFE_R + 230); // out beyond the ring: the valley is safe
-  for (const q of PASSES) { const o = outside(q); spawnAround(o.x, o.z, PASS_OUT, 0, 20); } // (just beyond each pass; within 20 m, so none starts past the 320 m clear-out from the camp: the stranger's review)
-  // each raider camp's crew, round its fire; they keep to the camp until they see you
-  raiderCamps.forEach((c, i) => c.raiders.forEach((type, k) => { const a = c.a0 + 0.4 + k * 1.9; spawnEnemy(c.x + Math.cos(a) * 3, c.z + Math.sin(a) * 3, type, 9000 + i, k, c.raiders.length); enemies.at(-1).home = c; })); }
+  clearOthers();
+  resetExplored();
+  const ch = CHARS[i];
+  player.ch = ch;
+  player.maxHp = ch.maxHp;
+  player.hp = ch.maxHp;
+  player.startT = performance.now();
+  player.kills = 0;
+  player.inv = { wood: 0, metal: 0, fiber: 0, food: 0 };
+  quiver.n = quiver.start;
+  clearArrows();
+  player.bed = null;
+  player.chop = null;
+  toggleCraft(false); // slice 11: a full quiver, no bed to wake in yet
+  player.up = {};
+  player.fireT = 0;
+  spitAt.clear();
+  player.tear = null;
+  player.torch = null;
+  player.shieldT = 0;
+  endBuild();
+  resetSupplies();
+  player.inv.cooked = 0; // slice 12: upgrades are bought again each game; what is built stays in the world
+  if (player.mesh) scene.remove(player.mesh);
+  player.mesh = buildCharacter(ch);
+  scene.add(player.mesh);
+  viewModel.clear();
+  viewModel.add(buildViewModel(ch));
+  player.dead = 0;
+  player.down = 0;
+  player.out = false;
+  player.revT = 0;
+  player.graceT = 0;
+  player.secT = player.rallyT = player.fan = 0;
+  player.blow = false;
+  for (const q of turrets) removeTurret(q);
+  turrets.length = 0;
+  strikeCD.clear();
+  player.knifeT = 0;
+  muzzleFlash.t = 0;
+  for (const q of pulses) q.t = q.T; // a new game starts clean
+  player.breath = 1;
+  player.drownT = 0;
+  player.mantle = null;
+  player.fallTop = null;
+  resetDeep();
+  player.sleep = null;
+  if (!joining()) resetDay(); // (a joined game takes the host's clock)
+  ({ x: player.x, z: player.z } = campSpot());
+  player.y = groundY(player.x, player.z);
+  player.pk = 0;
+  for (const e of enemies) {
+    scene.remove(e.mesh);
+    e.mesh.userData.dispose?.();
+  }
+  enemies.length = 0;
+  if (!joining()) {
+    spawnAround(0, 0, 26, SAFE_R + 15, SAFE_R + 230); // out beyond the ring: the valley is safe
+    for (const q of PASSES) {
+      const o = outside(q);
+      spawnAround(o.x, o.z, PASS_OUT, 0, 20);
+    } // (just beyond each pass; within 20 m, so none starts past the 320 m clear-out from the camp: the stranger's review)
+    // each raider camp's crew, round its fire; they keep to the camp until they see you
+    raiderCamps.forEach((c, i) =>
+      c.raiders.forEach((type, k) => {
+        const a = c.a0 + 0.4 + k * 1.9;
+        spawnEnemy(c.x + Math.cos(a) * 3, c.z + Math.sin(a) * 3, type, 9000 + i, k, c.raiders.length);
+        enemies.at(-1).home = c;
+      }),
+    );
+  }
   startPlaces({ spawnEnemy, enemies, joining, log, logEvent, sfx, send, player, hurt: (d, by) => hurtPlayer(d, by) }); // slice 23: the places' guards, and what this game knows of them
   startCaves({ spawnEnemy, enemies, joining, log, logEvent, sfx, player, teleport, look, nightK }); // #8: the caves' surprises armed again
-  startRelics({ joining, log, logEvent, sfx, send, player, net, others, gone, running: () => running, level: () => rules.lvl, levelName: () => level().label, mode: modeKey, hunt: (q) => sendHunt(q, huntNow, rules.lvl === 'hard' ? 1 : 0) }); // #53: the relics on their plinths again
-  clearPoison(); startSpiders(scene, !joining(), spawnEnemy); // slice 22: the webs go; the spider nests are set down (a joined game gets them from the host)
-  document.getElementById('menu').classList.add('hidden'); for (const id of ['hud-tl', 'hud-tr', 'hud-b']) document.getElementById(id).classList.remove('hidden'); running = true; log(`${ch.player} walks out as ${ch.title}. (F9 saves a play log.)`); if (net.role) log(`Game: ${modeName()}.`); setCam(camMode); logEvent('start', { ch: ch.id, cam: camMode, mode: modeKey(), lvl: rules.lvl }); watchStart(); startVideo(renderer.domElement);
+  startRelics({
+    joining,
+    log,
+    logEvent,
+    sfx,
+    send,
+    player,
+    net,
+    others,
+    gone,
+    running: () => running,
+    level: () => rules.lvl,
+    levelName: () => level().label,
+    mode: modeKey,
+    hunt: (q) => sendHunt(q, huntNow, rules.lvl === 'hard' ? 1 : 0),
+  }); // #53: the relics on their plinths again
+  clearPoison();
+  startSpiders(scene, !joining(), spawnEnemy); // slice 22: the webs go; the spider nests are set down (a joined game gets them from the host)
+  document.getElementById('menu').classList.add('hidden');
+  for (const id of ['hud-tl', 'hud-tr', 'hud-b']) document.getElementById(id).classList.remove('hidden');
+  running = true;
+  log(`${ch.player} walks out as ${ch.title}. (F9 saves a play log.)`);
+  if (net.role) log(`Game: ${modeName()}.`);
+  setCam(camMode);
+  logEvent('start', { ch: ch.id, cam: camMode, mode: modeKey(), lvl: rules.lvl });
+  watchStart();
+  startVideo(renderer.domElement);
 }
 // dry, flat ground at the centre of the safe valley, a few steps from the camp (where a game starts, and where a player knocked
 // out in free-for-all with no bed comes back: slice 33)
-function campSpot() { for (let r = 0; r < 60; r += 2) for (let a = 0; a < 6.28; a += 0.4) { const x = Math.cos(a) * r, z = Math.sin(a) * r;
-  if (groundY(x, z) > WATER_Y + 1 && slopeAt(x, z) < 0.3 && !nearColliders(x, z).some(c => Math.hypot(c.x - x, c.z - z) < c.r + 1.5)) return { x, z }; } return { x: 0, z: 0 }; }
+function campSpot() {
+  for (let r = 0; r < 60; r += 2)
+    for (let a = 0; a < 6.28; a += 0.4) {
+      const x = Math.cos(a) * r,
+        z = Math.sin(a) * r;
+      if (
+        groundY(x, z) > WATER_Y + 1 &&
+        slopeAt(x, z) < 0.3 &&
+        !nearColliders(x, z).some((c) => Math.hypot(c.x - x, c.z - z) < c.r + 1.5)
+      )
+        return { x, z };
+    }
+  return { x: 0, z: 0 };
+}
 // slice 33: a player's free-for-all score: a creature 1, a rival knocked out 3
 export const score = (q) => (q === player ? q.kills : q.k || 0) + 3 * (q.pk || 0);
 // The mouse arrow is hidden over the game while playing (a crosshair stands in: at the screen's centre, or following the
 // mouse in the top camera); the craft menu, pause and menus keep it. Opening the craft menu lets go of the mouse lock, so
 // closing it takes the lock back (a held-down Tab/C is a user gesture; Esc is not, and a refusal here is not "blocked").
-function syncCursor() { document.body.classList.toggle('playing', running && !paused); }
-function relock() { if (!running || paused || camMode === 'top' || craftOpen() || document.pointerLockElement || lockFailed) return; try { renderer.domElement.requestPointerLock?.()?.catch?.(() => {}); } catch { /* the next click asks again */ } }
-export function setCam(m) { camMode = m; snapCam = true; if (running) logEvent('cam', { cam: m }); document.getElementById('cam').textContent = 'Camera: ' + CAM_LABEL[m] + '  (V)';
-  document.getElementById('cross').classList.toggle('hidden', !running); if (m !== 'top') { const c = document.getElementById('cross'); c.style.left = c.style.top = ''; } syncCursor(); viewModel.visible = m === 'first';
-  if (player.mesh) { player.mesh.visible = m !== 'first'; player.mesh.userData.ring.visible = m === 'top'; } if (m === 'top' && document.pointerLockElement) document.exitPointerLock(); }
+function syncCursor() {
+  document.body.classList.toggle('playing', running && !paused);
+}
+function relock() {
+  if (!running || paused || camMode === 'top' || craftOpen() || document.pointerLockElement || lockFailed) return;
+  try {
+    renderer.domElement.requestPointerLock?.()?.catch?.(() => {});
+  } catch {
+    /* the next click asks again */
+  }
+}
+export function setCam(m) {
+  camMode = m;
+  snapCam = true;
+  if (running) logEvent('cam', { cam: m });
+  document.getElementById('cam').textContent = 'Camera: ' + CAM_LABEL[m] + '  (V)';
+  document.getElementById('cross').classList.toggle('hidden', !running);
+  if (m !== 'top') {
+    const c = document.getElementById('cross');
+    c.style.left = c.style.top = '';
+  }
+  syncCursor();
+  viewModel.visible = m === 'first';
+  if (player.mesh) {
+    player.mesh.visible = m !== 'first';
+    player.mesh.userData.ring.visible = m === 'top';
+  }
+  if (m === 'top' && document.pointerLockElement) document.exitPointerLock();
+}
 
 // ── Input: keyboard and mouse, plus the Gamepad API (Xbox and PlayStation pads on a Mac) ──
 function bindInput() {
-addEventListener('pointerdown', () => { unlockAudio(); padActive = false; }); // (#16: a click or a key means the keyboard is in use)
-addEventListener('keydown', e => { padActive = false; if (e.code === 'Tab' && running && !paused) { e.preventDefault(); if (e.repeat) return; } if (running && !paused && (craftKey(e) || buildKey(e))) { relock(); return; } // (off play Tab moves focus: the menu screens, How to play, Settings); the craft menu's keys (slice 11), build mode's (slice 12)
-  if (!paused || e.code === 'KeyP' || e.code === 'Escape') keys.add(e.code); unlockAudio(); if (!running) { menuKey(e); return; } // (the start menu's keys: menu.js)
-  if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
-  if (e.code === 'F9') { logEvent('mark', { x: +player.x.toFixed(1), z: +player.z.toFixed(1), y: +player.y.toFixed(1), biome: biomeAt(player.x, player.z) });
-    // (slice 13d: a game that records sends the mark with a picture, and the findings report lists it; a download only where nothing records)
-    if (recording()) log('Spot marked: it goes in the play log with a picture, for Claude to look at.'); else { savePlayLog(); log('Spot marked and play log saved (a JSON file in your downloads).'); } }
-  if (e.code === 'KeyM') { log(toggleMute() ? 'Sound off (M).' : 'Sound on (M).'); document.getElementById('snd').checked = !isMuted(); }
-  if (paused && /^Arrow(Up|Down)$/.test(e.code)) { e.preventDefault(); moveFocus(e.code === 'ArrowDown' ? 1 : -1, pauseBox); } // (the pause screen by keyboard: Tab and the arrows move, Enter presses; 2026-11-15)
-  if (paused) return; // (in co-op the world runs on behind the pause screen: no war cry or turret from it)
-  if (e.code === 'KeyV') setCam(CAMS[(CAMS.indexOf(camMode) + 1) % 3]);
-  if (e.code === 'KeyF' && !e.repeat) secondary();
-  if (e.code === 'KeyZ' && !e.repeat && !e.metaKey && !e.ctrlKey && !building()) attack(true); // the Gunslinger's pistol-whip
-  if (e.code === 'Tab' && !player.dead && !(player.down > 0)) { toggleCraft(true); keys.clear(); mouseDown = false; }
-  if (e.code === 'KeyE' && !e.repeat && camMode !== 'top') interact();
-  if (e.code === 'KeyE' && !e.repeat && camMode === 'top') { if (!interact(true) && !harvestTarget(player.x, player.z)) topYaw -= Math.PI / 4; }
-  if (e.code === 'KeyQ' && camMode === 'top') topYaw += Math.PI / 4;
-  if (e.code === 'KeyT' && !e.repeat) toggleTorch(); // slice 26: put the hand torch away or take it out
-  if (e.code === 'KeyR' && !e.repeat && !building()) reload(); });
-addEventListener('keyup', e => keys.delete(e.code));
-renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
-renderer.domElement.addEventListener('mousedown', e => { if (!running || craftOpen()) return;
-  if (building() && (document.pointerLockElement || camMode === 'top' || lockFailed)) { if (e.button === 2) endBuild(); else if (e.button === 0) placeNow(); return; } // build mode: click places, right click ends
-  if (e.button === 2) { if (document.pointerLockElement || camMode === 'top') secondary(); return; } if (camMode !== 'top' && !document.pointerLockElement && !lockFailed) { try { const r = renderer.domElement.requestPointerLock?.(); r?.catch?.(() => lockFailed = true); } catch { lockFailed = true; } return; } if (e.button === 0) mouseDown = true; });
-addEventListener('mouseup', () => mouseDown = false);
-addEventListener('wheel', e => { if (running && building()) rotateBuild(e.deltaY > 0 ? 1 : -1); }, { passive: true });
-addEventListener('mousemove', e => { mouseNDC.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); if (camMode === 'top') { const c = document.getElementById('cross'); c.style.left = e.clientX + 'px'; c.style.top = e.clientY + 'px'; }
-  if (camMode !== 'top' && (document.pointerLockElement || (e.buttons & 2))) { const k = 0.0024 * settings.sens; player.yaw -= e.movementX * k; player.pitch = Math.max(-1.35, Math.min(1.2, player.pitch - e.movementY * k * (settings.invertY ? -1 : 1))); } });
+  addEventListener('pointerdown', () => {
+    unlockAudio();
+    padActive = false;
+  }); // (#16: a click or a key means the keyboard is in use)
+  addEventListener('keydown', (e) => {
+    padActive = false;
+    if (e.code === 'Tab' && running && !paused) {
+      e.preventDefault();
+      if (e.repeat) return;
+    }
+    if (running && !paused && (craftKey(e) || buildKey(e))) {
+      relock();
+      return;
+    } // (off play Tab moves focus: the menu screens, How to play, Settings); the craft menu's keys (slice 11), build mode's (slice 12)
+    if (!paused || e.code === 'KeyP' || e.code === 'Escape') keys.add(e.code);
+    unlockAudio();
+    if (!running) {
+      menuKey(e);
+      return;
+    } // (the start menu's keys: menu.js)
+    if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
+    if (e.code === 'F9') {
+      logEvent('mark', {
+        x: +player.x.toFixed(1),
+        z: +player.z.toFixed(1),
+        y: +player.y.toFixed(1),
+        biome: biomeAt(player.x, player.z),
+      });
+      // (slice 13d: a game that records sends the mark with a picture, and the findings report lists it; a download only where nothing records)
+      if (recording()) log('Spot marked: it goes in the play log with a picture, for Claude to look at.');
+      else {
+        savePlayLog();
+        log('Spot marked and play log saved (a JSON file in your downloads).');
+      }
+    }
+    if (e.code === 'KeyM') {
+      log(toggleMute() ? 'Sound off (M).' : 'Sound on (M).');
+      document.getElementById('snd').checked = !isMuted();
+    }
+    if (paused && /^Arrow(Up|Down)$/.test(e.code)) {
+      e.preventDefault();
+      moveFocus(e.code === 'ArrowDown' ? 1 : -1, pauseBox);
+    } // (the pause screen by keyboard: Tab and the arrows move, Enter presses; 2026-11-15)
+    if (paused) return; // (in co-op the world runs on behind the pause screen: no war cry or turret from it)
+    if (e.code === 'KeyV') setCam(CAMS[(CAMS.indexOf(camMode) + 1) % 3]);
+    if (e.code === 'KeyF' && !e.repeat) secondary();
+    if (e.code === 'KeyZ' && !e.repeat && !e.metaKey && !e.ctrlKey && !building()) attack(true); // the Gunslinger's pistol-whip
+    if (e.code === 'Tab' && !player.dead && !(player.down > 0)) {
+      toggleCraft(true);
+      keys.clear();
+      mouseDown = false;
+    }
+    if (e.code === 'KeyE' && !e.repeat && camMode !== 'top') interact();
+    if (e.code === 'KeyE' && !e.repeat && camMode === 'top') {
+      if (!interact(true) && !harvestTarget(player.x, player.z)) topYaw -= Math.PI / 4;
+    }
+    if (e.code === 'KeyQ' && camMode === 'top') topYaw += Math.PI / 4;
+    if (e.code === 'KeyT' && !e.repeat) toggleTorch(); // slice 26: put the hand torch away or take it out
+    if (e.code === 'KeyR' && !e.repeat && !building()) reload();
+  });
+  addEventListener('keyup', (e) => keys.delete(e.code));
+  renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
+  renderer.domElement.addEventListener('mousedown', (e) => {
+    if (!running || craftOpen()) return;
+    if (building() && (document.pointerLockElement || camMode === 'top' || lockFailed)) {
+      if (e.button === 2) endBuild();
+      else if (e.button === 0) placeNow();
+      return;
+    } // build mode: click places, right click ends
+    if (e.button === 2) {
+      if (document.pointerLockElement || camMode === 'top') secondary();
+      return;
+    }
+    if (camMode !== 'top' && !document.pointerLockElement && !lockFailed) {
+      try {
+        const r = renderer.domElement.requestPointerLock?.();
+        r?.catch?.(() => (lockFailed = true));
+      } catch {
+        lockFailed = true;
+      }
+      return;
+    }
+    if (e.button === 0) mouseDown = true;
+  });
+  addEventListener('mouseup', () => (mouseDown = false));
+  addEventListener(
+    'wheel',
+    (e) => {
+      if (running && building()) rotateBuild(e.deltaY > 0 ? 1 : -1);
+    },
+    { passive: true },
+  );
+  addEventListener('mousemove', (e) => {
+    mouseNDC.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+    if (camMode === 'top') {
+      const c = document.getElementById('cross');
+      c.style.left = e.clientX + 'px';
+      c.style.top = e.clientY + 'px';
+    }
+    if (camMode !== 'top' && (document.pointerLockElement || e.buttons & 2)) {
+      const k = 0.0024 * settings.sens;
+      player.yaw -= e.movementX * k;
+      player.pitch = Math.max(-1.35, Math.min(1.2, player.pitch - e.movementY * k * (settings.invertY ? -1 : 1)));
+    }
+  });
 }
-const keys = new Set(); let mouseDown = false, mouseNDC = new THREE.Vector2();
-let padPrev = [], lockFailed = false; document.addEventListener('pointerlockerror', () => { lockFailed = true; log('Mouse lock blocked here: right-drag or arrow keys to look.'); });
-export function readPad() { const p = [...(navigator.getGamepads?.() || [])].find(Boolean); if (!p) return null;
-  const dz = v => Math.abs(v) < 0.15 ? 0 : v, b = i => p.buttons[i]?.pressed, edge = i => b(i) && !padPrev[i];
-  const out = { mx: dz(p.axes[0]), mz: dz(p.axes[1]), lx: dz(p.axes[2]), ly: dz(p.axes[3]), atk: b(7) || b(2), jump: edge(0), jumpHeld: b(0), dive: b(10), use: edge(1), useHeld: b(1), sec: edge(4) || edge(6), cam: edge(3), pause: edge(9), left: edge(14), right: edge(15), menu: edge(8), up: edge(12), down: edge(13), downHeld: b(13), rb: edge(5), tearHeld: b(5), fixHeld: b(15), close: edge(11) };
+const keys = new Set();
+let mouseDown = false,
+  mouseNDC = new THREE.Vector2();
+let padPrev = [],
+  lockFailed = false;
+document.addEventListener('pointerlockerror', () => {
+  lockFailed = true;
+  log('Mouse lock blocked here: right-drag or arrow keys to look.');
+});
+export function readPad() {
+  const p = [...(navigator.getGamepads?.() || [])].find(Boolean);
+  if (!p) return null;
+  const dz = (v) => (Math.abs(v) < 0.15 ? 0 : v),
+    b = (i) => p.buttons[i]?.pressed,
+    edge = (i) => b(i) && !padPrev[i];
+  const out = {
+    mx: dz(p.axes[0]),
+    mz: dz(p.axes[1]),
+    lx: dz(p.axes[2]),
+    ly: dz(p.axes[3]),
+    atk: b(7) || b(2),
+    jump: edge(0),
+    jumpHeld: b(0),
+    dive: b(10),
+    use: edge(1),
+    useHeld: b(1),
+    sec: edge(4) || edge(6),
+    cam: edge(3),
+    pause: edge(9),
+    left: edge(14),
+    right: edge(15),
+    menu: edge(8),
+    up: edge(12),
+    down: edge(13),
+    downHeld: b(13),
+    rb: edge(5),
+    tearHeld: b(5),
+    fixHeld: b(15),
+    close: edge(11),
+  };
   // (#16: a new press or a stick that moves means the pad is in use, on the menus too; a held trigger or a resting stick does not take
   // the hints back from a key just pressed, the review)
-  const moved = p.axes.some((v, i) => Math.abs(v - (axPrev[i] ?? 0)) > 0.15); if (moved) axPrev = [...p.axes]; if (moved || p.buttons.some((x, i) => x.pressed && !padPrev[i])) padActive = true;
-  padPrev = p.buttons.map(x => x.pressed); return out; }
+  const moved = p.axes.some((v, i) => Math.abs(v - (axPrev[i] ?? 0)) > 0.15);
+  if (moved) axPrev = [...p.axes];
+  if (moved || p.buttons.some((x, i) => x.pressed && !padPrev[i])) padActive = true;
+  padPrev = p.buttons.map((x) => x.pressed);
+  return out;
+}
 let axPrev = [];
-export function togglePause(on = !paused, tent = false) { if (!running) return; paused = on; windLevel(windNow() * hush()); riverLevel(riverNow() * hush()); if (on) pauseChars(tent); setMusicPaused(on); if (on) { keys.clear(); mouseDown = false; } logEvent(on ? 'pause' : 'resume'); document.getElementById('pause').classList.toggle('hidden', !paused); syncCursor();
+export function togglePause(on = !paused, tent = false) {
+  if (!running) return;
+  paused = on;
+  windLevel(windNow() * hush());
+  riverLevel(riverNow() * hush());
+  if (on) pauseChars(tent);
+  setMusicPaused(on);
+  if (on) {
+    keys.clear();
+    mouseDown = false;
+  }
+  logEvent(on ? 'pause' : 'resume');
+  document.getElementById('pause').classList.toggle('hidden', !paused);
+  syncCursor();
   homePanels();
   if (paused && document.pointerLockElement) document.exitPointerLock?.();
-  if (paused) document.getElementById('resume').focus(); else if (pauseBox.contains(document.activeElement)) document.activeElement.blur(); } // (a keyboard or a pad starts on Resume)
+  if (paused) document.getElementById('resume').focus();
+  else if (pauseBox.contains(document.activeElement)) document.activeElement.blur();
+} // (a keyboard or a pad starts on Resume)
 const pauseBox = document.getElementById('pause');
 // Settings and the host's rules (slice 33) live on the pause screen while paused, on the start menu otherwise
-function homePanels() { document.getElementById(paused ? 'pause-settings' : 'menu-settings').appendChild(document.getElementById('settings'));
-  document.getElementById(paused ? 'pause-modes' : 'menu-modes').appendChild(document.getElementById('modes')); }
+function homePanels() {
+  document.getElementById(paused ? 'pause-settings' : 'menu-settings').appendChild(document.getElementById('settings'));
+  document.getElementById(paused ? 'pause-modes' : 'menu-modes').appendChild(document.getElementById('modes'));
+}
 // Settings (menu and pause screen share one panel): mouse/stick look sensitivity, invert up/down, sound. Quality is in main.js.
 export const settings = { sens: 1, invertY: false, music: 0.5 };
-try { const s = JSON.parse(localStorage.getItem('iw2.settings') || '{}'); if (s.sens > 0) settings.sens = s.sens; settings.invertY = !!s.invertY; if (s.music >= 0 && s.music <= 1) settings.music = s.music; } catch { /* storage blocked */ }
-function saveSettings() { logEvent('settings', { ...settings }); try { localStorage.setItem('iw2.settings', JSON.stringify(settings)); } catch { /* fine */ } }
+try {
+  const s = JSON.parse(localStorage.getItem('iw2.settings') || '{}');
+  if (s.sens > 0) settings.sens = s.sens;
+  settings.invertY = !!s.invertY;
+  if (s.music >= 0 && s.music <= 1) settings.music = s.music;
+} catch {
+  /* storage blocked */
+}
+function saveSettings() {
+  logEvent('settings', { ...settings });
+  try {
+    localStorage.setItem('iw2.settings', JSON.stringify(settings));
+  } catch {
+    /* fine */
+  }
+}
 function bindSettings() {
-  const sens = document.getElementById('sens'), sv = document.getElementById('sensv'), inv = document.getElementById('invy'), snd = document.getElementById('snd'), mus = document.getElementById('music');
-  mus.value = settings.music; setMusicVolume(settings.music); mus.oninput = () => { settings.music = +mus.value; setMusicVolume(settings.music); saveSettings(); };
-  sens.value = settings.sens; sv.textContent = settings.sens.toFixed(1) + 'x';
-  sens.oninput = () => { settings.sens = +sens.value; sv.textContent = settings.sens.toFixed(1) + 'x'; saveSettings(); };
-  inv.checked = settings.invertY; inv.onchange = () => { settings.invertY = inv.checked; saveSettings(); };
-  snd.checked = !isMuted(); snd.onchange = () => { if (snd.checked === isMuted()) toggleMute(); };
+  const sens = document.getElementById('sens'),
+    sv = document.getElementById('sensv'),
+    inv = document.getElementById('invy'),
+    snd = document.getElementById('snd'),
+    mus = document.getElementById('music');
+  mus.value = settings.music;
+  setMusicVolume(settings.music);
+  mus.oninput = () => {
+    settings.music = +mus.value;
+    setMusicVolume(settings.music);
+    saveSettings();
+  };
+  sens.value = settings.sens;
+  sv.textContent = settings.sens.toFixed(1) + 'x';
+  sens.oninput = () => {
+    settings.sens = +sens.value;
+    sv.textContent = settings.sens.toFixed(1) + 'x';
+    saveSettings();
+  };
+  inv.checked = settings.invertY;
+  inv.onchange = () => {
+    settings.invertY = inv.checked;
+    saveSettings();
+  };
+  snd.checked = !isMuted();
+  snd.onchange = () => {
+    if (snd.checked === isMuted()) toggleMute();
+  };
   document.getElementById('resume').onclick = () => togglePause(false);
   document.getElementById('tomenu').onclick = () => location.reload();
   // #60: the pause screen's row of characters to switch to in place (switchChar)
-  const row = document.getElementById('pause-chars'); CHARS.forEach((c, i) => { const b = document.createElement('button'); b.className = 'q'; b.type = 'button';
-    b.innerHTML = `<i style="background:#${c.color.toString(16).padStart(6, '0')}"></i>${c.title}`; b.title = `${c.player}, ${c.maxHp} HP`; b.onclick = () => switchChar(i); row.appendChild(b); });
+  const row = document.getElementById('pause-chars');
+  CHARS.forEach((c, i) => {
+    const b = document.createElement('button');
+    b.className = 'q';
+    b.type = 'button';
+    b.innerHTML = `<i style="background:#${c.color.toString(16).padStart(6, '0')}"></i>${c.title}`;
+    b.title = `${c.player}, ${c.maxHp} HP`;
+    b.onclick = () => switchChar(i);
+    row.appendChild(b);
+  });
   // losing the mouse lock mid-game (Esc) opens the pause screen
   // (in build mode, Esc lets the mouse go and ends building instead: slice 12)
-  document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement && running && !paused && camMode !== 'top' && !craftOpen()) { if (building()) endBuild(); else togglePause(true); } });
+  document.addEventListener('pointerlockchange', () => {
+    if (!document.pointerLockElement && running && !paused && camMode !== 'top' && !craftOpen()) {
+      if (building()) endBuild();
+      else togglePause(true);
+    }
+  });
 }
 
 // #60 (the play of 2026-11-14: Zachary left and rejoined four times in one game to change character): at the camp's tent (E
@@ -363,151 +1319,604 @@ function bindSettings() {
 // his pick: only at the camp, so getting back to the safe valley makes a switch a real choice). Not while down
 const atTent = (x = player.x, z = player.z) => Math.hypot(x - campTent.x, z - campTent.z) < 2.8;
 let tentOpen = false;
-function pauseChars(tent = tentOpen) { tentOpen = tent; document.getElementById('pause-switch').classList.toggle('hidden', !tent); document.querySelector('#pause h1').textContent = tent ? 'THE CAMP TENT' : 'PAUSED';
-  const off = player.dead || player.down > 0 || player.out; [...document.getElementById('pause-chars').children].forEach((b, i) => { b.disabled = !!off || CHARS[i] === player.ch; b.classList.toggle('on', CHARS[i] === player.ch); b.setAttribute('aria-pressed', String(CHARS[i] === player.ch)); }); }
-export function switchChar(i) { const ch = CHARS[i]; if (!running || !tentOpen || !atTent() || !ch || ch === player.ch || player.dead || player.down > 0 || player.out) return false;
-  const share = player.hp / player.maxHp, from = player.ch.id; player.ch = ch; player.maxHp = ch.maxHp; player.hp = Math.max(1, Math.round(ch.maxHp * share));
-  scene.remove(player.mesh); player.mesh = buildCharacter(ch); scene.add(player.mesh); applyUp(player.mesh, ch.id, upgraded(ch.id)); // (an upgrade bought for this one earlier comes back with it)
-  viewModel.clear(); viewModel.add(buildViewModel(ch)); Object.assign(player, { atkT: 0, closeT: 0, fan: 0, shieldT: 0, knifeT: 0, swing: 0 }); // (the secondary's cooldown carries over: no fresh one by switching, review)
-  for (let k = shots.length - 1; k >= 0; k--) if (shots[k].kind === 'shield' && shots[k].owner === player) { scene.remove(shots[k].mesh); shots.splice(k, 1); } // (a thrown shield in flight goes with the old Knight, review)
-  togglePause(false); setCam(camMode); logEvent('switch', { from, to: ch.id }); log(`${ch.player} takes over as ${ch.title}.`); return true; }
+function pauseChars(tent = tentOpen) {
+  tentOpen = tent;
+  document.getElementById('pause-switch').classList.toggle('hidden', !tent);
+  document.querySelector('#pause h1').textContent = tent ? 'THE CAMP TENT' : 'PAUSED';
+  const off = player.dead || player.down > 0 || player.out;
+  [...document.getElementById('pause-chars').children].forEach((b, i) => {
+    b.disabled = !!off || CHARS[i] === player.ch;
+    b.classList.toggle('on', CHARS[i] === player.ch);
+    b.setAttribute('aria-pressed', String(CHARS[i] === player.ch));
+  });
+}
+export function switchChar(i) {
+  const ch = CHARS[i];
+  if (!running || !tentOpen || !atTent() || !ch || ch === player.ch || player.dead || player.down > 0 || player.out)
+    return false;
+  const share = player.hp / player.maxHp,
+    from = player.ch.id;
+  player.ch = ch;
+  player.maxHp = ch.maxHp;
+  player.hp = Math.max(1, Math.round(ch.maxHp * share));
+  scene.remove(player.mesh);
+  player.mesh = buildCharacter(ch);
+  scene.add(player.mesh);
+  applyUp(player.mesh, ch.id, upgraded(ch.id)); // (an upgrade bought for this one earlier comes back with it)
+  viewModel.clear();
+  viewModel.add(buildViewModel(ch));
+  Object.assign(player, { atkT: 0, closeT: 0, fan: 0, shieldT: 0, knifeT: 0, swing: 0 }); // (the secondary's cooldown carries over: no fresh one by switching, review)
+  for (let k = shots.length - 1; k >= 0; k--)
+    if (shots[k].kind === 'shield' && shots[k].owner === player) {
+      scene.remove(shots[k].mesh);
+      shots.splice(k, 1);
+    } // (a thrown shield in flight goes with the old Knight, review)
+  togglePause(false);
+  setCam(camMode);
+  logEvent('switch', { from, to: ch.id });
+  log(`${ch.player} takes over as ${ch.title}.`);
+  return true;
+}
 
 // ── Gameplay ───────────────────────────────────────────────────────────
-const logEl = document.getElementById('log'); const lines = [];
-function log(s) { lines.push(s); if (lines.length > 5) lines.shift(); logEl.innerHTML = lines.map(l => `<div>${l}</div>`).join(''); }
-function aimDir() { // the direction an attack goes
-  if (camMode === 'top') { const ray = new THREE.Raycaster(); ray.setFromCamera(mouseNDC, camera);
-    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -(player.y + 1.2)), hit = new THREE.Vector3();
-    if (padActive || !ray.ray.intersectPlane(plane, hit)) return new THREE.Vector3(-Math.sin(player.faceYaw), 0, -Math.cos(player.faceYaw));
-    const d = hit.sub(new THREE.Vector3(player.x, player.y + 1.2, player.z)); d.y = 0; return d.normalize(); }
-  const d = new THREE.Vector3(); camera.getWorldDirection(d); return d;
+const logEl = document.getElementById('log');
+const lines = [];
+function log(s) {
+  lines.push(s);
+  if (lines.length > 5) lines.shift();
+  logEl.innerHTML = lines.map((l) => `<div>${l}</div>`).join('');
+}
+function aimDir() {
+  // the direction an attack goes
+  if (camMode === 'top') {
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(mouseNDC, camera);
+    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -(player.y + 1.2)),
+      hit = new THREE.Vector3();
+    if (padActive || !ray.ray.intersectPlane(plane, hit))
+      return new THREE.Vector3(-Math.sin(player.faceYaw), 0, -Math.cos(player.faceYaw));
+    const d = hit.sub(new THREE.Vector3(player.x, player.y + 1.2, player.z));
+    d.y = 0;
+    return d.normalize();
+  }
+  const d = new THREE.Vector3();
+  camera.getWorldDirection(d);
+  return d;
 }
 // close: the Gunslinger's pistol-whip, a melee blow on its own cooldown (it spends no round and never holds up his shot)
 export function attack(close = false) {
-  const ch = player.ch, s = close ? ch.close : ch, melee = close || ch.atk === 'melee'; if (!s || player.dead) return; if (player.sleep) return wake('You get up.');
-  if (close) { if (player.closeT > 0) return; player.closeT = s.cd; } else { if (player.atkT > 0 || !attackGate()) return; player.atkT = ch.cd; }
-  player.swing = 1; player.blow = close; endSafe();
-  const dir = aimDir(); player.faceYaw = Math.atan2(-dir.x, -dir.z); player.mesh.userData.anim.attack(player.moving, close);
+  const ch = player.ch,
+    s = close ? ch.close : ch,
+    melee = close || ch.atk === 'melee';
+  if (!s || player.dead) return;
+  if (player.sleep) return wake('You get up.');
+  if (close) {
+    if (player.closeT > 0) return;
+    player.closeT = s.cd;
+  } else {
+    if (player.atkT > 0 || !attackGate()) return;
+    player.atkT = ch.cd;
+  }
+  player.swing = 1;
+  player.blow = close;
+  endSafe();
+  const dir = aimDir();
+  player.faceYaw = Math.atan2(-dir.x, -dir.z);
+  player.mesh.userData.anim.attack(player.moving, close);
   send('all', { t: 'a', d: [+dir.x.toFixed(2), +dir.z.toFixed(2)], r: melee ? s.range : 0, c: close ? 1 : 0 }); // the others see the swing
-  const o = new THREE.Vector3(player.x, player.y + (camMode === 'first' ? 1.6 : 1.4), player.z).addScaledVector(dir, 0.6);
-  if (melee) { slash(dir, s.range); sfx(ch.id === 'knight' ? 'heavy' : 'swing'); meleeHit(dir, s.range, s.dmg, s.cleave || 1);
+  const o = new THREE.Vector3(player.x, player.y + (camMode === 'first' ? 1.6 : 1.4), player.z).addScaledVector(
+    dir,
+    0.6,
+  );
+  if (melee) {
+    slash(dir, s.range);
+    sfx(ch.id === 'knight' ? 'heavy' : 'swing');
+    meleeHit(dir, s.range, s.dmg, s.cleave || 1);
     // slice 12's bench upgrades: the Architect's nail gun fires a nail with each swing; the Knight throws his shield (it flies back to him)
-    if (ch.id === 'architect' && upgraded('architect')) fireShot(o.clone().addScaledVector(dir, 0.2), aimed(o, dir), 14, 'nail');
-    if (ch.id === 'knight' && upgraded('knight') && !(player.shieldT > 0)) { player.shieldT = 2.2; const d2 = dir.clone(); d2.y *= 0.3; d2.normalize();
-      fireShot(new THREE.Vector3(player.x, player.y + 1.25, player.z).addScaledVector(d2, 0.9), d2, 28, 'shield').owner = player; const sh = player.mesh.userData.offhand; if (sh) sh.visible = false; } }
-  else fireShot(o, aimed(o, dir), ch.dmg, ch.id);
+    if (ch.id === 'architect' && upgraded('architect'))
+      fireShot(o.clone().addScaledVector(dir, 0.2), aimed(o, dir), 14, 'nail');
+    if (ch.id === 'knight' && upgraded('knight') && !(player.shieldT > 0)) {
+      player.shieldT = 2.2;
+      const d2 = dir.clone();
+      d2.y *= 0.3;
+      d2.normalize();
+      fireShot(
+        new THREE.Vector3(player.x, player.y + 1.25, player.z).addScaledVector(d2, 0.9),
+        d2,
+        28,
+        'shield',
+      ).owner = player;
+      const sh = player.mesh.userData.offhand;
+      if (sh) sh.visible = false;
+    }
+  } else fireShot(o, aimed(o, dir), ch.dmg, ch.id);
 }
 // #86: attacking or using a weapon ends the safe seconds after a respawn
-function endSafe() { if (!(player.graceT > 0)) return; player.graceT = 0; log('You attacked: rivals can hurt you again.'); logEvent('safe-end'); }
+function endSafe() {
+  if (!(player.graceT > 0)) return;
+  player.graceT = 0;
+  log('You attacked: rivals can hurt you again.');
+  logEvent('safe-end');
+}
 // Abigail's bow takes an arrow from the quiver (slice 11); empty, she cannot shoot (her knife still works)
-function attackGate() { if (player.ch.id === 'gunslinger') { if (useRound()) return true; player.atkT = 0.3; return false; } /* slice 12: his rounds run out */
-  if (player.ch.id !== 'ranger' || useArrow()) return true; player.atkT = 0.6; if (!(player.emptyT > 0)) { player.emptyT = 3; log('Quiver empty: walk over your spent arrows to pick them up, or craft more (Tab).'); sfx('chitin', null, 0.4); } return false; }
+function attackGate() {
+  if (player.ch.id === 'gunslinger') {
+    if (useRound()) return true;
+    player.atkT = 0.3;
+    return false;
+  } /* slice 12: his rounds run out */
+  if (player.ch.id !== 'ranger' || useArrow()) return true;
+  player.atkT = 0.6;
+  if (!(player.emptyT > 0)) {
+    player.emptyT = 3;
+    log('Quiver empty: walk over your spent arrows to pick them up, or craft more (Tab).');
+    sfx('chitin', null, 0.4);
+  }
+  return false;
+}
 // a melee blow lands on the one enemy nearest the aim (the Knight's cleave also catches the next, for half); a miss hits scenery
 function meleeHit(dir, range, dmg, cleave = 1) {
   const near = [];
-  for (const e of enemies) { if (e.dead) continue; const dx = e.x - player.x, dz = e.z - player.z, d = Math.hypot(dx, dz) || 1e-3, fw = (dx * dir.x + dz * dir.z) / d;
-    if (d < range + e.mesh.scale.x * 0.6 && fw > 0.25) near.push({ e, n: [dx / d, dz / d], score: d * (1.6 - fw) }); }
-  if (pvp()) for (const o of others.values()) { if (gone(o) || Math.abs(o.y - player.y) > 2) continue; const dx = o.x - player.x, dz = o.z - player.z, d = Math.hypot(dx, dz) || 1e-3, fw = (dx * dir.x + dz * dir.z) / d;
-    if (d < range + 0.45 && fw > 0.25) near.push({ o, n: [dx / d, dz / d], score: d * (1.6 - fw) }); } // (slice 33: another player, when the rules let blows land)
-  near.sort((a, b) => a.score - b.score).slice(0, cleave).forEach((h, k) => { const dd = k ? Math.round(dmg / 2) : dmg; if (h.e) hitEnemy(h.e, dd, ...h.n); else hitRival(h.o, dd, h.n); });
+  for (const e of enemies) {
+    if (e.dead) continue;
+    const dx = e.x - player.x,
+      dz = e.z - player.z,
+      d = Math.hypot(dx, dz) || 1e-3,
+      fw = (dx * dir.x + dz * dir.z) / d;
+    if (d < range + e.mesh.scale.x * 0.6 && fw > 0.25) near.push({ e, n: [dx / d, dz / d], score: d * (1.6 - fw) });
+  }
+  if (pvp())
+    for (const o of others.values()) {
+      if (gone(o) || Math.abs(o.y - player.y) > 2) continue;
+      const dx = o.x - player.x,
+        dz = o.z - player.z,
+        d = Math.hypot(dx, dz) || 1e-3,
+        fw = (dx * dir.x + dz * dir.z) / d;
+      if (d < range + 0.45 && fw > 0.25) near.push({ o, n: [dx / d, dz / d], score: d * (1.6 - fw) });
+    } // (slice 33: another player, when the rules let blows land)
+  near
+    .sort((a, b) => a.score - b.score)
+    .slice(0, cleave)
+    .forEach((h, k) => {
+      const dd = k ? Math.round(dmg / 2) : dmg;
+      if (h.e) hitEnemy(h.e, dd, ...h.n);
+      else hitRival(h.o, dd, h.n);
+    });
   if (near.length) return;
-  let best = null, bd = range * 0.8; for (const c of nearColliders(player.x, player.z)) { if (!c.r) continue; const dx = c.x - player.x, dz = c.z - player.z, d = Math.hypot(dx, dz) || 1e-3, edge = d - colR(c, player.x, player.z);
-    if (edge < bd && (dx * dir.x + dz * dir.z) / d > 0.5) { bd = edge; best = { c, at: new THREE.Vector3(player.x + dx / d * edge, player.y + 1.1, player.z + dz / d * edge) }; } }
-  if (best) hitScenery(best.c, best.at, dir); }
+  let best = null,
+    bd = range * 0.8;
+  for (const c of nearColliders(player.x, player.z)) {
+    if (!c.r) continue;
+    const dx = c.x - player.x,
+      dz = c.z - player.z,
+      d = Math.hypot(dx, dz) || 1e-3,
+      edge = d - colR(c, player.x, player.z);
+    if (edge < bd && (dx * dir.x + dz * dir.z) / d > 0.5) {
+      bd = edge;
+      best = { c, at: new THREE.Vector3(player.x + (dx / d) * edge, player.y + 1.1, player.z + (dz / d) * edge) };
+    }
+  }
+  if (best) hitScenery(best.c, best.at, dir);
+}
 // ── Secondaries (F, right mouse, LB/LT), from IW1: the Knight's war cry, the Architect's auto-turret, Lauren's charm
 // flower, Abigail's knife; IW1's Gunslinger secondary is a reload (no ammo here), so he fans the hammer: six fast shots.
 export function secondary() {
-  const ch = player.ch; if (!running || paused || player.dead) return; if (player.secT > 0) { log(`${ch.sec}: ready in ${Math.ceil(player.secT)} s.`); return; }
+  const ch = player.ch;
+  if (!running || paused || player.dead) return;
+  if (player.secT > 0) {
+    log(`${ch.sec}: ready in ${Math.ceil(player.secT)} s.`);
+    return;
+  }
   if (ch.id === 'charmer' && !useFlower()) return; // slice 12: each charm flower takes a flower
-  player.secT = ch.secCd; endSafe(); const dir = aimDir(); player.faceYaw = Math.atan2(-dir.x, -dir.z); logEvent('secondary', { ch: ch.id });
-  if (ch.id === 'knight') { // enemies within 8 m run for 5 s; the Knight moves half again as fast for 5 s
-    sfx('rally'); pulse(0xffd25a, 3, 0.8); pulse(0xaaddff, 8, 0.7); player.rallyT = 5; player.mesh.userData.anim.attack(false);
-    if (joining()) { send('host', { t: 'cry', x: player.x, z: player.z }); log('War cry!'); } else { const n = scare(player.x, player.z); log(`War cry! ${n ? n + ' flee' + (n === 1 ? 's' : '') : 'Nothing near to scare'}.`); } }
-  else if (ch.id === 'architect') { const x = player.x - Math.sin(player.faceYaw) * 1.6, z = player.z - Math.cos(player.faceYaw) * 1.6; deployTurret(x, z, player.faceYaw); send('all', { t: 'tur', x, z, f: player.faceYaw }); log('Turret deployed: 30 s of covering fire.'); }
-  else if (ch.id === 'charmer') { const o = new THREE.Vector3(player.x, player.y + 1.4, player.z).addScaledVector(dir, 0.6); auraNext = upgraded('charmer'); fireShot(o, aimed(o, dir), 20, 'charmer'); auraNext = false; Object.assign(shots.at(-1), { charm: true, grav: 3, wide: 0.45 }); shots.at(-1).v.multiplyScalar(1.25); shots.at(-1).mesh.scale.setScalar(2.6); sfx('charm'); player.swing = 1; }
-  else if (ch.id === 'ranger') { player.swing = 1; player.knifeT = 0.45; if (player.mesh.userData.knife) player.mesh.userData.knife.visible = true; player.mesh.userData.anim.attack(player.moving); sfx('swing'); const r = 1.9; slash(dir, r); meleeHit(dir, r, 26); }
-  else { if (!ammo.clip) { useRound(); player.secT = 0; return; } player.fan = Math.min(upgraded('gunslinger') ? 10 : 6, ammo.clip); player.fanT = 0; } // slice 12: the fan spends rounds from the clip (ten once upgraded: the gate)
+  player.secT = ch.secCd;
+  endSafe();
+  const dir = aimDir();
+  player.faceYaw = Math.atan2(-dir.x, -dir.z);
+  logEvent('secondary', { ch: ch.id });
+  if (ch.id === 'knight') {
+    // enemies within 8 m run for 5 s; the Knight moves half again as fast for 5 s
+    sfx('rally');
+    pulse(0xffd25a, 3, 0.8);
+    pulse(0xaaddff, 8, 0.7);
+    player.rallyT = 5;
+    player.mesh.userData.anim.attack(false);
+    if (joining()) {
+      send('host', { t: 'cry', x: player.x, z: player.z });
+      log('War cry!');
+    } else {
+      const n = scare(player.x, player.z);
+      log(`War cry! ${n ? n + ' flee' + (n === 1 ? 's' : '') : 'Nothing near to scare'}.`);
+    }
+  } else if (ch.id === 'architect') {
+    const x = player.x - Math.sin(player.faceYaw) * 1.6,
+      z = player.z - Math.cos(player.faceYaw) * 1.6;
+    deployTurret(x, z, player.faceYaw);
+    send('all', { t: 'tur', x, z, f: player.faceYaw });
+    log('Turret deployed: 30 s of covering fire.');
+  } else if (ch.id === 'charmer') {
+    const o = new THREE.Vector3(player.x, player.y + 1.4, player.z).addScaledVector(dir, 0.6);
+    auraNext = upgraded('charmer');
+    fireShot(o, aimed(o, dir), 20, 'charmer');
+    auraNext = false;
+    Object.assign(shots.at(-1), { charm: true, grav: 3, wide: 0.45 });
+    shots.at(-1).v.multiplyScalar(1.25);
+    shots.at(-1).mesh.scale.setScalar(2.6);
+    sfx('charm');
+    player.swing = 1;
+  } else if (ch.id === 'ranger') {
+    player.swing = 1;
+    player.knifeT = 0.45;
+    if (player.mesh.userData.knife) player.mesh.userData.knife.visible = true;
+    player.mesh.userData.anim.attack(player.moving);
+    sfx('swing');
+    const r = 1.9;
+    slash(dir, r);
+    meleeHit(dir, r, 26);
+  } else {
+    if (!ammo.clip) {
+      useRound();
+      player.secT = 0;
+      return;
+    }
+    player.fan = Math.min(upgraded('gunslinger') ? 10 : 6, ammo.clip);
+    player.fanT = 0;
+  } // slice 12: the fan spends rounds from the clip (ten once upgraded: the gate)
 }
 // ── Slice 12: the five bench upgrades (each game's own: bought in the craft menu at a bench, lost with a new game) ──
 export const upgraded = (id) => !!(player.up && player.up[id] && player.ch?.id === id);
-export const upBits = () => player.ch && upgraded(player.ch.id) ? 1 << CHARS.indexOf(player.ch) : 0;
+export const upBits = () => (player.ch && upgraded(player.ch.id) ? 1 << CHARS.indexOf(player.ch) : 0);
 // what shows on a character once upgraded: the Architect's nail gun on his left forearm, Lauren's charm aura round her feet
-const AURA = new THREE.MeshBasicMaterial({ color: 0xff8ac8, transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2 });
+const AURA = new THREE.MeshBasicMaterial({
+  color: 0xff8ac8,
+  transparent: true,
+  opacity: 0.5,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending,
+  side: THREE.DoubleSide,
+  polygonOffset: true,
+  polygonOffsetFactor: -2,
+});
 export const AURA_R = 4.5;
-export function applyUp(root, id, on) { const u = root.userData;
-  if (id === 'architect' && on && !u.nailgun) { const steel = new THREE.MeshStandardMaterial({ color: 0x8a8e92, metalness: 0.9, roughness: 0.35 }), paint = new THREE.MeshStandardMaterial({ color: 0x3e5236, roughness: 0.6, metalness: 0.4 }), g = new THREE.Group();
-    const put = (geo, m, p) => { const q = new THREE.Mesh(geo, m); q.position.set(...p); q.castShadow = true; g.add(q); };
-    put(new THREE.BoxGeometry(0.075, 0.2, 0.09), paint, [0, 0, 0]); put(new THREE.CylinderGeometry(0.018, 0.022, 0.14, 8), steel, [0, 0.16, 0.015]); put(new THREE.BoxGeometry(0.03, 0.17, 0.05), steel, [0, -0.02, 0.07]); put(new THREE.BoxGeometry(0.09, 0.04, 0.1), steel, [0, -0.1, 0]);
-    u.nailgun = g; attachGear(root, 'lowerarm_l', g, [-0.075, 0.13, 0.0]); }
-  if (id === 'charmer' && on && !u.aura) { const g = new THREE.Group(); g.add(new THREE.Mesh(new THREE.RingGeometry(AURA_R - 0.18, AURA_R, 64).rotateX(-Math.PI / 2), AURA));
-    const fill = new THREE.Mesh(new THREE.CircleGeometry(AURA_R - 0.18, 48).rotateX(-Math.PI / 2), AURA.clone()); fill.material.opacity = 0.08; g.add(fill); g.position.y = 0.22; u.aura = g; root.add(g); } }
-export function upgradeFx(id) { pulse(0xffd25a, 3.5, 0.9); pulse(0xffffff, 1.6, 0.5); applyUp(player.mesh, id, true); logEvent('upgrade', { ch: id });
-  if (id === 'gunslinger') { const k = Math.min(clipSize() - ammo.clip, ammo.reserve); ammo.clip += k; ammo.reserve -= k; } } // the bigger clip comes loaded from the reserve (the gate of slice 12)
+export function applyUp(root, id, on) {
+  const u = root.userData;
+  if (id === 'architect' && on && !u.nailgun) {
+    const steel = new THREE.MeshStandardMaterial({ color: 0x8a8e92, metalness: 0.9, roughness: 0.35 }),
+      paint = new THREE.MeshStandardMaterial({ color: 0x3e5236, roughness: 0.6, metalness: 0.4 }),
+      g = new THREE.Group();
+    const put = (geo, m, p) => {
+      const q = new THREE.Mesh(geo, m);
+      q.position.set(...p);
+      q.castShadow = true;
+      g.add(q);
+    };
+    put(new THREE.BoxGeometry(0.075, 0.2, 0.09), paint, [0, 0, 0]);
+    put(new THREE.CylinderGeometry(0.018, 0.022, 0.14, 8), steel, [0, 0.16, 0.015]);
+    put(new THREE.BoxGeometry(0.03, 0.17, 0.05), steel, [0, -0.02, 0.07]);
+    put(new THREE.BoxGeometry(0.09, 0.04, 0.1), steel, [0, -0.1, 0]);
+    u.nailgun = g;
+    attachGear(root, 'lowerarm_l', g, [-0.075, 0.13, 0.0]);
+  }
+  if (id === 'charmer' && on && !u.aura) {
+    const g = new THREE.Group();
+    g.add(new THREE.Mesh(new THREE.RingGeometry(AURA_R - 0.18, AURA_R, 64).rotateX(-Math.PI / 2), AURA));
+    const fill = new THREE.Mesh(new THREE.CircleGeometry(AURA_R - 0.18, 48).rotateX(-Math.PI / 2), AURA.clone());
+    fill.material.opacity = 0.08;
+    g.add(fill);
+    g.position.y = 0.22;
+    u.aura = g;
+    root.add(g);
+  }
+}
+export function upgradeFx(id) {
+  pulse(0xffd25a, 3.5, 0.9);
+  pulse(0xffffff, 1.6, 0.5);
+  applyUp(player.mesh, id, true);
+  logEvent('upgrade', { ch: id });
+  if (id === 'gunslinger') {
+    const k = Math.min(clipSize() - ammo.clip, ammo.reserve);
+    ammo.clip += k;
+    ammo.reserve -= k;
+  }
+} // the bigger clip comes loaded from the reserve (the gate of slice 12)
 // Abigail's fire arrow bursts where it strikes an enemy: 20 to everything else within 2.5 m (IW1)
 const blasts = [];
-function blast(p, ghost, skip) { const m = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), new THREE.MeshBasicMaterial({ color: 0xff9a3a, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false }));
-  m.position.copy(p); scene.add(m); blasts.push({ m, t: 0 }); hitBurst(p, new THREE.Vector3(0, 1, 0), 'fire', 34); dustPuff(p, 12); sfx('thud', p); sfx('shot', p, 0.5);
-  if (Math.hypot(p.x - player.x, p.z - player.z) < 12) player.shake = Math.max(player.shake || 0, 0.15); if (ghost) return 0; let n = 0;
-  for (const e of enemies) if (!e.dead && e.state !== 'lurk' && Math.hypot(e.x - p.x, e.z - p.z) < 2.5 && e !== skip) { const d = Math.hypot(e.x - p.x, e.z - p.z) || 1; hitEnemy(e, 20, (e.x - p.x) / d, (e.z - p.z) / d); n++; }
-  return n; }
-function tickBlasts(dt) { for (let i = blasts.length - 1; i >= 0; i--) { const b = blasts[i]; b.t += dt; b.m.scale.setScalar(0.3 + b.t * 9); b.m.material.opacity = Math.max(0, 0.85 * (1 - b.t / 0.3)); if (b.t > 0.3) { scene.remove(b.m); b.m.geometry.dispose(); b.m.material.dispose(); blasts.splice(i, 1); } } }
+function blast(p, ghost, skip) {
+  const m = new THREE.Mesh(
+    new THREE.SphereGeometry(1, 16, 10),
+    new THREE.MeshBasicMaterial({
+      color: 0xff9a3a,
+      transparent: true,
+      opacity: 0.85,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
+  );
+  m.position.copy(p);
+  scene.add(m);
+  blasts.push({ m, t: 0 });
+  hitBurst(p, new THREE.Vector3(0, 1, 0), 'fire', 34);
+  dustPuff(p, 12);
+  sfx('thud', p);
+  sfx('shot', p, 0.5);
+  if (Math.hypot(p.x - player.x, p.z - player.z) < 12) player.shake = Math.max(player.shake || 0, 0.15);
+  if (ghost) return 0;
+  let n = 0;
+  for (const e of enemies)
+    if (!e.dead && e.state !== 'lurk' && Math.hypot(e.x - p.x, e.z - p.z) < 2.5 && e !== skip) {
+      const d = Math.hypot(e.x - p.x, e.z - p.z) || 1;
+      hitEnemy(e, 20, (e.x - p.x) / d, (e.z - p.z) / d);
+      n++;
+    }
+  return n;
+}
+function tickBlasts(dt) {
+  for (let i = blasts.length - 1; i >= 0; i--) {
+    const b = blasts[i];
+    b.t += dt;
+    b.m.scale.setScalar(0.3 + b.t * 9);
+    b.m.material.opacity = Math.max(0, 0.85 * (1 - b.t / 0.3));
+    if (b.t > 0.3) {
+      scene.remove(b.m);
+      b.m.geometry.dispose();
+      b.m.material.dispose();
+      blasts.splice(i, 1);
+    }
+  }
+}
 // Lauren's charm flower, upgraded: it charms every enemy within 4 m of where it lands, with a ring of petals
-function charmBurst(p, ghost) { pulse(0xff8ac8, 4, 0.7, p); hitBurst(p, new THREE.Vector3(0, 1, 0), 'petal', 30); if (ghost) return;
-  for (const e of enemies) if (!e.dead && e.state !== 'lurk' && e.state !== 'charmed' && Math.hypot(e.x - p.x, e.z - p.z) < 4) charm(e); }
+function charmBurst(p, ghost) {
+  pulse(0xff8ac8, 4, 0.7, p);
+  hitBurst(p, new THREE.Vector3(0, 1, 0), 'petal', 30);
+  if (ghost) return;
+  for (const e of enemies)
+    if (!e.dead && e.state !== 'lurk' && e.state !== 'charmed' && Math.hypot(e.x - p.x, e.z - p.z) < 4) charm(e);
+}
 // the war cry: enemies within 8 m of (x, z) run for 5 s (the host's game runs it for every player)
-export function scare(x, z) { let n = 0; for (const e of enemies) if (!e.dead && e.state !== 'lurk' && Math.hypot(e.x - x, e.z - z) < 8) { e.state = 'flee'; e.fleeT = 5; n++; } return n; }
+export function scare(x, z) {
+  let n = 0;
+  for (const e of enemies)
+    if (!e.dead && e.state !== 'lurk' && Math.hypot(e.x - x, e.z - z) < 8) {
+      e.state = 'flee';
+      e.fleeT = 5;
+      n++;
+    }
+  return n;
+}
 function tickSecondary(dt) {
-  player.secT = Math.max(0, player.secT - dt); player.fireT = Math.max(0, (player.fireT || 0) - dt); player.rallyT = Math.max(0, player.rallyT - dt);
-  muzzleFlash.t -= dt; muzzleFlash.visible = muzzleFlash.t > 0 && camMode === 'first'; if (muzzleFlash.visible) muzzleFlash.scale.set(1.6, 1.6, 3).multiplyScalar(0.8 + Math.random() * 0.5);
-  if (player.knifeT > 0 && (player.knifeT -= dt) <= 0 && player.mesh.userData.knife) player.mesh.userData.knife.visible = false;
+  player.secT = Math.max(0, player.secT - dt);
+  player.fireT = Math.max(0, (player.fireT || 0) - dt);
+  player.rallyT = Math.max(0, player.rallyT - dt);
+  muzzleFlash.t -= dt;
+  muzzleFlash.visible = muzzleFlash.t > 0 && camMode === 'first';
+  if (muzzleFlash.visible) muzzleFlash.scale.set(1.6, 1.6, 3).multiplyScalar(0.8 + Math.random() * 0.5);
+  if (player.knifeT > 0 && (player.knifeT -= dt) <= 0 && player.mesh.userData.knife)
+    player.mesh.userData.knife.visible = false;
   if (player.fan > 0 && (player.fanT -= dt) <= 0 && !useRound()) player.fan = 0;
-  if (player.fan > 0 && player.fanT <= 0) { player.fanT = 0.09; player.fan--; player.swing = 1; player.blow = false; const d = aimDir(), a = (rng() - 0.5) * 0.22, c = Math.cos(a), s = Math.sin(a);
-    const dir = new THREE.Vector3(d.x * c - d.z * s, d.y + (rng() - 0.5) * 0.06, d.z * c + d.x * s).normalize(); fireShot(new THREE.Vector3(player.x, player.y + (camMode === 'first' ? 1.6 : 1.4), player.z).addScaledVector(dir, 0.6), dir, 12, 'gunslinger'); }
-  for (let i = turrets.length - 1; i >= 0; i--) { const q = turrets[i]; q.life -= dt; q.fireT -= dt;
-    if (q.life <= 0) { removeTurret(q); dustPuff(new THREE.Vector3(q.x, q.y + 0.5, q.z), 12); turrets.splice(i, 1); continue; }
+  if (player.fan > 0 && player.fanT <= 0) {
+    player.fanT = 0.09;
+    player.fan--;
+    player.swing = 1;
+    player.blow = false;
+    const d = aimDir(),
+      a = (rng() - 0.5) * 0.22,
+      c = Math.cos(a),
+      s = Math.sin(a);
+    const dir = new THREE.Vector3(d.x * c - d.z * s, d.y + (rng() - 0.5) * 0.06, d.z * c + d.x * s).normalize();
+    fireShot(
+      new THREE.Vector3(player.x, player.y + (camMode === 'first' ? 1.6 : 1.4), player.z).addScaledVector(dir, 0.6),
+      dir,
+      12,
+      'gunslinger',
+    );
+  }
+  for (let i = turrets.length - 1; i >= 0; i--) {
+    const q = turrets[i];
+    q.life -= dt;
+    q.fireT -= dt;
+    if (q.life <= 0) {
+      removeTurret(q);
+      dustPuff(new THREE.Vector3(q.x, q.y + 0.5, q.z), 12);
+      turrets.splice(i, 1);
+      continue;
+    }
     q.light.visible = q.life > 5 || q.life % 0.5 > 0.2; // its last 5 s: the light blinks (a cue that is not colour alone)
-    let tgt = null, bd = 12, rival = false; for (const e of enemies) { if (e.dead || e.state === 'lurk') continue; const d = Math.hypot(e.x - q.x, e.z - q.z); if (d < bd) { bd = d; tgt = e; } }
+    let tgt = null,
+      bd = 12,
+      rival = false;
+    for (const e of enemies) {
+      if (e.dead || e.state === 'lurk') continue;
+      const d = Math.hypot(e.x - q.x, e.z - q.z);
+      if (d < bd) {
+        bd = d;
+        tgt = e;
+      }
+    }
     // slice 33: in free-for-all an Architect's turret fires on rivals too (another game's copy of it aims at this player, as the real one may)
-    if (rules.ffa) for (const o of q.ghost ? (running && !gone(player) ? [player] : []) : others.values()) { if (gone(o)) continue; const d = Math.hypot(o.x - q.x, o.z - q.z); if (d < bd) { bd = d; tgt = o; rival = true; } }
-    if (!tgt) continue; const aimYaw = Math.atan2(-(tgt.x - q.x), -(tgt.z - q.z)); let dd = aimYaw - q.head.rotation.y; dd = Math.atan2(Math.sin(dd), Math.cos(dd)); q.head.rotation.y += dd * Math.min(1, dt * 10);
-    if (q.fireT <= 0 && Math.abs(dd) < 0.3) { q.fireT = 0.8; const o = new THREE.Vector3(q.x, q.y + 1.42, q.z), dir = spreadDir((rival ? new THREE.Vector3(tgt.x, tgt.y + 1.1, tgt.z) : enemyCentre(tgt)).sub(o).normalize(), spreadAt(bd)); o.addScaledVector(dir, 1.2); fireShot(o, dir, 18, 'gunslinger', false, true, q.ghost); q.flash = 0.12; }
-    q.muzzle.visible = q.flash > 0; q.light.material.color.setHex(q.flash > 0 ? 0xffe0a0 : 0x6aff8a); q.flash -= dt; } }
+    if (rules.ffa)
+      for (const o of q.ghost ? (running && !gone(player) ? [player] : []) : others.values()) {
+        if (gone(o)) continue;
+        const d = Math.hypot(o.x - q.x, o.z - q.z);
+        if (d < bd) {
+          bd = d;
+          tgt = o;
+          rival = true;
+        }
+      }
+    if (!tgt) continue;
+    const aimYaw = Math.atan2(-(tgt.x - q.x), -(tgt.z - q.z));
+    let dd = aimYaw - q.head.rotation.y;
+    dd = Math.atan2(Math.sin(dd), Math.cos(dd));
+    q.head.rotation.y += dd * Math.min(1, dt * 10);
+    if (q.fireT <= 0 && Math.abs(dd) < 0.3) {
+      q.fireT = 0.8;
+      const o = new THREE.Vector3(q.x, q.y + 1.42, q.z),
+        dir = spreadDir(
+          (rival ? new THREE.Vector3(tgt.x, tgt.y + 1.1, tgt.z) : enemyCentre(tgt)).sub(o).normalize(),
+          spreadAt(bd),
+        );
+      o.addScaledVector(dir, 1.2);
+      fireShot(o, dir, 18, 'gunslinger', false, true, q.ghost);
+      q.flash = 0.12;
+    }
+    q.muzzle.visible = q.flash > 0;
+    q.light.material.color.setHex(q.flash > 0 ? 0xffe0a0 : 0x6aff8a);
+    q.flash -= dt;
+  }
+}
 // the Knight's thrown shield: out along the throw for about half a second (or until it strikes something), then back to
 // the thrower's hand; it hits each enemy once on its way. True when it is home (or lost).
-function tickShield(s, dt) { s.t = (s.t || 0) + dt; const p = s.mesh.position, own = s.owner && (s.owner === player || others.has(s.owner.id)) ? s.owner : null; s.mesh.rotateY(dt * 24);
+function tickShield(s, dt) {
+  s.t = (s.t || 0) + dt;
+  const p = s.mesh.position,
+    own = s.owner && (s.owner === player || others.has(s.owner.id)) ? s.owner : null;
+  s.mesh.rotateY(dt * 24);
   if (!s.back && s.t > 0.55) s.back = true;
-  if (s.back) { if (!own) return true; const to = new THREE.Vector3(own.x, own.y + 1.25, own.z).sub(p), L = to.length();
-    if (L < 0.9 || s.t > 4) { if (own === player && player.mesh.userData.offhand) player.mesh.userData.offhand.visible = true; if (L < 0.9) sfx('chitin', own, 0.5); return true; } s.v.copy(to.multiplyScalar(20 / L)); }
+  if (s.back) {
+    if (!own) return true;
+    const to = new THREE.Vector3(own.x, own.y + 1.25, own.z).sub(p),
+      L = to.length();
+    if (L < 0.9 || s.t > 4) {
+      if (own === player && player.mesh.userData.offhand) player.mesh.userData.offhand.visible = true;
+      if (L < 0.9) sfx('chitin', own, 0.5);
+      return true;
+    }
+    s.v.copy(to.multiplyScalar(20 / L));
+  }
   p.addScaledVector(s.v, dt);
-  if (!s.back && (p.y < groundY(p.x, p.z) + 0.15 || nearColliders(p.x, p.z).some(c => c.r && !c.gate && Math.hypot(c.x - p.x, c.z - p.z) < colR(c, p.x, p.z) && p.y < (c.top ?? 99) && !(p.y < c.bot)))) { s.back = true; hitBurst(p.clone(), s.v.clone().negate().normalize(), 'stone', 8); sfx('chitin', p, 0.6); }
-  for (const e of enemies) { if (e.dead || e.state === 'lurk' || s.hitE?.has(e)) continue; const sc = e.mesh.scale.x, y0 = e.mesh.position.y;
-    if (Math.hypot(e.x - p.x, e.z - p.z) < 0.55 * sc + 0.45 && p.y > y0 - 0.2 && p.y < y0 + e.mesh.userData.height * sc + 0.4) { (s.hitE ||= new Set()).add(e); const v = s.v.clone().setY(0).normalize();
-      if (!s.ghost) hitEnemy(e, s.dmg, v.x * 0.8, v.z * 0.8, p.clone()); else hitBurst(p.clone(), v, 'stone', 8); s.back = true; } }
-  if (!s.ghost && pvp()) for (const o of others.values()) { if (gone(o) || s.hitP?.has(o)) continue; // (slice 33: the thrown shield strikes another player once, where the rules let it)
-    if (Math.hypot(o.x - p.x, o.z - p.z) < 0.85 && p.y > o.y - 0.2 && p.y < o.y + 2.1) { (s.hitP ||= new Set()).add(o); const v = s.v.clone().setY(0).normalize(); hitRival(o, s.dmg, [v.x * 0.8, v.z * 0.8], p.clone()); s.back = true; } }
-  return false; }
+  if (
+    !s.back &&
+    (p.y < groundY(p.x, p.z) + 0.15 ||
+      nearColliders(p.x, p.z).some(
+        (c) =>
+          c.r &&
+          !c.gate &&
+          Math.hypot(c.x - p.x, c.z - p.z) < colR(c, p.x, p.z) &&
+          p.y < (c.top ?? 99) &&
+          !(p.y < c.bot),
+      ))
+  ) {
+    s.back = true;
+    hitBurst(p.clone(), s.v.clone().negate().normalize(), 'stone', 8);
+    sfx('chitin', p, 0.6);
+  }
+  for (const e of enemies) {
+    if (e.dead || e.state === 'lurk' || s.hitE?.has(e)) continue;
+    const sc = e.mesh.scale.x,
+      y0 = e.mesh.position.y;
+    if (
+      Math.hypot(e.x - p.x, e.z - p.z) < 0.55 * sc + 0.45 &&
+      p.y > y0 - 0.2 &&
+      p.y < y0 + e.mesh.userData.height * sc + 0.4
+    ) {
+      (s.hitE ||= new Set()).add(e);
+      const v = s.v.clone().setY(0).normalize();
+      if (!s.ghost) hitEnemy(e, s.dmg, v.x * 0.8, v.z * 0.8, p.clone());
+      else hitBurst(p.clone(), v, 'stone', 8);
+      s.back = true;
+    }
+  }
+  if (!s.ghost && pvp())
+    for (const o of others.values()) {
+      if (gone(o) || s.hitP?.has(o)) continue; // (slice 33: the thrown shield strikes another player once, where the rules let it)
+      if (Math.hypot(o.x - p.x, o.z - p.z) < 0.85 && p.y > o.y - 0.2 && p.y < o.y + 2.1) {
+        (s.hitP ||= new Set()).add(o);
+        const v = s.v.clone().setY(0).normalize();
+        hitRival(o, s.dmg, [v.x * 0.8, v.z * 0.8], p.clone());
+        s.back = true;
+      }
+    }
+  return false;
+}
 // an expanding ring on the ground round the player (the war cry)
 const pulses = [];
-function pulse(color, r, T, at = player) { const m = new THREE.Mesh(new THREE.RingGeometry(0.86, 1, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending }));
-  m.position.set(at.x, (at === player ? player.y : groundY(at.x, at.z)) + 0.08, at.z); scene.add(m); pulses.push({ m, t: 0, T, r }); }
-function tickPulses(dt) { for (let i = pulses.length - 1; i >= 0; i--) { const q = pulses[i]; q.t += dt; const k = q.t / q.T; q.m.scale.setScalar(0.3 + q.r * Math.min(1, k * 1.4)); q.m.material.opacity = 0.8 * Math.max(0, 1 - k);
-  if (k >= 1) { scene.remove(q.m); q.m.geometry.dispose(); q.m.material.dispose(); pulses.splice(i, 1); } } }
+function pulse(color, r, T, at = player) {
+  const m = new THREE.Mesh(
+    new THREE.RingGeometry(0.86, 1, 48).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.8,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    }),
+  );
+  m.position.set(at.x, (at === player ? player.y : groundY(at.x, at.z)) + 0.08, at.z);
+  scene.add(m);
+  pulses.push({ m, t: 0, T, r });
+}
+function tickPulses(dt) {
+  for (let i = pulses.length - 1; i >= 0; i--) {
+    const q = pulses[i];
+    q.t += dt;
+    const k = q.t / q.T;
+    q.m.scale.setScalar(0.3 + q.r * Math.min(1, k * 1.4));
+    q.m.material.opacity = 0.8 * Math.max(0, 1 - k);
+    if (k >= 1) {
+      scene.remove(q.m);
+      q.m.geometry.dispose();
+      q.m.material.dispose();
+      pulses.splice(i, 1);
+    }
+  }
+}
 // the Architect's auto-turret: a painted steel box on a tripod that turns to the nearest enemy within 12 m and fires every 0.8 s for 30 s (IW1: 18 damage)
 export const turrets = [];
 // geometry and materials are shared by every turret (src/turret.js); only the status light's material is its own
-const removeTurret = (q) => { scene.remove(q.mesh); q.col.r = 0; q.light.material.dispose(); };
+const removeTurret = (q) => {
+  scene.remove(q.mesh);
+  q.col.r = 0;
+  q.light.material.dispose();
+};
 // ghost: another player's turret, seen here (its own game's copy does the damage)
 export function deployTurret(x, z, yaw, ghost = false) {
-  const y = groundY(x, z), { g, head, flash, light } = turretModel(); g.position.set(x, y, z);
-  head.rotation.y = yaw; g.scale.setScalar(1.25); g.traverse(o => { o.castShadow = o !== flash; }); scene.add(g); sfx('deploy');
-  const col = Object.assign(addCollider(x, z, 0.55, null), { vr: 0, top: y + 1.7 }); turrets.push({ mesh: g, head, light, muzzle: flash, x, z, y, life: 30, fireT: 0.4, col, flash: 0, ghost }); }
+  const y = groundY(x, z),
+    { g, head, flash, light } = turretModel();
+  g.position.set(x, y, z);
+  head.rotation.y = yaw;
+  g.scale.setScalar(1.25);
+  g.traverse((o) => {
+    o.castShadow = o !== flash;
+  });
+  scene.add(g);
+  sfx('deploy');
+  const col = Object.assign(addCollider(x, z, 0.55, null), { vr: 0, top: y + 1.7 });
+  turrets.push({ mesh: g, head, light, muzzle: flash, x, z, y, life: 30, fireT: 0.4, col, flash: 0, ghost });
+}
 // a pale arc where a melee swing passes, fading in a quarter second (shows the attack's reach from any camera)
 const slashes = [];
-export function slash(dir, reach = player.ch.range, at = player) { const r = reach * 0.75, g = new THREE.RingGeometry(r * 0.82, r, 24, 1, -0.9, 1.8).rotateX(-Math.PI / 2).rotateY(Math.PI / 2);
-  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0xfff4dc, transparent: true, opacity: 0.75, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
-  m.position.set(at.x, at.y + 1.1, at.z); m.rotation.set(0, Math.atan2(-dir.x, -dir.z), 0.35); scene.add(m); slashes.push({ m, t: 0.25 }); }
-function tickSlashes(dt) { for (let i = slashes.length - 1; i >= 0; i--) { const s = slashes[i]; s.t -= dt; s.m.material.opacity = Math.max(0, s.t / 0.25) * 0.75; s.m.rotation.y += dt * 4;
-  if (s.t <= 0) { scene.remove(s.m); s.m.geometry.dispose(); s.m.material.dispose(); slashes.splice(i, 1); } } }
+export function slash(dir, reach = player.ch.range, at = player) {
+  const r = reach * 0.75,
+    g = new THREE.RingGeometry(r * 0.82, r, 24, 1, -0.9, 1.8).rotateX(-Math.PI / 2).rotateY(Math.PI / 2);
+  const m = new THREE.Mesh(
+    g,
+    new THREE.MeshBasicMaterial({
+      color: 0xfff4dc,
+      transparent: true,
+      opacity: 0.75,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    }),
+  );
+  m.position.set(at.x, at.y + 1.1, at.z);
+  m.rotation.set(0, Math.atan2(-dir.x, -dir.z), 0.35);
+  scene.add(m);
+  slashes.push({ m, t: 0.25 });
+}
+function tickSlashes(dt) {
+  for (let i = slashes.length - 1; i >= 0; i--) {
+    const s = slashes[i];
+    s.t -= dt;
+    s.m.material.opacity = Math.max(0, s.t / 0.25) * 0.75;
+    s.m.rotation.y += dt * 4;
+    if (s.t <= 0) {
+      scene.remove(s.m);
+      s.m.geometry.dispose();
+      s.m.material.dispose();
+      slashes.splice(i, 1);
+    }
+  }
+}
 // hunting animals run down a walking player (IW1's speeds are a wander; at them the player outran every wolf)
 export const CHASE = { wolf: 2.0, dust_hound: 1.4, bear: 2.2 };
 // spiders climb (the follow-ups to #66; Jared: spiders that climb walls, the radio tower, cliffs and trunks, but never a
@@ -519,694 +1928,2576 @@ export const CHASE = { wolf: 2.0, dust_hound: 1.4, bear: 2.2 };
 export const CLIMB_K = 0.6;
 const climber = (e) => ENEMY[e.type].spider && e.type !== 'spider_nest';
 const eFeet = (e) => e.y ?? groundY(e.x, e.z);
-function climbSpot(e, tg, ty) { let best = null, bd = 1e9;
-  for (const c of nearColliders(tg.x, tg.z)) { if (!c.r || c.gate || c.bp || c.top == null || c.top < ty - 0.3 || Math.hypot(c.x - tg.x, c.z - tg.z) > 4) continue;
-    for (let k = 0; k < 12; k++) { const a = k / 12 * 6.283, nx = Math.cos(a), nz = Math.sin(a); let R = colR(c, c.x + nx * c.r, c.z + nz * c.r);
-      const wx = c.x + nx * R, wz = c.z + nz * R; R = colR(c, wx, wz); const x = c.x + nx * (R + 0.05), z = c.z + nz * (R + 0.05), g0 = groundY(x, z), g = floorAt(x, z, g0); // (its floor there: the ground, or a pad or deck on it)
-      if (g0 < WATER_Y + 0.2 || (c.bot != null && c.bot > g + 0.3) || headroom(x, z, g - 1.15) < ty + 1 || Math.hypot(x - tg.x, z - tg.z) > 4.5) continue; // (anything over this spot below the top of the climb, the quarry's own floor too, is an overhang)
-      if (nearColliders(x, z).some(q => q !== c && q.r && Math.hypot(q.x - x, q.z - z) < colR(q, x, z))) continue; // (inside another solid; a wall run's next circle is 0.57 m off)
-      const dd = Math.hypot(x - e.x, z - e.z); if (dd < bd) { bd = dd; best = { x, z, g, nx, nz, top: ty, ph: 'go' }; } } }
-  return best; }
+function climbSpot(e, tg, ty) {
+  let best = null,
+    bd = 1e9;
+  for (const c of nearColliders(tg.x, tg.z)) {
+    if (!c.r || c.gate || c.bp || c.top == null || c.top < ty - 0.3 || Math.hypot(c.x - tg.x, c.z - tg.z) > 4) continue;
+    for (let k = 0; k < 12; k++) {
+      const a = (k / 12) * 6.283,
+        nx = Math.cos(a),
+        nz = Math.sin(a);
+      let R = colR(c, c.x + nx * c.r, c.z + nz * c.r);
+      const wx = c.x + nx * R,
+        wz = c.z + nz * R;
+      R = colR(c, wx, wz);
+      const x = c.x + nx * (R + 0.05),
+        z = c.z + nz * (R + 0.05),
+        g0 = groundY(x, z),
+        g = floorAt(x, z, g0); // (its floor there: the ground, or a pad or deck on it)
+      if (
+        g0 < WATER_Y + 0.2 ||
+        (c.bot != null && c.bot > g + 0.3) ||
+        headroom(x, z, g - 1.15) < ty + 1 ||
+        Math.hypot(x - tg.x, z - tg.z) > 4.5
+      )
+        continue; // (anything over this spot below the top of the climb, the quarry's own floor too, is an overhang)
+      if (nearColliders(x, z).some((q) => q !== c && q.r && Math.hypot(q.x - x, q.z - z) < colR(q, x, z))) continue; // (inside another solid; a wall run's next circle is 0.57 m off)
+      const dd = Math.hypot(x - e.x, z - e.z);
+      if (dd < bd) {
+        bd = dd;
+        best = { x, z, g, nx, nz, top: ty, ph: 'go' };
+      }
+    }
+  }
+  return best;
+}
 // pinned against something on the way (a fence, a wall, a rock) while hunting: the spot on its face to climb straight over it.
 // Not the player's own pieces (the fort rules decide those), nothing over 12 m, and nowhere with a ceiling over the spot
 // the nearest open ground 2 to 5 m from a creature that is stuck: not too deep, not steep, no more than 1.5 m above or below it,
 // clear of every solid; of the nearest ring that has any, the spot nearest its quarry
-function openNear(e, r, q) { const g0 = groundY(e.x, e.z);
-  for (let R = 2; R <= 5; R += 0.5) { let best = null, bd = 1e9; // (2 m at least: out of the trap's reach, not back in it)
-    for (let k = 0; k < 16; k++) { const x = e.x + Math.cos(k * Math.PI / 8) * R, z = e.z + Math.sin(k * Math.PI / 8) * R, g = groundY(x, z);
-      if ((g < WATER_Y - 0.8 && e.type !== 'bog_lurker') || slopeAt(x, z) > 1.0 || Math.abs(g - g0) > 1.5 || Math.abs(x) > HALF - 2 || Math.abs(z) > HALF - 2) continue;
-      if (nearColliders(x, z).some(c => c.r && Math.hypot(c.x - x, c.z - z) < colR(c, x, z) + r)) continue;
-      const d = q ? Math.hypot(q.x - x, q.z - z) : 0; if (d < bd) { bd = d; best = { x, z }; } }
-    if (best) return best; }
-  return null; }
-function overSpot(e, hx, hz, maxH = 12, ahead = 0.3) { const L = Math.hypot(hx, hz) || 1, r = 0.45 * ENEMY[e.type].scale; let best = null, bd = 1e9;
-  for (const c of nearColliders(e.x, e.z)) { if (!c.r || c.gate || c.bp || c.top == null) continue;
-    const R = colR(c, e.x, e.z), dx = e.x - c.x, dz = e.z - c.z, d = Math.hypot(dx, dz) || 1; if (d > R + r + 0.3 || (dx * hx + dz * hz) / (d * L) > -ahead) continue; // (touching it, and it is ahead)
-    const x = c.x + dx / d * (R + 0.05), z = c.z + dz / d * (R + 0.05), g = floorAt(x, z, groundY(x, z));
-    const lx = x - dx / d * (0.95 + r), lz = z - dz / d * (0.95 + r); // (where it comes down on the far side)
-    if (c.top - g < 0.6 || c.top - g > maxH || headroom(x, z, g - 1.15) < c.top + 1 || headroom(lx, lz, c.top - 0.9) < Infinity || d >= bd) continue;
-    bd = d; best = { x, z, g, nx: dx / d, nz: dz / d, top: c.top, ph: 'up', over: true }; }
-  return best; }
+function openNear(e, r, q) {
+  const g0 = groundY(e.x, e.z);
+  for (let R = 2; R <= 5; R += 0.5) {
+    let best = null,
+      bd = 1e9; // (2 m at least: out of the trap's reach, not back in it)
+    for (let k = 0; k < 16; k++) {
+      const x = e.x + Math.cos((k * Math.PI) / 8) * R,
+        z = e.z + Math.sin((k * Math.PI) / 8) * R,
+        g = groundY(x, z);
+      if (
+        (g < WATER_Y - 0.8 && e.type !== 'bog_lurker') ||
+        slopeAt(x, z) > 1.0 ||
+        Math.abs(g - g0) > 1.5 ||
+        Math.abs(x) > HALF - 2 ||
+        Math.abs(z) > HALF - 2
+      )
+        continue;
+      if (nearColliders(x, z).some((c) => c.r && Math.hypot(c.x - x, c.z - z) < colR(c, x, z) + r)) continue;
+      const d = q ? Math.hypot(q.x - x, q.z - z) : 0;
+      if (d < bd) {
+        bd = d;
+        best = { x, z };
+      }
+    }
+    if (best) return best;
+  }
+  return null;
+}
+function overSpot(e, hx, hz, maxH = 12, ahead = 0.3) {
+  const L = Math.hypot(hx, hz) || 1,
+    r = 0.45 * ENEMY[e.type].scale;
+  let best = null,
+    bd = 1e9;
+  for (const c of nearColliders(e.x, e.z)) {
+    if (!c.r || c.gate || c.bp || c.top == null) continue;
+    const R = colR(c, e.x, e.z),
+      dx = e.x - c.x,
+      dz = e.z - c.z,
+      d = Math.hypot(dx, dz) || 1;
+    if (d > R + r + 0.3 || (dx * hx + dz * hz) / (d * L) > -ahead) continue; // (touching it, and it is ahead)
+    const x = c.x + (dx / d) * (R + 0.05),
+      z = c.z + (dz / d) * (R + 0.05),
+      g = floorAt(x, z, groundY(x, z));
+    const lx = x - (dx / d) * (0.95 + r),
+      lz = z - (dz / d) * (0.95 + r); // (where it comes down on the far side)
+    if (
+      c.top - g < 0.6 ||
+      c.top - g > maxH ||
+      headroom(x, z, g - 1.15) < c.top + 1 ||
+      headroom(lx, lz, c.top - 0.9) < Infinity ||
+      d >= bd
+    )
+      continue;
+    bd = d;
+    best = { x, z, g, nx: dx / d, nz: dz / d, top: c.top, ph: 'up', over: true };
+  }
+  return best;
+}
 // one frame of a climb; returns the way to go (on the way to its foot) or true (held by the climb itself)
-function climbStep(e, tg, ty, dt, spd) { let c = e.cl;
+function climbStep(e, tg, ty, dt, spd) {
+  let c = e.cl;
   if (c && Math.abs(c.top - ty) > 1 && c.ph === 'go') c = e.cl = null; // (the quarry moved on: plan again)
-  if (!c && !(e.clT > 0)) { c = e.cl = climbSpot(e, tg, ty); if (!c) e.clT = 1 + rng() * 0.5; } // (no way up: look again in a second or so, a pack not all at once)
+  if (!c && !(e.clT > 0)) {
+    c = e.cl = climbSpot(e, tg, ty);
+    if (!c) e.clT = 1 + rng() * 0.5;
+  } // (no way up: look again in a second or so, a pack not all at once)
   if (!c) return null;
-  if (c.ph === 'go' && (c.T = (c.T || 0) + dt) > 8) { e.cl = null; e.clT = 2; return null; } // (8 s and still not at its foot: water or something in the way; think again)
-  if (c.ph === 'go') { const r = 0.45 * ENEMY[e.type].scale + 0.15, gx = c.x + c.nx * r, gz = c.z + c.nz * r, dx = gx - e.x, dz = gz - e.z, L = Math.hypot(dx, dz);
-    if (L > 0.35) { const o = overSpot(e, dx, dz, 4, 0.7); if (o) { e.cl = o; return true; } return { mx: dx / L, mz: dz / L }; } c.ph = 'up'; e.y = c.g; } // (a fence or wall square in the way to its foot: over that first)
-  if (c.ph === 'up') { if (e.y == null) e.y = c.g; const f = Math.min(1, (e.y - c.g) / Math.max(0.5, c.top - c.g)); let ax = c.x, az = c.z; // (up a leaning mast: in toward the top as it rises, ending a metre short of its quarry)
-    if (!c.over) { const dx = tg.x - c.x, dz = tg.z - c.z, L = Math.hypot(dx, dz) || 1, k = Math.max(0, L - 1) / L * f; ax += dx * k; az += dz * k; }
-    e.x += (ax - e.x) * Math.min(1, dt * 6); e.z += (az - e.z) * Math.min(1, dt * 6); e.yaw = Math.atan2(c.nx, c.nz); // (facing the wall, its belly to it)
-    e.y += spd * CLIMB_K * dt; e.cs = spd * CLIMB_K; if (e.y >= c.top) { const dx = tg.x - e.x, dz = tg.z - e.z, L = Math.hypot(dx, dz) || 1; e.y = c.top; c.ph = 'over'; c.k = 0; c.sx = e.x; c.sz = e.z; c.ox = dx / L; c.oz = dz / L; c.oL = Math.min(1.5, Math.max(0.6, L - 1)); if (c.over) { c.ox = -c.nx; c.oz = -c.nz; c.oL = 0.9 + 0.45 * ENEMY[e.type].scale; } /* (a fence or wall: across it, then down the far side) */ } return true; }
-  c.k = Math.min(1, c.k + dt / 0.5); e.x = c.sx + c.ox * c.oL * c.k; e.z = c.sz + c.oz * c.oL * c.k; e.cs = 1; // over the lip, toward the quarry
-  if (c.k >= 1) { e.cl = null; e.cs = 0; e.fallV = 0; if (standAt(e.x, e.z, e.y + 0.35) < e.y - 0.4) e.clT = 3; } return true; } // (nothing under it at the top: it drops, and waits before trying again)
-const PUFFK = { spider: 'rat', spider_pale: 'dust', spider_widow: 'rat', spider_brute: 'bear', spider_nest: 'silk', wolf: 'fur', dust_hound: 'hound', bear: 'bear', rat: 'rat', ice_crawler: 'ice', bog_lurker: 'mud', brawler: 'dust', shooter: 'dust', heavy: 'dust' };
-const LABEL = { poison: 'poison', spider: 'Giant spider', spider_pale: 'Pale hollow spider', spider_widow: 'Widow spider', spider_brute: 'Brute spider', spider_nest: 'Spider nest', wolf: 'Wolf', dust_hound: 'Dust hound', bear: 'Bear', rat: 'Rat', ice_crawler: 'Ice crawler', bog_lurker: 'Bog lurker', brawler: 'Raider', shooter: 'Raider shooter', heavy: 'Raider heavy', 'Thing in the deep': 'the lake serpent', fall: 'Long drop' };
-function enemyCentre(e) { return new THREE.Vector3(e.x, e.mesh.position.y + e.mesh.userData.height * e.mesh.scale.x * 0.6, e.z); } // (the mesh's own scale: a spider rolls its own size, slice 22)
+  if (c.ph === 'go' && (c.T = (c.T || 0) + dt) > 8) {
+    e.cl = null;
+    e.clT = 2;
+    return null;
+  } // (8 s and still not at its foot: water or something in the way; think again)
+  if (c.ph === 'go') {
+    const r = 0.45 * ENEMY[e.type].scale + 0.15,
+      gx = c.x + c.nx * r,
+      gz = c.z + c.nz * r,
+      dx = gx - e.x,
+      dz = gz - e.z,
+      L = Math.hypot(dx, dz);
+    if (L > 0.35) {
+      const o = overSpot(e, dx, dz, 4, 0.7);
+      if (o) {
+        e.cl = o;
+        return true;
+      }
+      return { mx: dx / L, mz: dz / L };
+    }
+    c.ph = 'up';
+    e.y = c.g;
+  } // (a fence or wall square in the way to its foot: over that first)
+  if (c.ph === 'up') {
+    if (e.y == null) e.y = c.g;
+    const f = Math.min(1, (e.y - c.g) / Math.max(0.5, c.top - c.g));
+    let ax = c.x,
+      az = c.z; // (up a leaning mast: in toward the top as it rises, ending a metre short of its quarry)
+    if (!c.over) {
+      const dx = tg.x - c.x,
+        dz = tg.z - c.z,
+        L = Math.hypot(dx, dz) || 1,
+        k = (Math.max(0, L - 1) / L) * f;
+      ax += dx * k;
+      az += dz * k;
+    }
+    e.x += (ax - e.x) * Math.min(1, dt * 6);
+    e.z += (az - e.z) * Math.min(1, dt * 6);
+    e.yaw = Math.atan2(c.nx, c.nz); // (facing the wall, its belly to it)
+    e.y += spd * CLIMB_K * dt;
+    e.cs = spd * CLIMB_K;
+    if (e.y >= c.top) {
+      const dx = tg.x - e.x,
+        dz = tg.z - e.z,
+        L = Math.hypot(dx, dz) || 1;
+      e.y = c.top;
+      c.ph = 'over';
+      c.k = 0;
+      c.sx = e.x;
+      c.sz = e.z;
+      c.ox = dx / L;
+      c.oz = dz / L;
+      c.oL = Math.min(1.5, Math.max(0.6, L - 1));
+      if (c.over) {
+        c.ox = -c.nx;
+        c.oz = -c.nz;
+        c.oL = 0.9 + 0.45 * ENEMY[e.type].scale;
+      } /* (a fence or wall: across it, then down the far side) */
+    }
+    return true;
+  }
+  c.k = Math.min(1, c.k + dt / 0.5);
+  e.x = c.sx + c.ox * c.oL * c.k;
+  e.z = c.sz + c.oz * c.oL * c.k;
+  e.cs = 1; // over the lip, toward the quarry
+  if (c.k >= 1) {
+    e.cl = null;
+    e.cs = 0;
+    e.fallV = 0;
+    if (standAt(e.x, e.z, e.y + 0.35) < e.y - 0.4) e.clT = 3;
+  }
+  return true;
+} // (nothing under it at the top: it drops, and waits before trying again)
+const PUFFK = {
+  spider: 'rat',
+  spider_pale: 'dust',
+  spider_widow: 'rat',
+  spider_brute: 'bear',
+  spider_nest: 'silk',
+  wolf: 'fur',
+  dust_hound: 'hound',
+  bear: 'bear',
+  rat: 'rat',
+  ice_crawler: 'ice',
+  bog_lurker: 'mud',
+  brawler: 'dust',
+  shooter: 'dust',
+  heavy: 'dust',
+};
+const LABEL = {
+  poison: 'poison',
+  spider: 'Giant spider',
+  spider_pale: 'Pale hollow spider',
+  spider_widow: 'Widow spider',
+  spider_brute: 'Brute spider',
+  spider_nest: 'Spider nest',
+  wolf: 'Wolf',
+  dust_hound: 'Dust hound',
+  bear: 'Bear',
+  rat: 'Rat',
+  ice_crawler: 'Ice crawler',
+  bog_lurker: 'Bog lurker',
+  brawler: 'Raider',
+  shooter: 'Raider shooter',
+  heavy: 'Raider heavy',
+  'Thing in the deep': 'the lake serpent',
+  fall: 'Long drop',
+};
+function enemyCentre(e) {
+  return new THREE.Vector3(e.x, e.mesh.position.y + e.mesh.userData.height * e.mesh.scale.x * 0.6, e.z);
+} // (the mesh's own scale: a spider rolls its own size, slice 22)
 export function hitEnemy(e, dmg, nx, nz, at, by = null) {
-  if (e.dead) return; const st = ENEMY[e.type], heavy = e.type === 'bear' || !!st.danger; // (#66: no blow stops a danger's bite)
-  if (st.danger && !by && !upgraded(player.ch?.id)) { dmg = Math.max(1, Math.round(dmg * HIDE)); // #66: its hide takes half, until your bench upgrade
-    if (!e.hideSaid) { e.hideSaid = true; floatText((at || enemyCentre(e)).clone().setY(e.mesh.position.y + e.mesh.userData.height * e.mesh.scale.x + 0.6), 'Tough hide! Upgrade at a bench', '#ffe0c0', true); } sfx('chitin', e, 0.7); }
+  if (e.dead) return;
+  const st = ENEMY[e.type],
+    heavy = e.type === 'bear' || !!st.danger; // (#66: no blow stops a danger's bite)
+  if (st.danger && !by && !upgraded(player.ch?.id)) {
+    dmg = Math.max(1, Math.round(dmg * HIDE)); // #66: its hide takes half, until your bench upgrade
+    if (!e.hideSaid) {
+      e.hideSaid = true;
+      floatText(
+        (at || enemyCentre(e)).clone().setY(e.mesh.position.y + e.mesh.userData.height * e.mesh.scale.x + 0.6),
+        'Tough hide! Upgrade at a bench',
+        '#ffe0c0',
+        true,
+      );
+    }
+    sfx('chitin', e, 0.7);
+  }
   if (!by) fought(false); // (a blow dealt: in a fight, no eating for a few seconds: slice 12)
-  if (joining()) { send('host', { t: 'hit', id: e.id, dmg, nx: +nx.toFixed(2), nz: +nz.toFixed(2) }); e.flashT = 0.15; e.barT = 6; e.mesh.userData.anim.hit(1); // the host's game keeps its health
-    const p = at || enemyCentre(e); hitBurst(p, new THREE.Vector3(nx, 0, nz), PUFFK[e.type]); floatText(p, String(dmg), dmg >= 20 ? '#ffd27a' : '#fff0d8', dmg >= 20); hitMarker(); sfx(dmg >= 20 ? 'hitHard' : 'hit', e); logEvent('hit', { enemy: e.type, dmg }); return; }
-  e.hp -= dmg; e.flashT = 0.15; e.barT = 6; e.angry = 10; e.stag = heavy ? 0.12 : 0.3; e.vx += nx * (heavy ? 2 : 6); e.vz += nz * (heavy ? 2 : 6); // (angry: hurt, it does not give up the hunt for 10 s, however far: below)
-  if (e.state === 'windup' && !heavy) { e.state = 'recover'; e.rT = 0.4; }
-  if (e.state === 'idle' || e.state === 'lurk') alertPack(e); else if (e.state !== 'flee' && e.state !== 'windup' && e.state !== 'recover' && e.state !== 'emerge') e.state = 'chase';
-  const side = Math.sign(Math.cos(e.yaw) * nz - Math.sin(e.yaw) * nx) || 1; e.mesh.userData.anim.hit(side);
-  const p = at || enemyCentre(e); hitBurst(p, new THREE.Vector3(nx, 0, nz), PUFFK[e.type]); floatText(p, String(dmg), dmg >= 20 ? '#ffd27a' : '#fff0d8', dmg >= 20); if (!by) hitMarker();
+  if (joining()) {
+    send('host', { t: 'hit', id: e.id, dmg, nx: +nx.toFixed(2), nz: +nz.toFixed(2) });
+    e.flashT = 0.15;
+    e.barT = 6;
+    e.mesh.userData.anim.hit(1); // the host's game keeps its health
+    const p = at || enemyCentre(e);
+    hitBurst(p, new THREE.Vector3(nx, 0, nz), PUFFK[e.type]);
+    floatText(p, String(dmg), dmg >= 20 ? '#ffd27a' : '#fff0d8', dmg >= 20);
+    hitMarker();
+    sfx(dmg >= 20 ? 'hitHard' : 'hit', e);
+    logEvent('hit', { enemy: e.type, dmg });
+    return;
+  }
+  e.hp -= dmg;
+  e.flashT = 0.15;
+  e.barT = 6;
+  e.angry = 10;
+  e.stag = heavy ? 0.12 : 0.3;
+  e.vx += nx * (heavy ? 2 : 6);
+  e.vz += nz * (heavy ? 2 : 6); // (angry: hurt, it does not give up the hunt for 10 s, however far: below)
+  if (e.state === 'windup' && !heavy) {
+    e.state = 'recover';
+    e.rT = 0.4;
+  }
+  if (e.state === 'idle' || e.state === 'lurk') alertPack(e);
+  else if (e.state !== 'flee' && e.state !== 'windup' && e.state !== 'recover' && e.state !== 'emerge')
+    e.state = 'chase';
+  const side = Math.sign(Math.cos(e.yaw) * nz - Math.sin(e.yaw) * nx) || 1;
+  e.mesh.userData.anim.hit(side);
+  const p = at || enemyCentre(e);
+  hitBurst(p, new THREE.Vector3(nx, 0, nz), PUFFK[e.type]);
+  floatText(p, String(dmg), dmg >= 20 ? '#ffd27a' : '#fff0d8', dmg >= 20);
+  if (!by) hitMarker();
   sfx(e.type === 'ice_crawler' ? 'chitin' : dmg >= 20 ? 'hitHard' : 'hit', e);
-  if (e.hp <= 0) { e.dead = 5; e.cl = null; e.cs = 0; logEvent('kill', { enemy: e.type, biome: biomeAt(e.x, e.z) }); /* (slice 21: the logs had no kills by kind) */ e.mesh.userData.anim.die(); e.mesh.userData.flash(0); sfx(e.type, e, 0.8); sfx('thud', e, 0.6);
-    for (const k of st.loot) if (rng() < 0.75) dropLoot(e.x, e.z, k, 0.5 * st.scale); if (by) send(by, { t: 'kill', s: `${LABEL[e.type]} down.` }); else { player.kills++; log(`${LABEL[e.type]} down.`); } }
-  logEvent('hit', { enemy: e.type, dmg, hp: Math.max(0, e.hp), killed: e.hp <= 0 }); }
+  if (e.hp <= 0) {
+    e.dead = 5;
+    e.cl = null;
+    e.cs = 0;
+    logEvent('kill', { enemy: e.type, biome: biomeAt(e.x, e.z) });
+    /* (slice 21: the logs had no kills by kind) */ e.mesh.userData.anim.die();
+    e.mesh.userData.flash(0);
+    sfx(e.type, e, 0.8);
+    sfx('thud', e, 0.6);
+    for (const k of st.loot) if (rng() < 0.75) dropLoot(e.x, e.z, k, 0.5 * st.scale);
+    if (by) send(by, { t: 'kill', s: `${LABEL[e.type]} down.` });
+    else {
+      player.kills++;
+      log(`${LABEL[e.type]} down.`);
+    }
+  }
+  logEvent('hit', { enemy: e.type, dmg, hp: Math.max(0, e.hp), killed: e.hp <= 0 });
+}
 // slice 33: a blow from this game's player on another player, in free-for-all only (pvp()); the other game takes it, and
 // tells this one if it knocked them out ('ko')
-function hitRival(o, dmg, n, at) { const d = Math.max(1, Math.round(dmg * pvp())), p = at || new THREE.Vector3(o.x, o.y + 1.2, o.z); if (!(pvp() > 0)) return;
-  hurt(o, d, 'player', player); fought(false); // (#86: sent even to a rival who is safe: their own game decides, so a late word of it can never let a blow through)
-  if (rivalSafe(o) > 0) { floatText(p, 'SAFE', '#9fdcff'); sfx('chitin', o, 0.5); logEvent('hit-safe', { who: o.name, dmg: d }); return; } // (#86: a rival just back from a knockout)
-  hitBurst(p, new THREE.Vector3(n[0], 0, n[1]), 'dust'); floatText(p, String(d), rules.ffa ? RIVAL : '#ffc8a0', d >= 20); hitMarker();
-  sfx(d >= 20 ? 'hitHard' : 'hit', o); o.mesh.userData.anim.hit(Math.sign(n[0]) || 1); logEvent('hit-player', { who: o.name, dmg: d, mode: modeKey() }); }
+function hitRival(o, dmg, n, at) {
+  const d = Math.max(1, Math.round(dmg * pvp())),
+    p = at || new THREE.Vector3(o.x, o.y + 1.2, o.z);
+  if (!(pvp() > 0)) return;
+  hurt(o, d, 'player', player);
+  fought(false); // (#86: sent even to a rival who is safe: their own game decides, so a late word of it can never let a blow through)
+  if (rivalSafe(o) > 0) {
+    floatText(p, 'SAFE', '#9fdcff');
+    sfx('chitin', o, 0.5);
+    logEvent('hit-safe', { who: o.name, dmg: d });
+    return;
+  } // (#86: a rival just back from a knockout)
+  hitBurst(p, new THREE.Vector3(n[0], 0, n[1]), 'dust');
+  floatText(p, String(d), rules.ffa ? RIVAL : '#ffc8a0', d >= 20);
+  hitMarker();
+  sfx(d >= 20 ? 'hitHard' : 'hit', o);
+  o.mesh.userData.anim.hit(Math.sign(n[0]) || 1);
+  logEvent('hit-player', { who: o.name, dmg: d, mode: modeKey() });
+}
 // #86: a faint shell round a player in their safe seconds, seen by everyone: it breathes and fades as the time runs out
 // (opacity only; one geometry for all; from inside, in first person, its back faces are not drawn)
 let SAFE_GEO = null;
 // a rival's safe seconds left, timed here from their last word (so a rival who drops or goes out never stays safe)
-const rivalSafe = (o) => gone(o) ? 0 : Math.max(0, ((o.sfEnd || 0) - performance.now()) / 1000);
-function safeGlow(mesh, s, t) { let g = mesh.userData.safe; if (!(s > 0)) { if (g) g.visible = false; return; }
-  if (!g) { SAFE_GEO ||= new THREE.CapsuleGeometry(0.55, 0.9, 4, 12); g = mesh.userData.safe = new THREE.Mesh(SAFE_GEO, new THREE.MeshBasicMaterial({ color: 0x9fdcff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
-    g.position.y = 1; g.renderOrder = 2; mesh.add(g); }
-  g.visible = true; g.material.opacity = Math.min(1, s / 1.5) * (0.14 + 0.06 * Math.sin(t * 5)); }
+const rivalSafe = (o) => (gone(o) ? 0 : Math.max(0, ((o.sfEnd || 0) - performance.now()) / 1000));
+function safeGlow(mesh, s, t) {
+  let g = mesh.userData.safe;
+  if (!(s > 0)) {
+    if (g) g.visible = false;
+    return;
+  }
+  if (!g) {
+    SAFE_GEO ||= new THREE.CapsuleGeometry(0.55, 0.9, 4, 12);
+    g = mesh.userData.safe = new THREE.Mesh(
+      SAFE_GEO,
+      new THREE.MeshBasicMaterial({
+        color: 0x9fdcff,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      }),
+    );
+    g.position.y = 1;
+    g.renderOrder = 2;
+    mesh.add(g);
+  }
+  g.visible = true;
+  g.material.opacity = Math.min(1, s / 1.5) * (0.14 + 0.06 * Math.sin(t * 5));
+}
 // Lauren's flower: the enemy it hits forgets the fight for 4 s and wanders (hitting it again breaks the charm)
-export function charm(e) { if (joining()) send('host', { t: 'charm', id: e.id }); else { e.state = 'charmed'; e.chT = 4; e.wander = 0; } hitBurst(enemyCentre(e), new THREE.Vector3(0, 1, 0), 'petal', 18); floatText(enemyCentre(e).setY(e.mesh.position.y + 2.2), 'charmed', '#ff9ad0'); }
+export function charm(e) {
+  if (joining()) send('host', { t: 'charm', id: e.id });
+  else {
+    e.state = 'charmed';
+    e.chT = 4;
+    e.wander = 0;
+  }
+  hitBurst(enemyCentre(e), new THREE.Vector3(0, 1, 0), 'petal', 18);
+  floatText(enemyCentre(e).setY(e.mesh.position.y + 2.2), 'charmed', '#ff9ad0');
+}
 // a crate's loot (a raider camp's stays shut while any of its crew lives, as in IW1); false when it is still guarded
-const guarded = (cache) => cache.camp && enemies.some(e => e.home === cache.camp && !e.dead);
+const guarded = (cache) => cache.camp && enemies.some((e) => e.home === cache.camp && !e.dead);
 export function crateOpen(cache, who = null, got = null) {
-  if (!got) { if (joining()) { send('host', { t: 'crate', i: caches.indexOf(cache) }); return true; }
-    if (guarded(cache)) { const s = cache.camp.name ? `Its guards are still about: clear them off ${cache.camp.name}, then search it.` : 'Raiders still guard this crate.'; if (who) send(who, { t: 'log', s }); else { log(s); logEvent('crate-locked'); } return false; }
-    if (cache.opened) return true; if (cache.cave) { caveLoot(cache, who); return true; } const k = cache.k ?? (cache.camp ? 2 : 1); const rounds = cache.ammo && nearestGun(cache.x, cache.z) ? cache.ammo : 0; for (let n = 0; n < rounds / 3; n++) dropLoot(cache.x, cache.z, 'ammo', 0.8); /* (slice 23: a place's crate holds more, rounds too if a Gunslinger is about, else metal) */ got = { metal: (2 + Math.floor(rng() * 3)) * k + (cache.ammo && !rounds ? Math.ceil(cache.ammo / 3) : 0), food: (1 + Math.floor(rng() * 2)) * k, fiber: (2 + Math.floor(rng() * 2)) * k };
-    cache.open(); send('all', { t: 'crated', i: caches.indexOf(cache) }); if (who) { send(who, { t: 'gotc', got }); return true; } }
+  if (!got) {
+    if (joining()) {
+      send('host', { t: 'crate', i: caches.indexOf(cache) });
+      return true;
+    }
+    if (guarded(cache)) {
+      const s = cache.camp.name
+        ? `Its guards are still about: clear them off ${cache.camp.name}, then search it.`
+        : 'Raiders still guard this crate.';
+      if (who) send(who, { t: 'log', s });
+      else {
+        log(s);
+        logEvent('crate-locked');
+      }
+      return false;
+    }
+    if (cache.opened) return true;
+    if (cache.cave) {
+      caveLoot(cache, who);
+      return true;
+    }
+    const k = cache.k ?? (cache.camp ? 2 : 1);
+    const rounds = cache.ammo && nearestGun(cache.x, cache.z) ? cache.ammo : 0;
+    for (let n = 0; n < rounds / 3; n++) dropLoot(cache.x, cache.z, 'ammo', 0.8);
+    /* (slice 23: a place's crate holds more, rounds too if a Gunslinger is about, else metal) */ got = {
+      metal: (2 + Math.floor(rng() * 3)) * k + (cache.ammo && !rounds ? Math.ceil(cache.ammo / 3) : 0),
+      food: (1 + Math.floor(rng() * 2)) * k,
+      fiber: (2 + Math.floor(rng() * 2)) * k,
+    };
+    cache.open();
+    send('all', { t: 'crated', i: caches.indexOf(cache) });
+    if (who) {
+      send(who, { t: 'gotc', got });
+      return true;
+    }
+  }
   for (const q in got) player.inv[q] += got[q];
-  log(`Searched the crate: ${got.metal} metal, ${got.food} food, ${got.fiber} fiber.`); logEvent('crate', { ...got, camp: !!cache?.camp }); sfx('salvage');
-  floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `+${got.metal} metal  +${got.fiber} fiber`, '#ffc070'); return true; }
+  log(`Searched the crate: ${got.metal} metal, ${got.food} food, ${got.fiber} fiber.`);
+  logEvent('crate', { ...got, camp: !!cache?.camp });
+  sfx('salvage');
+  floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `+${got.metal} metal  +${got.fiber} fiber`, '#ffc070');
+  return true;
+}
 // a cave crate (Jared, November 15, 2026, 10:05 PM: "all the loot in the caves seems to be ammo... not cool!"): it spills its cave's own
 // find (1 near the mouth, up to 4 in the deepest crate), food to mend with, wood and fiber for a torch, a little metal; a mine's crate a few
 // rounds too, if a Gunslinger is about. All of it falls out to be picked up, so you see what you found; on the host's game, as every pickup
-function caveLoot(cache, who) { const deep = cache.deep ?? 0, n = { ['find_' + cache.cave]: 1 + Math.round(deep * 2) + (deep >= 1 ? 1 : 0), food: 1 + (deep > 0.5 ? 1 : 0), wood: 1, fiber: 1, metal: 1 + Math.floor(rng() * 2) };
+function caveLoot(cache, who) {
+  const deep = cache.deep ?? 0,
+    n = {
+      ['find_' + cache.cave]: 1 + Math.round(deep * 2) + (deep >= 1 ? 1 : 0),
+      food: 1 + (deep > 0.5 ? 1 : 0),
+      wood: 1,
+      fiber: 1,
+      metal: 1 + Math.floor(rng() * 2),
+    };
   if (cache.cave === 'mine' && nearestGun(cache.x, cache.z)) n.ammo = 1;
   for (const [kind, c] of Object.entries(n)) for (let q = 0; q < c; q++) dropLoot(cache.x, cache.z, kind, 0.8);
-  cache.open(); send('all', { t: 'crated', i: caches.indexOf(cache) }); const s = `The crate spills ${n['find_' + cache.cave]} ${FINDS[cache.cave][0]}${n['find_' + cache.cave] > 1 ? 's' : ''}, food, wood, fiber and metal${n.ammo ? ', and a few rounds' : ''}.`;
-  if (who) send(who, { t: 'log', s }); else log(s); logEvent('crate', { cave: cache.cave, deep: +deep.toFixed(2), ...n }); sfx('salvage'); }
+  cache.open();
+  send('all', { t: 'crated', i: caches.indexOf(cache) });
+  const s = `The crate spills ${n['find_' + cache.cave]} ${FINDS[cache.cave][0]}${n['find_' + cache.cave] > 1 ? 's' : ''}, food, wood, fiber and metal${n.ammo ? ', and a few rounds' : ''}.`;
+  if (who) send(who, { t: 'log', s });
+  else log(s);
+  logEvent('crate', { cave: cache.cave, deep: +deep.toFixed(2), ...n });
+  sfx('salvage');
+}
 // three hits smash a crate (a full one spills its loot first)
-export function smashCrate(cache, at, dir, who = null) { if (cache.broken) return; if (at) { hitBurst(at, dir, 'wood', 14); sfx('hit', null, 0.6); }
-  if (joining()) { send('host', { t: 'smash', i: caches.indexOf(cache) }); return; } if (guarded(cache)) return; // the crew's crate holds while they live
-  if (--cache.hp > 0) return; crateOpen(cache, who); hitBurst(new THREE.Vector3(cache.x, cache.y + 0.5, cache.z), dir || new THREE.Vector3(0, 1, 0), 'wood', 40); sfx('thud'); cache.smash(); send('all', { t: 'smashed', i: caches.indexOf(cache) }); logEvent('crate-smashed'); if (!who) log('The crate splinters apart.'); }
+export function smashCrate(cache, at, dir, who = null) {
+  if (cache.broken) return;
+  if (at) {
+    hitBurst(at, dir, 'wood', 14);
+    sfx('hit', null, 0.6);
+  }
+  if (joining()) {
+    send('host', { t: 'smash', i: caches.indexOf(cache) });
+    return;
+  }
+  if (guarded(cache)) return; // the crew's crate holds while they live
+  if (--cache.hp > 0) return;
+  crateOpen(cache, who);
+  hitBurst(new THREE.Vector3(cache.x, cache.y + 0.5, cache.z), dir || new THREE.Vector3(0, 1, 0), 'wood', 40);
+  sfx('thud');
+  cache.smash();
+  send('all', { t: 'smashed', i: caches.indexOf(cache) });
+  logEvent('crate-smashed');
+  if (!who) log('The crate splinters apart.');
+}
 // what a hit on scenery throws up: splinters off wood, chips off stone and walls, sparks off scrap and wrecks
-const PROP_PUFF = { wall: 'wood', gate: 'wood', reinforced_wall: 'stone', pine: 'wood', oak: 'wood', aspen: 'wood', snowpine: 'wood', deadtree: 'wood', swamptree: 'wood', cactus: 'wood', shroom: 'mud', scrap: 'dust', hulk: 'dust' };
-function hitScenery(c, at, dir) { if (c.cache) return smashCrate(c.cache, at, dir); const kind = c.ref ? PROP_PUFF[c.ref.type] || 'stone' : 'wood'; // the camp's props are wood
-  hitBurst(at, dir, kind, kind === 'dust' ? 18 : 12); sfx(kind === 'dust' ? 'chitin' : 'hit', null, 0.45); }
+const PROP_PUFF = {
+  wall: 'wood',
+  gate: 'wood',
+  reinforced_wall: 'stone',
+  pine: 'wood',
+  oak: 'wood',
+  aspen: 'wood',
+  snowpine: 'wood',
+  deadtree: 'wood',
+  swamptree: 'wood',
+  cactus: 'wood',
+  shroom: 'mud',
+  scrap: 'dust',
+  hulk: 'dust',
+};
+function hitScenery(c, at, dir) {
+  if (c.cache) return smashCrate(c.cache, at, dir);
+  const kind = c.ref ? PROP_PUFF[c.ref.type] || 'stone' : 'wood'; // the camp's props are wood
+  hitBurst(at, dir, kind, kind === 'dust' ? 18 : 12);
+  sfx(kind === 'dust' ? 'chitin' : 'hit', null, 0.45);
+}
 // E: search a crate, salvage metal from a scrap pile or a wreck, or sleep in a bed (slice 11); holding E chops (harvest.js)
 // the floor a player reaches a crate from: their feet's, or in a jump the floor under them (the quality pass: an upstairs crate opened from the room below)
-const feetY = () => player.onGround ? player.y : Math.max(groundY(player.x, player.z), player.swimY, standAt(player.x, player.z, player.y));
+const feetY = () =>
+  player.onGround
+    ? player.y
+    : Math.max(groundY(player.x, player.z), player.swimY, standAt(player.x, player.z, player.y));
 // a player not on the ladder gets on it walking into it from below (the way a climber faces), or backing to the hatch with S from above
-function ladderGrab(lad, wx, wz, iz) { if (player.y >= lad.y1 - 0.5) { const [tx, tz] = lad.at(lad.y1), dx = tx - lad.off[0], dz = tz - lad.off[1], L = Math.hypot(dx, dz) || 1;
-    return iz > 0.3 && player.y > lad.y0 + 0.02 && (wx * dx + wz * dz) / L > 0.3; }
-  return player.y < lad.y1 - 0.02 && -wx * lad.b.sa + wz * lad.b.ca > 0.3; }
+function ladderGrab(lad, wx, wz, iz) {
+  if (player.y >= lad.y1 - 0.5) {
+    const [tx, tz] = lad.at(lad.y1),
+      dx = tx - lad.off[0],
+      dz = tz - lad.off[1],
+      L = Math.hypot(dx, dz) || 1;
+    return iz > 0.3 && player.y > lad.y0 + 0.02 && (wx * dx + wz * dz) / L > 0.3;
+  }
+  return player.y < lad.y1 - 0.02 && -wx * lad.b.sa + wz * lad.b.ca > 0.3;
+}
 function interact(quiet) {
   // a supply crate first (a raider camp's stays shut while any of its crew lives, as in IW1)
-  const cache = caches.find(c => !c.opened && Math.hypot(c.x - player.x, c.z - player.z) < 2.4 && Math.abs(feetY() - c.y) < 2.6); // (slice 23: at the crate's own height: a deck, a cap, a lake's bottom)
-  if (cache) { crateOpen(cache); return true; }
+  const cache = caches.find(
+    (c) => !c.opened && Math.hypot(c.x - player.x, c.z - player.z) < 2.4 && Math.abs(feetY() - c.y) < 2.6,
+  ); // (slice 23: at the crate's own height: a deck, a cap, a lake's bottom)
+  if (cache) {
+    crateOpen(cache);
+    return true;
+  }
   const food = foodNear(player.x, feetY(), player.z); // (places round 2: a tin off a shelf or a table)
-  if (food) { const i = larder.indexOf(food); takeFood(i); ateFood(i); player.inv.food += FOOD_EACH; logEvent('food-take', { k: food.k }); log(`You take the ${foodName(food)}: +${FOOD_EACH} food.`); sfx('salvage', null, 0.5);
-    floatText(new THREE.Vector3(food.x, food.y + 0.3, food.z), `+${FOOD_EACH} food`, '#ffc070'); return true; }
+  if (food) {
+    const i = larder.indexOf(food);
+    takeFood(i);
+    ateFood(i);
+    player.inv.food += FOOD_EACH;
+    logEvent('food-take', { k: food.k });
+    log(`You take the ${foodName(food)}: +${FOOD_EACH} food.`);
+    sfx('salvage', null, 0.5);
+    floatText(new THREE.Vector3(food.x, food.y + 0.3, food.z), `+${FOOD_EACH} food`, '#ffc070');
+    return true;
+  }
   if (radioNear(player)) return true; // (slice 23: the radio is held, not pressed)
   if (relicNear(player)) return true; // (#53: a relic is held too)
   // (a bed comes before a gate or a fire, as the prompt says: a bed beside a campfire could not be slept in with raw meat
   // in the pack; the review of slice 12)
-  const bed = bedNear(player.x, player.z); if (bed) { sleep(bed); return true; }
-  if (atTent()) { togglePause(true, true); return true; } // #60: the camp's tent, where a player changes character
-  const gate = gateNear(player.x, player.z); if (gate) { log(gate.open ? 'You shut the gate.' : 'You hold the gate open: enemies can come through until it is shut.'); toggleGate(gate); return true; } // slice 12
+  const bed = bedNear(player.x, player.z);
+  if (bed) {
+    sleep(bed);
+    return true;
+  }
+  if (atTent()) {
+    togglePause(true, true);
+    return true;
+  } // #60: the camp's tent, where a player changes character
+  const gate = gateNear(player.x, player.z);
+  if (gate) {
+    log(gate.open ? 'You shut the gate.' : 'You hold the gate open: enemies can come through until it is shut.');
+    toggleGate(gate);
+    return true;
+  } // slice 12
   if (player.inv.food > 0 && fireNear()) return true; // (holding E there cooks: slice 12)
-  const near = (placed.scrap || []).concat(placed.hulk || []).find(p => !p.gone && !p.salvaged && Math.hypot(p.x - player.x, p.z - player.z) < (p.type === 'hulk' ? 4 : 2.6));
-  if (!near) { if (!quiet && !harvestTarget(player.x, player.z) && ![...others.values()].some(o => o.down > 0)) log('Nothing to search, salvage or chop here.'); return false; }
-  const n = near.type === 'hulk' ? 6 : 3; player.inv.metal += n; salvagedProp(near); logEvent('salvage', { what: near.type, n }); log(`Salvaged ${n} metal from the ${near.type === 'hulk' ? 'wreck' : 'scrap'}.`); sfx('salvage'); floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `+${n} metal`, '#ffc070');
-  if (near.type === 'scrap') { near.gone = true; markDirty(); near.col.r = 0; near.col.vr = 0; }
-  else near.salvaged = true; return true; }
+  const near = (placed.scrap || [])
+    .concat(placed.hulk || [])
+    .find((p) => !p.gone && !p.salvaged && Math.hypot(p.x - player.x, p.z - player.z) < (p.type === 'hulk' ? 4 : 2.6));
+  if (!near) {
+    if (!quiet && !harvestTarget(player.x, player.z) && ![...others.values()].some((o) => o.down > 0))
+      log('Nothing to search, salvage or chop here.');
+    return false;
+  }
+  const n = near.type === 'hulk' ? 6 : 3;
+  player.inv.metal += n;
+  salvagedProp(near);
+  logEvent('salvage', { what: near.type, n });
+  log(`Salvaged ${n} metal from the ${near.type === 'hulk' ? 'wreck' : 'scrap'}.`);
+  sfx('salvage');
+  floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `+${n} metal`, '#ffc070');
+  if (near.type === 'scrap') {
+    near.gone = true;
+    markDirty();
+    near.col.r = 0;
+    near.col.vr = 0;
+  } else near.salvaged = true;
+  return true;
+}
 // (who: the game whose player struck the blow, slice 33; a player's blow lands only where the rules let it, and not in the
 // 3 s grace just after a knockout: review)
-export function hurtPlayer(d, by, from = null, who = null) { if (player.dead || (by === 'player' && (!(pvp() > 0) || player.graceT > 0))) return; if (player.sleep && by !== 'poison') wake('Something is attacking you in your sleep!'); /* (review: poison works on quietly while you sleep, no false alarm) */
+export function hurtPlayer(d, by, from = null, who = null) {
+  if (player.dead || (by === 'player' && (!(pvp() > 0) || player.graceT > 0))) return;
+  if (player.sleep && by !== 'poison')
+    wake(
+      'Something is attacking you in your sleep!',
+    ); /* (review: poison works on quietly while you sleep, no false alarm) */
   // slice 12: the Knight's upgraded shield takes 60% of a blow from the front (within 70 degrees of where he faces), while it is on his arm
-  if (from && upgraded('knight') && player.mesh.userData.offhand?.visible !== false) { const dx = from.x - player.x, dz = from.z - player.z, L = Math.hypot(dx, dz) || 1;
-    if ((-Math.sin(player.faceYaw) * dx - Math.cos(player.faceYaw) * dz) / L > 0.34) { const was = d; d = Math.max(1, Math.round(d * 0.4)); const at = new THREE.Vector3(player.x + dx / L * 0.5, player.y + 1.25, player.z + dz / L * 0.5);
-      hitBurst(at, new THREE.Vector3(dx / L, 0.4, dz / L), 'stone', 10); floatText(at.clone().setY(at.y + 0.7), 'BLOCK', '#9ad0ff', true); sfx('chitin', null, 0.8); logEvent('block', { from: was, to: d }); } }
-  player.hp -= d; if (by !== 'poison') { fought(true); logEvent('hurt', { dmg: d, by, hp: Math.max(0, Math.round(player.hp)) }); player.hurtT = 0.35; player.shake = 0.25; sfx('hurt'); } poison(by); /* (review: a poison tick is no new blow: it does not stop a meal or log a bite) */ /* (a widow's bite poisons: poison.js) */
-  if (player.hp <= 0) { player.hp = 0; player.killedBy = by; logEvent('died', { by, x: +player.x.toFixed(1), z: +player.z.toFixed(1), coop: coop(), ...(who && { who: others.get(who)?.name }), mode: modeKey() }); player.mesh.userData.anim.die();
+  if (from && upgraded('knight') && player.mesh.userData.offhand?.visible !== false) {
+    const dx = from.x - player.x,
+      dz = from.z - player.z,
+      L = Math.hypot(dx, dz) || 1;
+    if ((-Math.sin(player.faceYaw) * dx - Math.cos(player.faceYaw) * dz) / L > 0.34) {
+      const was = d;
+      d = Math.max(1, Math.round(d * 0.4));
+      const at = new THREE.Vector3(player.x + (dx / L) * 0.5, player.y + 1.25, player.z + (dz / L) * 0.5);
+      hitBurst(at, new THREE.Vector3(dx / L, 0.4, dz / L), 'stone', 10);
+      floatText(at.clone().setY(at.y + 0.7), 'BLOCK', '#9ad0ff', true);
+      sfx('chitin', null, 0.8);
+      logEvent('block', { from: was, to: d });
+    }
+  }
+  player.hp -= d;
+  if (by !== 'poison') {
+    fought(true);
+    logEvent('hurt', { dmg: d, by, hp: Math.max(0, Math.round(player.hp)) });
+    player.hurtT = 0.35;
+    player.shake = 0.25;
+    sfx('hurt');
+  }
+  poison(
+    by,
+  ); /* (review: a poison tick is no new blow: it does not stop a meal or log a bite) */ /* (a widow's bite poisons: poison.js) */
+  if (player.hp <= 0) {
+    player.hp = 0;
+    player.killedBy = by;
+    logEvent('died', {
+      by,
+      x: +player.x.toFixed(1),
+      z: +player.z.toFixed(1),
+      coop: coop(),
+      ...(who && { who: others.get(who)?.name }),
+      mode: modeKey(),
+    });
+    player.mesh.userData.anim.die();
     if (who) send(who, { t: 'ko', n: player.ch.player }); // (slice 33: the player whose blow it was scores it)
     // (slice 33: in free-for-all nobody revives a rival: knocked out for a few seconds, then back at your bed or the camp)
     player.ko = coop() && rules.ffa; // (a knockout comes back at the bed or the camp even if the host changes the mode meanwhile, review)
-    if (player.ko) { player.dead = 1e9; player.down = KO_S; player.revT = 0; log(`Knocked out${who ? ' by ' + (others.get(who)?.name || 'a rival') : ''}! Back in ${KO_S} s at your bed, or the camp.`); }
-    else if (coop()) { player.dead = 1e9; player.down = 15; player.revT = 0; log(`${player.ch.player} is down! A friend can revive you: they stand close and hold E.`); } else { player.dead = 3; log(`${player.ch.player} went down…`); } }
-  else if (by !== 'poison') player.mesh.userData.anim.hit(); }
+    if (player.ko) {
+      player.dead = 1e9;
+      player.down = KO_S;
+      player.revT = 0;
+      log(
+        `Knocked out${who ? ' by ' + (others.get(who)?.name || 'a rival') : ''}! Back in ${KO_S} s at your bed, or the camp.`,
+      );
+    } else if (coop()) {
+      player.dead = 1e9;
+      player.down = 15;
+      player.revT = 0;
+      log(`${player.ch.player} is down! A friend can revive you: they stand close and hold E.`);
+    } else {
+      player.dead = 3;
+      log(`${player.ch.player} went down…`);
+    }
+  } else if (by !== 'poison') player.mesh.userData.anim.hit();
+}
 // fall damage (the owner, 2026-11-04: "we need fall damage"): a drop of up to 4 m is free (a jump on flat ground is 1.3 m,
 // off the ladder's top 7 m), then 10 HP a metre, so 16 m kills the Gunslinger and the Ranger and 24 m the Knight; water breaks any fall
-const FALL_SAFE = 4, FALL_HP = 10, KO_S = 6;
+const FALL_SAFE = 4,
+  FALL_HP = 10,
+  KO_S = 6;
 // why a game ended, on the title's fallen plate (Jared, 2026-11-15)
-export const NO_BED = 'you had not slept in a bed, so there was nowhere to wake.', ALL_OUT = 'everyone was out, and nobody had a bed they had slept in.';
+export const NO_BED = 'you had not slept in a bed, so there was nowhere to wake.',
+  ALL_OUT = 'everyone was out, and nobody had a bed they had slept in.';
 // what a fall does in this game right now, on the pause screen
-export function fallNow() { const bed = hasBed(), mode = !coop() ? 'solo' : rules.ffa ? 'ffa' : 'coop';
-  return 'If you fall: ' + (mode === 'ffa' ? `back in ${KO_S} s at ${bed ? 'your bed (you slept in it).' : 'the camp. Sleep in a bed to come back there instead.'}`
-    : mode === 'coop' ? `a friend has 15 s to revive you, then ${bed ? 'you wake at your bed (you slept in it).' : 'you are out until everyone falls. Sleep in a bed to wake there instead.'}`
-    : bed ? 'you wake at your bed (you slept in it).' : 'game over. Sleep in a bed to change that.'); }
+export function fallNow() {
+  const bed = hasBed(),
+    mode = !coop() ? 'solo' : rules.ffa ? 'ffa' : 'coop';
+  return (
+    'If you fall: ' +
+    (mode === 'ffa'
+      ? `back in ${KO_S} s at ${bed ? 'your bed (you slept in it).' : 'the camp. Sleep in a bed to come back there instead.'}`
+      : mode === 'coop'
+        ? `a friend has 15 s to revive you, then ${bed ? 'you wake at your bed (you slept in it).' : 'you are out until everyone falls. Sleep in a bed to wake there instead.'}`
+        : bed
+          ? 'you wake at your bed (you slept in it).'
+          : 'game over. Sleep in a bed to change that.')
+  );
+}
 // #86 (Jared, 2026-11-15, after a Brawl where the host knocked the joined player out twice as they came back at the camp): a
 // player back from a knockout in free-for-all cannot be hurt by a rival for this long, or until they attack; creatures still bite
 const RESPAWN_SAFE_S = 4;
-function fallHurt(h, gy) { const d = Math.round((h - FALL_SAFE) * FALL_HP); if (d <= 0 || player.dead) return; // (a body already down takes no more)
-  if (WATER_Y - groundY(player.x, player.z) > 0.4 && gy < WATER_Y) { logEvent('fall', { h: +h.toFixed(1), dmg: 0, water: true }); return; }
-  logEvent('fall', { h: +h.toFixed(1), dmg: d }); floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `-${d}`, '#ff8a6a', d >= 20); hurtPlayer(d, 'fall'); }
+function fallHurt(h, gy) {
+  const d = Math.round((h - FALL_SAFE) * FALL_HP);
+  if (d <= 0 || player.dead) return; // (a body already down takes no more)
+  if (WATER_Y - groundY(player.x, player.z) > 0.4 && gy < WATER_Y) {
+    logEvent('fall', { h: +h.toFixed(1), dmg: 0, water: true });
+    return;
+  }
+  logEvent('fall', { h: +h.toFixed(1), dmg: d });
+  floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `-${d}`, '#ff8a6a', d >= 20);
+  hurtPlayer(d, 'fall');
+}
 // no bed, no respawn (the owner's ruling, 2026-11-03; IW1 respawns you only at a bed you built): death ends the game
-export function gameOver(why = null, reason = '') { clearPoison(); riverLevel(0); /* (the quality pass: the rush played on under the start menu) */ toggleCraft(false); endTour(); running = false; paused = false; homePanels(); syncCursor(); /* (Settings and the game rows go back to the menu even when the game ends paused, the quality pass) */ net.host = null; clearOthers(); nameTags([]); const t = Math.round((performance.now() - player.startT) / 1000), by = LABEL[player.killedBy] || 'the wasteland';
+export function gameOver(why = null, reason = '') {
+  clearPoison();
+  riverLevel(0);
+  /* (the quality pass: the rush played on under the start menu) */ toggleCraft(false);
+  endTour();
+  running = false;
+  paused = false;
+  homePanels();
+  syncCursor();
+  /* (Settings and the game rows go back to the menu even when the game ends paused, the quality pass) */ net.host =
+    null;
+  clearOthers();
+  nameTags([]);
+  const t = Math.round((performance.now() - player.startT) / 1000),
+    by = LABEL[player.killedBy] || 'the wasteland';
   logEvent('game-over', { by: player.killedBy, secs: t, kills: player.kills, ...player.inv });
-  if (document.pointerLockElement) document.exitPointerLock(); for (const id of ['hud-tl', 'hud-tr', 'hud-b', 'cross', 'pause', 'breath', 'prompt', 'downed', 'tour']) document.getElementById(id).classList.add('hidden');
-  const fallen = document.getElementById('fallen'); fallen.classList.remove('hidden'); fallen.querySelector('h2').textContent = why ? 'GAME OVER' : 'FALLEN'; // (a plate on the title; the tagline stays)
-  fallen.querySelector('p').textContent = why || `${player.ch.player} fell to ${/^[AEIOU]/.test(by) ? 'an' : 'a'} ${by.toLowerCase()} after ${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}, with ${player.kills} kill${player.kills === 1 ? '' : 's'}.${reason && ' Game over: ' + reason} Next time: build a craftbench, then a bed, and sleep in it to wake there.`;
-  document.getElementById('menu').classList.remove('hidden'); showStep('title'); }
+  if (document.pointerLockElement) document.exitPointerLock();
+  for (const id of ['hud-tl', 'hud-tr', 'hud-b', 'cross', 'pause', 'breath', 'prompt', 'downed', 'tour'])
+    document.getElementById(id).classList.add('hidden');
+  const fallen = document.getElementById('fallen');
+  fallen.classList.remove('hidden');
+  fallen.querySelector('h2').textContent = why ? 'GAME OVER' : 'FALLEN'; // (a plate on the title; the tagline stays)
+  fallen.querySelector('p').textContent =
+    why ||
+    `${player.ch.player} fell to ${/^[AEIOU]/.test(by) ? 'an' : 'a'} ${by.toLowerCase()} after ${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}, with ${player.kills} kill${player.kills === 1 ? '' : 's'}.${reason && ' Game over: ' + reason} Next time: build a craftbench, then a bed, and sleep in it to wake there.`;
+  document.getElementById('menu').classList.remove('hidden');
+  showStep('title');
+}
 // a few passes: pushing out of one circle can push into its neighbour; feet at or above a solid's top pass over it
 // (slice 12: a gate lets players through; enemies only while it is held open. Only the player's own move passes feet.)
 // a hunter's way round what pins it: the nearest reachable spot to (x1, z1) on a 0.5 m grid 32 m square round it, open where
 // creatureCollide() would let a creature stand (an open gate does not block) and bad() allows; the path from
 // that spot back, the next waypoint last; null if it is already as close as it can get. ponytail: plain breadth-first, ~4k cells
 // at most once in 3 s a creature (a cap at 2500 cells stopped a hound short of its own doorway); A* if a pack pins at once and it shows in the frame time
-function wayRound(x0, z0, x1, z1, r, bad) { const K = 0.5, N = 64, H = N / 2, ox = x0 - H * K, oz = z0 - H * K, s0 = H + H * N;
-  const open = (x, z) => !bad(x, z) && !nearColliders(x, z).some(c => c.r && !(c.bot != null && groundY(x, z) + 1.7 < c.bot) && !c.gate?.open && Math.hypot(c.x - x, c.z - z) < colR(c, x, z) + r * 0.6); // (an upper floor's wall blocks a creature as creatureCollide() does: from the ground. 0.6 of its width: a 0.5 m grid misses a gap it fits through, and collide() keeps it off the walls)
-  const from = new Int16Array(N * N).fill(-1), Q = [s0]; from[s0] = s0; let best = s0, bd = Math.hypot(x1 - x0, z1 - z0) - 0.5;
-  for (let h = 0; h < Q.length; h++) { const k = Q[h], i = k % N, j = (k - i) / N, d = Math.hypot(x1 - ox - i * K, z1 - oz - j * K); if (d < bd) { bd = d; best = k; } if (d < 1.2) break;
-    for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const ii = i + a, jj = j + b, kk = ii + jj * N; if (ii < 0 || jj < 0 || ii >= N || jj >= N || from[kk] >= 0) continue; from[kk] = k; if (open(ox + ii * K, oz + jj * K)) Q.push(kk); } }
-  if (best === s0) return null; const path = []; for (let k = best; k !== s0; k = from[k]) path.push([ox + (k % N) * K, oz + Math.floor(k / N) * K]); return path; }
+function wayRound(x0, z0, x1, z1, r, bad) {
+  const K = 0.5,
+    N = 64,
+    H = N / 2,
+    ox = x0 - H * K,
+    oz = z0 - H * K,
+    s0 = H + H * N;
+  const open = (x, z) =>
+    !bad(x, z) &&
+    !nearColliders(x, z).some(
+      (c) =>
+        c.r &&
+        !(c.bot != null && groundY(x, z) + 1.7 < c.bot) &&
+        !c.gate?.open &&
+        Math.hypot(c.x - x, c.z - z) < colR(c, x, z) + r * 0.6,
+    ); // (an upper floor's wall blocks a creature as creatureCollide() does: from the ground. 0.6 of its width: a 0.5 m grid misses a gap it fits through, and collide() keeps it off the walls)
+  const from = new Int16Array(N * N).fill(-1),
+    Q = [s0];
+  from[s0] = s0;
+  let best = s0,
+    bd = Math.hypot(x1 - x0, z1 - z0) - 0.5;
+  for (let h = 0; h < Q.length; h++) {
+    const k = Q[h],
+      i = k % N,
+      j = (k - i) / N,
+      d = Math.hypot(x1 - ox - i * K, z1 - oz - j * K);
+    if (d < bd) {
+      bd = d;
+      best = k;
+    }
+    if (d < 1.2) break;
+    for (const [a, b] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ]) {
+      const ii = i + a,
+        jj = j + b,
+        kk = ii + jj * N;
+      if (ii < 0 || jj < 0 || ii >= N || jj >= N || from[kk] >= 0) continue;
+      from[kk] = k;
+      if (open(ox + ii * K, oz + jj * K)) Q.push(kk);
+    }
+  }
+  if (best === s0) return null;
+  const path = [];
+  for (let k = best; k !== s0; k = from[k]) path.push([ox + (k % N) * K, oz + Math.floor(k / N) * K]);
+  return path;
+}
 // (slice 36: an upper floor's wall has a bottom, bot: a head below it walks on under it; a creature by the same rule from the ground, creatureCollide)
-function collide(o, radius, feet, low = feet) { for (let pass = 0; pass < 3; pass++) for (const c of nearColliders(o.x, o.z)) { if (!c.r || (c.bot != null && (low ?? -1e9) + 1.7 < c.bot) || (feet != null && c.stand != null && steps(c, feet)) || (c.gate && (feet != null || c.gate.open))) continue; const dx = o.x - c.x, dz = o.z - c.z, d = Math.hypot(dx, dz), m = (feet != null && c.bands ? rockCol(c, o.x, o.z, feet) : colR(c, o.x, o.z)) + radius;
-  if (d < m && d > 1e-4) { o.x = c.x + dx / d * m; o.z = c.z + dz / d * m; } }
-  if (beyond(o.z)) return; /* (#8: inside a cave, past the north edge: its walls hold you) */ const lim = HALF - 6; o.x = Math.max(-lim, Math.min(lim, o.x)); o.z = Math.max(-lim, Math.min(lim, o.z)); }
+function collide(o, radius, feet, low = feet) {
+  for (let pass = 0; pass < 3; pass++)
+    for (const c of nearColliders(o.x, o.z)) {
+      if (
+        !c.r ||
+        (c.bot != null && (low ?? -1e9) + 1.7 < c.bot) ||
+        (feet != null && c.stand != null && steps(c, feet)) ||
+        (c.gate && (feet != null || c.gate.open))
+      )
+        continue;
+      const dx = o.x - c.x,
+        dz = o.z - c.z,
+        d = Math.hypot(dx, dz),
+        m = (feet != null && c.bands ? rockCol(c, o.x, o.z, feet) : colR(c, o.x, o.z)) + radius;
+      if (d < m && d > 1e-4) {
+        o.x = c.x + (dx / d) * m;
+        o.z = c.z + (dz / d) * m;
+      }
+    }
+  if (beyond(o.z)) return;
+  /* (#8: inside a cave, past the north edge: its walls hold you) */ const lim = HALF - 6;
+  o.x = Math.max(-lim, Math.min(lim, o.x));
+  o.z = Math.max(-lim, Math.min(lim, o.z));
+}
 // a creature: its feet on the ground for walls with a bottom (a stilt house's stand on its floor: it walked through them, the review of
 // November 15, 2026), and no gates or steps
 export const creatureCollide = (e, r) => collide(e, r, undefined, groundY(e.x, e.z));
 
 // a roast leg of meat held up to the first-person camera while eating (slice 12)
-let MEAT = null; function meat() { if (MEAT) return MEAT; MEAT = new THREE.Group(); const crust = new THREE.MeshStandardMaterial({ color: 0x7a3a1c, roughness: 0.6 }), bone = new THREE.MeshStandardMaterial({ color: 0xe8dcc0, roughness: 0.7 });
+let MEAT = null;
+function meat() {
+  if (MEAT) return MEAT;
+  MEAT = new THREE.Group();
+  const crust = new THREE.MeshStandardMaterial({ color: 0x7a3a1c, roughness: 0.6 }),
+    bone = new THREE.MeshStandardMaterial({ color: 0xe8dcc0, roughness: 0.7 });
   // (a drumstick: a glossy roast bulb, a bare bone and its knuckle, big enough to read; round 2 of slice 12)
-  crust.roughness = 0.38; const a = new THREE.Mesh(new THREE.SphereGeometry(0.075, 14, 10), crust); a.scale.set(1, 0.9, 1.45); const b = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.018, 0.15, 8).rotateX(Math.PI / 2), bone); b.position.z = 0.17;
-  const n1 = new THREE.Mesh(new THREE.SphereGeometry(0.024, 8, 6), bone), n2 = n1.clone(); n1.position.set(0.016, 0, 0.25); n2.position.set(-0.016, 0, 0.25); MEAT.add(a, b, n1, n2); MEAT.rotation.set(0.5, 0.6, 0); MEAT.visible = false; camera.add(MEAT); return MEAT; }
-let padActive = false; const breathEl = document.getElementById('breath');
+  crust.roughness = 0.38;
+  const a = new THREE.Mesh(new THREE.SphereGeometry(0.075, 14, 10), crust);
+  a.scale.set(1, 0.9, 1.45);
+  const b = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.018, 0.15, 8).rotateX(Math.PI / 2), bone);
+  b.position.z = 0.17;
+  const n1 = new THREE.Mesh(new THREE.SphereGeometry(0.024, 8, 6), bone),
+    n2 = n1.clone();
+  n1.position.set(0.016, 0, 0.25);
+  n2.position.set(-0.016, 0, 0.25);
+  MEAT.add(a, b, n1, n2);
+  MEAT.rotation.set(0.5, 0.6, 0);
+  MEAT.visible = false;
+  camera.add(MEAT);
+  return MEAT;
+}
+let padActive = false;
+const breathEl = document.getElementById('breath');
 let huntNow = 0; // (the clock sendHunt is given from the relics: #53)
 export function update(dt, t) {
-  const rawPad = readPad(), was = paused; if (rawPad?.pause) togglePause(); if (was && paused && rawPad) { if (rawPad.use) togglePause(false); else padIn(pauseBox, { ...rawPad, pause: false }); } // (the pause screen by pad: the d-pad moves, A presses, B resumes)
+  const rawPad = readPad(),
+    was = paused;
+  if (rawPad?.pause) togglePause();
+  if (was && paused && rawPad) {
+    if (rawPad.use) togglePause(false);
+    else padIn(pauseBox, { ...rawPad, pause: false });
+  } // (the pause screen by pad: the d-pad moves, A presses, B resumes)
   if (paused && !coop()) return; // in co-op the world goes on behind the pause screen
   if (!paused) tourTick(dt); // #16: the first-time tour, before the craft menu's early return (opening it is a step)
   // the craft menu (slice 11): View on a pad opens and closes it; while it is open the pad drives it, and alone the world waits
-  if (rawPad?.menu && !paused && !player.dead && !(player.down > 0)) toggleCraft(); const inMenu = craftOpen(); if (inMenu) { craftPad(paused || was ? null : rawPad); /* (a press on the pause screen does not also craft behind it in co-op, review) */ renderMenu(); if (!coop()) return; }
+  if (rawPad?.menu && !paused && !player.dead && !(player.down > 0)) toggleCraft();
+  const inMenu = craftOpen();
+  if (inMenu) {
+    craftPad(paused || was ? null : rawPad);
+    /* (a press on the pause screen does not also craft behind it in co-op, review) */ renderMenu();
+    if (!coop()) return;
+  }
   // (the press that closed the menu does nothing else; that comment used to sit mid-line here and swallowed the padActive
   // line after it, so the prompts never showed pad buttons: found in slice 12)
   const pad = paused || was || inMenu ? null : rawPad; // (the press that closed the pause screen does nothing else: B there, at the tent, used to open it again)
   if (keys.size || mouseDown) padActive = false; // (a pad's new press or move is seen in readPad, #16)
   // build mode (slice 12): A places, B ends it, RB and the d-pad turn the piece; those presses do nothing else
-  if (pad && building()) { buildPad(pad); pad.jump = pad.use = pad.atk = pad.sec = pad.rb = pad.left = pad.right = false; pad.useHeld = pad.tearHeld = pad.fixHeld = false; }
+  if (pad && building()) {
+    buildPad(pad);
+    pad.jump = pad.use = pad.atk = pad.sec = pad.rb = pad.left = pad.right = false;
+    pad.useHeld = pad.tearHeld = pad.fixHeld = false;
+  }
   if (pad?.cam) setCam(CAMS[(CAMS.indexOf(camMode) + 1) % 3]);
   if (pad?.left && camMode !== 'top') toggleTorch(); // slice 26: the d-pad's left puts the hand torch away or takes it out (top-down: it turns the view; building: it turns the piece)
-  if (pad && camMode === 'top') { if (pad.left) topYaw += Math.PI / 4; if (pad.right && !repairTarget(player.x, player.z)) topYaw -= Math.PI / 4; } // (by a damaged wall the d-pad's right mends it)
+  if (pad && camMode === 'top') {
+    if (pad.left) topYaw += Math.PI / 4;
+    if (pad.right && !repairTarget(player.x, player.z)) topYaw -= Math.PI / 4;
+  } // (by a damaged wall the d-pad's right mends it)
   // look (arrow keys work everywhere, for pages that block mouse lock)
-  if (camMode !== 'top') { player.yaw += ((keys.has('ArrowLeft') ? 1 : 0) - (keys.has('ArrowRight') ? 1 : 0)) * 2.2 * dt;
-    player.pitch = Math.max(-1.35, Math.min(1.2, player.pitch + ((keys.has('ArrowUp') ? 1 : 0) - (keys.has('ArrowDown') ? 1 : 0)) * 1.6 * dt)); }
-  if (pad && camMode !== 'top') { player.yaw -= pad.lx * 2.6 * dt * settings.sens; player.pitch = Math.max(-1.35, Math.min(1.2, player.pitch - pad.ly * 2.0 * dt * settings.sens * (settings.invertY ? -1 : 1))); }
+  if (camMode !== 'top') {
+    player.yaw += ((keys.has('ArrowLeft') ? 1 : 0) - (keys.has('ArrowRight') ? 1 : 0)) * 2.2 * dt;
+    player.pitch = Math.max(
+      -1.35,
+      Math.min(1.2, player.pitch + ((keys.has('ArrowUp') ? 1 : 0) - (keys.has('ArrowDown') ? 1 : 0)) * 1.6 * dt),
+    );
+  }
+  if (pad && camMode !== 'top') {
+    player.yaw -= pad.lx * 2.6 * dt * settings.sens;
+    player.pitch = Math.max(
+      -1.35,
+      Math.min(1.2, player.pitch - pad.ly * 2.0 * dt * settings.sens * (settings.invertY ? -1 : 1)),
+    );
+  }
   // move, relative to the camera's heading
-  let ix = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0), iz = (keys.has('KeyS') ? 1 : 0) - (keys.has('KeyW') ? 1 : 0);
-  if (pad) { ix += pad.mx; iz += pad.mz; } if (player.dead) { ix = iz = 0; player.dead -= dt; if (player.dead <= 0 && !bedRespawn()) { const alone = !others.size; gameOver(null, NO_BED); if (alone) nextGame(); } } // a bed you slept in wakes you (slice 11)
-  if (player.sleep) { if (ix || iz || mouseDown || pad?.atk || pad?.jump || keys.has('Space')) wake('You get up.'); ix = iz = 0; } // asleep in a bed (slice 13): moving wakes you
+  let ix = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0),
+    iz = (keys.has('KeyS') ? 1 : 0) - (keys.has('KeyW') ? 1 : 0);
+  if (pad) {
+    ix += pad.mx;
+    iz += pad.mz;
+  }
+  if (player.dead) {
+    ix = iz = 0;
+    player.dead -= dt;
+    if (player.dead <= 0 && !bedRespawn()) {
+      const alone = !others.size;
+      gameOver(null, NO_BED);
+      if (alone) nextGame();
+    }
+  } // a bed you slept in wakes you (slice 11)
+  if (player.sleep) {
+    if (ix || iz || mouseDown || pad?.atk || pad?.jump || keys.has('Space')) wake('You get up.');
+    ix = iz = 0;
+  } // asleep in a bed (slice 13): moving wakes you
   // co-op: down for 15 s; a friend standing close with E held for 2.5 s gets you up at a third of your health, else you are out
   player.graceT = Math.max(0, (player.graceT || 0) - dt);
-  if (player.down > 0) { player.down -= dt; const helper = rules.ffa ? null : [...others.values()].find(o => o.rv && !gone(o) && Math.hypot(o.x - player.x, o.z - player.z) < 2.4); // (slice 33: no rival revives you)
+  if (player.down > 0) {
+    player.down -= dt;
+    const helper = rules.ffa
+      ? null
+      : [...others.values()].find((o) => o.rv && !gone(o) && Math.hypot(o.x - player.x, o.z - player.z) < 2.4); // (slice 33: no rival revives you)
     player.revT = helper ? player.revT + dt : Math.max(0, player.revT - dt);
-    if (player.revT >= 2.5) { Object.assign(player, { down: 0, dead: 0, revT: 0, hp: Math.round(player.maxHp * 0.35) }); player.mesh.userData.anim.revive(); log(`${helper.name} got you back up.`); logEvent('revived', { by: helper.name }); }
-    else if (player.down <= 0 && bedRespawn(player.ko ? campSpot() : null)) { if (player.ko) { player.graceT = RESPAWN_SAFE_S; log(`Safe for ${RESPAWN_SAFE_S} s: no rival can hurt you until it ends or you attack.`); } player.ko = false; } // (#86: no knocking out a player as they come back)
-    else if (player.down <= 0) { player.down = 0; player.out = true; player.mesh.visible = false; logEvent('out'); log('You are out: watching the others until they fall too.'); } }
-  safeGlow(player.mesh, player.graceT, t); for (const o of others.values()) safeGlow(o.mesh, rivalSafe(o), t); // (#86: after the respawn above, so it shows on the first frame)
-  if (player.out && !everyone().some(q => q !== player)) { send('all', { t: 'end' }); gameOver(null, ALL_OUT); nextGame(); return; } // everyone is out: the game ends for all
-  player.rv = !player.dead && !rules.ffa && (keys.has('KeyE') || !!pad?.useHeld) && [...others.values()].some(o => o.down > 0 && !o.out && Math.hypot(o.x - player.x, o.z - player.z) < 2.4); // reviving a friend
-  const il = Math.hypot(ix, iz); if (il > 1) { ix /= il; iz /= il; }
-  const heading = camMode === 'top' ? topYaw : player.yaw, sh = Math.sin(heading), chh = Math.cos(heading);
-  const wx = ix * chh + iz * sh, wz = -ix * sh + iz * chh;
-  const depth = WATER_Y - groundY(player.x, player.z), inWater = depth > 0.4 && player.y < WATER_Y, sprint = keys.has('ShiftLeft') ? 1.35 : 1;
+    if (player.revT >= 2.5) {
+      Object.assign(player, { down: 0, dead: 0, revT: 0, hp: Math.round(player.maxHp * 0.35) });
+      player.mesh.userData.anim.revive();
+      log(`${helper.name} got you back up.`);
+      logEvent('revived', { by: helper.name });
+    } else if (player.down <= 0 && bedRespawn(player.ko ? campSpot() : null)) {
+      if (player.ko) {
+        player.graceT = RESPAWN_SAFE_S;
+        log(`Safe for ${RESPAWN_SAFE_S} s: no rival can hurt you until it ends or you attack.`);
+      }
+      player.ko = false;
+    } // (#86: no knocking out a player as they come back)
+    else if (player.down <= 0) {
+      player.down = 0;
+      player.out = true;
+      player.mesh.visible = false;
+      logEvent('out');
+      log('You are out: watching the others until they fall too.');
+    }
+  }
+  safeGlow(player.mesh, player.graceT, t);
+  for (const o of others.values()) safeGlow(o.mesh, rivalSafe(o), t); // (#86: after the respawn above, so it shows on the first frame)
+  if (player.out && !everyone().some((q) => q !== player)) {
+    send('all', { t: 'end' });
+    gameOver(null, ALL_OUT);
+    nextGame();
+    return;
+  } // everyone is out: the game ends for all
+  player.rv =
+    !player.dead &&
+    !rules.ffa &&
+    (keys.has('KeyE') || !!pad?.useHeld) &&
+    [...others.values()].some((o) => o.down > 0 && !o.out && Math.hypot(o.x - player.x, o.z - player.z) < 2.4); // reviving a friend
+  const il = Math.hypot(ix, iz);
+  if (il > 1) {
+    ix /= il;
+    iz /= il;
+  }
+  const heading = camMode === 'top' ? topYaw : player.yaw,
+    sh = Math.sin(heading),
+    chh = Math.cos(heading);
+  const wx = ix * chh + iz * sh,
+    wz = -ix * sh + iz * chh;
+  const depth = WATER_Y - groundY(player.x, player.z),
+    inWater = depth > 0.4 && player.y < WATER_Y,
+    sprint = keys.has('ShiftLeft') ? 1.35 : 1;
   // slice 21 (Jared, 2026-11-14: "water splashes when going through it"): wading or swimming on the move throws a little spray and a ring
-  if (depth > 0.1 && player.y < WATER_Y + 0.1 && Math.hypot(ix, iz) > 0.1 && (player.splashT = (player.splashT || 0) - dt) <= 0) { player.splashT = 0.3; splash(new THREE.Vector3(player.x, WATER_Y, player.z), 5); ripple(player.x, player.z, 1.6, 0.3); }
-  const sp = player.ch.speed * PX * sprint * (inWater ? (depth > 1.1 ? 0.4 : 0.55) : 1) * (player.rallyT > 0 ? 1.5 : 1) * (player.eat ? 0.45 : 1) * webSlow(player.x, player.z, player.y) * holdK(); // (slice 12: eating, you walk; slice 22: a web on the ground holds you to 40%; #66: a pale spider's glob holds your feet, then slows you)
-  const ox = player.x, oz = player.z, oy = groundY(ox, oz);
-  player.x += wx * sp * dt; player.z += wz * sp * dt;
+  if (
+    depth > 0.1 &&
+    player.y < WATER_Y + 0.1 &&
+    Math.hypot(ix, iz) > 0.1 &&
+    (player.splashT = (player.splashT || 0) - dt) <= 0
+  ) {
+    player.splashT = 0.3;
+    splash(new THREE.Vector3(player.x, WATER_Y, player.z), 5);
+    ripple(player.x, player.z, 1.6, 0.3);
+  }
+  const sp =
+    player.ch.speed *
+    PX *
+    sprint *
+    (inWater ? (depth > 1.1 ? 0.4 : 0.55) : 1) *
+    (player.rallyT > 0 ? 1.5 : 1) *
+    (player.eat ? 0.45 : 1) *
+    webSlow(player.x, player.z, player.y) *
+    holdK(); // (slice 12: eating, you walk; slice 22: a web on the ground holds you to 40%; #66: a pale spider's glob holds your feet, then slows you)
+  const ox = player.x,
+    oz = player.z,
+    oy = groundY(ox, oz);
+  player.x += wx * sp * dt;
+  player.z += wz * sp * dt;
   // slice 21 (Jared, 2026-11-14: "the characters have no collision so you can walk through each other and see the inside of
   // the players' heads"): each game moves its own player out of the others standing at its height (the whole overlap: the
   // other's place here is a moment old); one down or out can be walked over, to revive them
-  for (const o of others.values()) { if (gone(o) || Math.abs((o.y ?? player.y) - player.y) > 1.6) continue; const dx = player.x - o.x, dz = player.z - o.z, d = Math.hypot(dx, dz);
-    if (d < 0.85) { if (d < 1e-3) player.x += 0.85; else { player.x += dx * (0.85 - d) / d; player.z += dz * (0.85 - d) / d; } } }
+  for (const o of others.values()) {
+    if (gone(o) || Math.abs((o.y ?? player.y) - player.y) > 1.6) continue;
+    const dx = player.x - o.x,
+      dz = player.z - o.z,
+      d = Math.hypot(dx, dz);
+    if (d < 0.85) {
+      if (d < 1e-3) player.x += 0.85;
+      else {
+        player.x += (dx * (0.85 - d)) / d;
+        player.z += (dz * (0.85 - d)) / d;
+      }
+    }
+  }
   collide(player, 0.45, player.y);
   // cliffs: too steep to walk up (sliding along them still works, and walking down is always allowed)
   if (slopeAt(player.x, player.z) > 1.05 && groundY(player.x, player.z) > oy + 0.02) {
-    const tx = player.x, tz = player.z; player.z = oz; if (slopeAt(player.x, player.z) > 1.05 && groundY(player.x, player.z) > oy + 0.02) { player.x = ox; player.z = tz;
-      if (slopeAt(player.x, player.z) > 1.05 && groundY(player.x, player.z) > oy + 0.02) player.z = oz; }
+    const tx = player.x,
+      tz = player.z;
+    player.z = oz;
+    if (slopeAt(player.x, player.z) > 1.05 && groundY(player.x, player.z) > oy + 0.02) {
+      player.x = ox;
+      player.z = tz;
+      if (slopeAt(player.x, player.z) > 1.05 && groundY(player.x, player.z) > oy + 0.02) player.z = oz;
+    }
     // (the mix of old and new axes was never collision-checked: walking up a slope into an arch leg it stood 5 cm inside
     // the leg, slice 19's gate; out of every solid it is a no-op)
     collide(player, 0.45, player.y); // (its push-out can land on the cliff just refused: then stay where this frame began, a place both checks passed)
-    if (slopeAt(player.x, player.z) > 1.05 && groundY(player.x, player.z) > oy + 0.02) { player.x = ox; player.z = oz; } }
-  if (il > 0.1) { player.walk += dt * sp * 1.6; if ((camMode === 'top' || camMode === 'angled') && player.swing <= 0) { const target = Math.atan2(-wx, -wz); let d = target - player.faceYaw; d = Math.atan2(Math.sin(d), Math.cos(d)); player.faceYaw += d * Math.min(1, dt * 12); } }
+    if (slopeAt(player.x, player.z) > 1.05 && groundY(player.x, player.z) > oy + 0.02) {
+      player.x = ox;
+      player.z = oz;
+    }
+  }
+  if (il > 0.1) {
+    player.walk += dt * sp * 1.6;
+    if ((camMode === 'top' || camMode === 'angled') && player.swing <= 0) {
+      const target = Math.atan2(-wx, -wz);
+      let d = target - player.faceYaw;
+      d = Math.atan2(Math.sin(d), Math.cos(d));
+      player.faceYaw += d * Math.min(1, dt * 12);
+    }
+  }
   if (camMode === 'first') player.faceYaw = player.yaw;
-  tickHarvest(dt, (keys.has('KeyE') || !!pad?.useHeld) && !player.rv && !player.mantle && !player.climbing && !building() && !cooking); // hold E by a tree: chop it (slice 11)
-  const holdE = (keys.has('KeyE') || !!pad?.useHeld) && !player.rv && !building() && !caches.some(c => !c.opened && Math.hypot(c.x - player.x, c.z - player.z) < 2.4 && Math.abs(feetY() - c.y) < 2.6); tickPlaces(dt, holdE); // slice 23: arriving at places, the radio (not while a crate is in reach), the spores
-  huntNow = t; tickRelics(dt, holdE); // #53: taking a relic, carrying it, the altar, the hunt
+  tickHarvest(
+    dt,
+    (keys.has('KeyE') || !!pad?.useHeld) && !player.rv && !player.mantle && !player.climbing && !building() && !cooking,
+  ); // hold E by a tree: chop it (slice 11)
+  const holdE =
+    (keys.has('KeyE') || !!pad?.useHeld) &&
+    !player.rv &&
+    !building() &&
+    !caches.some((c) => !c.opened && Math.hypot(c.x - player.x, c.z - player.z) < 2.4 && Math.abs(feetY() - c.y) < 2.6);
+  tickPlaces(dt, holdE); // slice 23: arriving at places, the radio (not while a crate is in reach), the spores
+  huntNow = t;
+  tickRelics(dt, holdE); // #53: taking a relic, carrying it, the altar, the hunt
   tickCaves(dt); // #8: in and out at the mouths, the surprises
   tickTear(dt, keys.has('KeyX') || !!pad?.tearHeld);
-  tickRepair(dt, (keys.has('KeyH') || !!pad?.fixHeld) && !craftOpen() && !player.rv && !player.mantle && !player.climbing); // hold H (the d-pad's right) by a damaged wall or gate: mend it (slice 32)
+  tickRepair(
+    dt,
+    (keys.has('KeyH') || !!pad?.fixHeld) && !craftOpen() && !player.rv && !player.mantle && !player.climbing,
+  ); // hold H (the d-pad's right) by a damaged wall or gate: mend it (slice 32)
   // slice 12: hold G (d-pad down) to eat, hold E at a fire to cook; R or d-pad up reloads the revolver
-  cooking = tickSupplies(dt, keys.has('KeyG') || !!pad?.downHeld, keys.has('KeyE') || !!pad?.useHeld); if (pad?.up) reload(); // hold X (RB) by your own piece: tear it down (slice 12)
+  cooking = tickSupplies(dt, keys.has('KeyG') || !!pad?.downHeld, keys.has('KeyE') || !!pad?.useHeld);
+  if (pad?.up) reload(); // hold X (RB) by your own piece: tear it down (slice 12)
   // jump and gravity
   // slice 9b: rocks, crates, walls and roofs hold the feet (standAt); jump held against a ledge within reach (up to 2.5 m
   // above the feet: house walls, roofs, tall rocks) pulls the player up onto it; W and S climb the tower's ladder
-  const jumpKey = (keys.has('Space') || pad?.jumpHeld) && !player.dead, lad = !player.dead && !player.mantle && ladderAt(player.x, player.z, player.y);
-  const deep = depth > 1.1, surf = WATER_Y - 1.25, diving = deep && (keys.has('KeyC') || pad?.dive) && !player.dead;
-  player.swimY = !deep ? surf : diving ? Math.max(groundY(player.x, player.z) + 0.2, player.swimY - 2 * dt) : Math.min(surf, player.swimY + 2.5 * dt); // C dives, letting go floats up
-  const wasClimbing = player.climbing; player.climbing = false; let gy = player.y;
-  if (player.mantle) { const m = player.mantle; m.t = Math.min(1, m.t + dt / 0.45); const f = Math.max(0, m.t * 2 - 1); // up first, then over the edge
-    player.y = m.y0 + (m.y1 - m.y0) * Math.min(1, m.t * 1.6); player.x = m.x0 + (m.x1 - m.x0) * f; player.z = m.z0 + (m.z1 - m.z0) * f; player.vy = 0;
-    if (m.t >= 1) { player.mantle = null; player.onGround = true; } }
+  const jumpKey = (keys.has('Space') || pad?.jumpHeld) && !player.dead,
+    lad = !player.dead && !player.mantle && ladderAt(player.x, player.z, player.y);
+  const deep = depth > 1.1,
+    surf = WATER_Y - 1.25,
+    diving = deep && (keys.has('KeyC') || pad?.dive) && !player.dead;
+  player.swimY = !deep
+    ? surf
+    : diving
+      ? Math.max(groundY(player.x, player.z) + 0.2, player.swimY - 2 * dt)
+      : Math.min(surf, player.swimY + 2.5 * dt); // C dives, letting go floats up
+  const wasClimbing = player.climbing;
+  player.climbing = false;
+  let gy = player.y;
+  if (player.mantle) {
+    const m = player.mantle;
+    m.t = Math.min(1, m.t + dt / 0.45);
+    const f = Math.max(0, m.t * 2 - 1); // up first, then over the edge
+    player.y = m.y0 + (m.y1 - m.y0) * Math.min(1, m.t * 1.6);
+    player.x = m.x0 + (m.x1 - m.x0) * f;
+    player.z = m.z0 + (m.z1 - m.z0) * f;
+    player.vy = 0;
+    if (m.t >= 1) {
+      player.mantle = null;
+      player.onGround = true;
+    }
+  }
   // (getting on, Jared, November 15, 2026: "like I keep bouncing on it": W and S grabbed the ladder from any side, so turning away at its foot
   // climbed again, and the landing turned some climbers back to the hatch; now only walking into it from below, or backing to the hatch from above)
-  else if (lad && (wasClimbing ? (!jumpKey && player.y > lad.y0 + 0.02 && player.y < lad.y1 - 0.02) || (iz < -0.3 && player.y < lad.y1 - 0.02) || (iz > 0.3 && player.y > lad.y0 + 0.02) : ladderGrab(lad, wx, wz, iz))) { player.climbing = true; // holds on with no input; jump lets go
-    player.y = Math.min(lad.y1, Math.max(lad.y0, player.y - (Math.abs(iz) > 0.3 ? iz : 0) * 2.2 * dt)); [player.x, player.z] = lad.at(player.y); player.vy = 0; player.onGround = true; player.faceYaw = Math.atan2(lad.b.sa, -lad.b.ca); // facing the wall
-    if (iz < -0.3 && player.y >= lad.y1 - 0.02) { player.mantle = { t: 0, x0: player.x, y0: lad.y1, z0: player.z, x1: lad.off[0], y1: lad.y1, z1: lad.off[1] }; player.yaw = lad.face ? Math.atan2(-lad.face[0], -lad.face[1]) : Math.atan2(player.x - lad.off[0], player.z - lad.off[1]); logEvent('ladder top'); } } // up through the hatch, turned to face where it lands (the room, or the radio mast's platform)
-  else { gy = Math.max(groundY(player.x, player.z), player.swimY, standAt(player.x, player.z, player.y + (deep ? STEP : 0))); // (a swimmer finds its feet on a rock top a step above them, as collide() lets it over one: silent-marsh-90's sunken ice rock, round 4)
-    if (jumpKey && !player.onGround && il > 0.1 && player.vy < 5 && !(standAt(player.x, player.z, Infinity) > player.y + 1.9)) { // not under a roof
-      const ax = player.x + wx / il * 0.75, az = player.z + wz / il * 0.75, ledge = standAt(ax, az, Infinity);
-      if (ledge > player.y + STEP && ledge < player.y + 2.5 && ledge > groundY(ax, az) + 0.3) { player.mantle = { t: 0, x0: player.x, y0: player.y, z0: player.z, x1: ax, y1: ledge, z1: az }; logEvent('climb', { h: +(ledge - groundY(ax, az)).toFixed(1) }); } }
-    if ((keys.has('Space') || pad?.jump) && !player.dead && player.onGround && !diving) { player.vy = 8; player.onGround = false; } // a pad jumps once per press
-    player.vy -= (player.y + 1.5 < WATER_Y ? 6 : 24) * dt; player.y += player.vy * dt;
-    if (player.vy > 0) { const top = headroom(player.x, player.z, player.y - player.vy * dt) - 2; if (player.y > top) { player.y = Math.max(top, player.y - player.vy * dt); player.vy = 0; } } // (the quality pass: a jump under an upper floor or a stair stops below it; the eye went through into the room above)
-    if (player.y <= gy || (player.onGround && player.vy <= 0 && player.y - gy < 0.3)) { if (!player.onGround) fallHurt(Math.min((player.fallTop ?? gy) - gy, (player.fallGap ?? 99) + 1), gy); player.y = gy; player.vy = 0; player.onGround = true; } else player.onGround = false; } // feet stick on the way down a slope; off an edge they fall
+  else if (
+    lad &&
+    (wasClimbing
+      ? (!jumpKey && player.y > lad.y0 + 0.02 && player.y < lad.y1 - 0.02) ||
+        (iz < -0.3 && player.y < lad.y1 - 0.02) ||
+        (iz > 0.3 && player.y > lad.y0 + 0.02)
+      : ladderGrab(lad, wx, wz, iz))
+  ) {
+    player.climbing = true; // holds on with no input; jump lets go
+    player.y = Math.min(lad.y1, Math.max(lad.y0, player.y - (Math.abs(iz) > 0.3 ? iz : 0) * 2.2 * dt));
+    [player.x, player.z] = lad.at(player.y);
+    player.vy = 0;
+    player.onGround = true;
+    player.faceYaw = Math.atan2(lad.b.sa, -lad.b.ca); // facing the wall
+    if (iz < -0.3 && player.y >= lad.y1 - 0.02) {
+      player.mantle = { t: 0, x0: player.x, y0: lad.y1, z0: player.z, x1: lad.off[0], y1: lad.y1, z1: lad.off[1] };
+      player.yaw = lad.face
+        ? Math.atan2(-lad.face[0], -lad.face[1])
+        : Math.atan2(player.x - lad.off[0], player.z - lad.off[1]);
+      logEvent('ladder top');
+    }
+  } // up through the hatch, turned to face where it lands (the room, or the radio mast's platform)
+  else {
+    gy = Math.max(groundY(player.x, player.z), player.swimY, standAt(player.x, player.z, player.y + (deep ? STEP : 0))); // (a swimmer finds its feet on a rock top a step above them, as collide() lets it over one: silent-marsh-90's sunken ice rock, round 4)
+    if (
+      jumpKey &&
+      !player.onGround &&
+      il > 0.1 &&
+      player.vy < 5 &&
+      !(standAt(player.x, player.z, Infinity) > player.y + 1.9)
+    ) {
+      // not under a roof
+      const ax = player.x + (wx / il) * 0.75,
+        az = player.z + (wz / il) * 0.75,
+        ledge = standAt(ax, az, Infinity);
+      if (ledge > player.y + STEP && ledge < player.y + 2.5 && ledge > groundY(ax, az) + 0.3) {
+        player.mantle = { t: 0, x0: player.x, y0: player.y, z0: player.z, x1: ax, y1: ledge, z1: az };
+        logEvent('climb', { h: +(ledge - groundY(ax, az)).toFixed(1) });
+      }
+    }
+    if ((keys.has('Space') || pad?.jump) && !player.dead && player.onGround && !diving) {
+      player.vy = 8;
+      player.onGround = false;
+    } // a pad jumps once per press
+    player.vy -= (player.y + 1.5 < WATER_Y ? 6 : 24) * dt;
+    player.y += player.vy * dt;
+    if (player.vy > 0) {
+      const top = headroom(player.x, player.z, player.y - player.vy * dt) - 2;
+      if (player.y > top) {
+        player.y = Math.max(top, player.y - player.vy * dt);
+        player.vy = 0;
+      }
+    } // (the quality pass: a jump under an upper floor or a stair stops below it; the eye went through into the room above)
+    if (player.y <= gy || (player.onGround && player.vy <= 0 && player.y - gy < 0.3)) {
+      if (!player.onGround) fallHurt(Math.min((player.fallTop ?? gy) - gy, (player.fallGap ?? 99) + 1), gy);
+      player.y = gy;
+      player.vy = 0;
+      player.onGround = true;
+    } else player.onGround = false;
+  } // feet stick on the way down a slope; off an edge they fall
   // slice 21 (#60; Zachary on 2026-11-14 ran 23 m down a hillside in 6 s and took four "falls" for 79): the drop that hurts is the
   // widest gap between the feet and the ground beneath them in the air (off a cliff the whole drop; bounding down a slope about 1 m)
   player.fallGap = player.onGround || player.mantle ? 0 : Math.max(player.fallGap ?? 0, player.y - (gy ?? player.y));
   player.fallTop = player.onGround || player.mantle ? player.y : Math.max(player.fallTop ?? player.y, player.y); // the highest the feet were since they left the ground (a ladder or a mantle holds them)
   // under the surface the breath runs out in 12 s (the meter shows only then), and after that the water hurts
-  player.under = player.y + 1.62 < WATER_Y; /* the eye is under */ player.breath = Math.min(1, Math.max(0, player.breath + (player.under ? -dt / 12 : dt / 3)));
-  if (player.under && player.breath <= 0 && (player.drownT = (player.drownT || 0) - dt) <= 0) { player.drownT = 1; hurtPlayer(8, 'Lack of air'); }
-  breathEl.classList.toggle('hidden', !player.under); breathEl.firstElementChild.style.width = player.breath * 100 + '%';
-  tickDeep(dt, player.x, player.z, deep && player.y < WATER_Y - 0.5 && !player.dead, () => { logEvent('lurker'); floatText(new THREE.Vector3(player.x, WATER_Y + 2.2, player.z), 'Something moves below…', '#9fd8ff'); },
-    () => { hurtPlayer(DEEP_BITE, 'Thing in the deep'); floatText(new THREE.Vector3(player.x, WATER_Y + 2, player.z), 'Bitten!', '#ff8a6a'); logEvent('bitten'); });
+  player.under = player.y + 1.62 < WATER_Y;
+  /* the eye is under */ player.breath = Math.min(1, Math.max(0, player.breath + (player.under ? -dt / 12 : dt / 3)));
+  if (player.under && player.breath <= 0 && (player.drownT = (player.drownT || 0) - dt) <= 0) {
+    player.drownT = 1;
+    hurtPlayer(8, 'Lack of air');
+  }
+  breathEl.classList.toggle('hidden', !player.under);
+  breathEl.firstElementChild.style.width = player.breath * 100 + '%';
+  tickDeep(
+    dt,
+    player.x,
+    player.z,
+    deep && player.y < WATER_Y - 0.5 && !player.dead,
+    () => {
+      logEvent('lurker');
+      floatText(new THREE.Vector3(player.x, WATER_Y + 2.2, player.z), 'Something moves below…', '#9fd8ff');
+    },
+    () => {
+      hurtPlayer(DEEP_BITE, 'Thing in the deep');
+      floatText(new THREE.Vector3(player.x, WATER_Y + 2, player.z), 'Bitten!', '#ff8a6a');
+      logEvent('bitten');
+    },
+  );
   // attack
-  player.atkT -= dt; player.shieldT = (player.shieldT || 0) - dt; if ((mouseDown || pad?.atk) && !building()) attack(); if (pad?.close && !building()) attack(true); player.closeT = (player.closeT || 0) - dt; if (pad?.sec) secondary(); tickSecondary(dt); tickPulses(dt); tickBlasts(dt); AURA.opacity = 0.42 + 0.12 * Math.sin(t * 2.4); player.swing = Math.max(0, player.swing - dt * 4);
+  player.atkT -= dt;
+  player.shieldT = (player.shieldT || 0) - dt;
+  if ((mouseDown || pad?.atk) && !building()) attack();
+  if (pad?.close && !building()) attack(true);
+  player.closeT = (player.closeT || 0) - dt;
+  if (pad?.sec) secondary();
+  tickSecondary(dt);
+  tickPulses(dt);
+  tickBlasts(dt);
+  AURA.opacity = 0.42 + 0.12 * Math.sin(t * 2.4);
+  player.swing = Math.max(0, player.swing - dt * 4);
   // the bow: the arrow leaves on the shot, a new one is nocked a moment later and the string comes back to a half draw
-  if (player.ch.id === 'ranger') { const p = 1 - Math.max(0, player.atkT) / player.ch.cd, k = Math.min(1, Math.max(0, (p - 0.4) / 0.6)), ease = k * k * (3 - 2 * k);
-    const fpBow = viewModel.children[0]?.userData.weapon, tpBow = player.mesh.userData.weapon, snap = p < 0.4 ? Math.sin(p * 60) * 0.03 * (1 - p / 0.4) : 0;
-    fpBow?.userData.draw?.(ease * 0.62 + snap, p > 0.4 && quiver.n > 0); tpBow?.userData.draw?.(ease * 0.18 + snap, p > 0.4 && quiver.n > 0); }
+  if (player.ch.id === 'ranger') {
+    const p = 1 - Math.max(0, player.atkT) / player.ch.cd,
+      k = Math.min(1, Math.max(0, (p - 0.4) / 0.6)),
+      ease = k * k * (3 - 2 * k);
+    const fpBow = viewModel.children[0]?.userData.weapon,
+      tpBow = player.mesh.userData.weapon,
+      snap = p < 0.4 ? Math.sin(p * 60) * 0.03 * (1 - p / 0.4) : 0;
+    fpBow?.userData.draw?.(ease * 0.62 + snap, p > 0.4 && quiver.n > 0);
+    tpBow?.userData.draw?.(ease * 0.18 + snap, p > 0.4 && quiver.n > 0);
+  }
   player.emptyT = (player.emptyT || 0) - dt;
   if (pad?.use) interact();
   // the player model
-  const pm = player.mesh, u = pm.userData; pm.position.set(player.x, player.y, player.z); pm.rotation.y = player.faceYaw;
+  const pm = player.mesh,
+    u = pm.userData;
+  pm.position.set(player.x, player.y, player.z);
+  pm.rotation.y = player.faceYaw;
   // animation: ground speed picks idle, walk, jog or sprint; deep water swims; off the ground for a moment is a jump
-  const gs = Math.hypot(player.x - ox, player.z - oz) / Math.max(dt, 1e-3); player.moving = gs > 0.3;
+  const gs = Math.hypot(player.x - ox, player.z - oz) / Math.max(dt, 1e-3);
+  player.moving = gs > 0.3;
   player.air = player.onGround ? 0 : (player.air || 0) + dt;
-  u.anim.update(dt, { speed: player.climbing ? 1.8 : gs, // a ladder climb steps like a walk
-     onGround: player.air < 0.15, swimming: groundY(player.x, player.z) < WATER_Y - 1.1 && player.y <= gy + 0.05, kneel: !!player.rv });
+  u.anim.update(dt, {
+    speed: player.climbing ? 1.8 : gs, // a ladder climb steps like a walk
+    onGround: player.air < 0.15,
+    swimming: groundY(player.x, player.z) < WATER_Y - 1.1 && player.y <= gy + 0.05,
+    kneel: !!player.rv,
+  });
   eatPose(pm, player.eat ? Math.min(1, player.eat.t / 0.3) * (0.85 + 0.15 * Math.sin(player.eat.t * 14)) : 0); // the hand to the mouth (slice 12)
   // first person: the same arms; attacks are a procedural chop (melee) or recoil (ranged), with a walking bob
   const vm = viewModel.children[0];
-  { const m = meat(), fp = camMode === 'first' && !document.body.classList.contains('freecam'); m.visible = !!player.eat && fp; viewModel.visible = fp && !player.eat; if (m.visible) { const k = Math.min(1, player.eat.t / 0.3), b = Math.sin(player.eat.t * 14) * 0.012; m.position.set(0.05, -0.16 + 0.07 * k + b, -0.38 + 0.06 * k); } }
-  if (vm && camMode === 'first') { vm.userData.anim.update(dt); const sw = Math.sin(player.swing * Math.PI), bob = player.moving && player.onGround ? 1 : 0;
+  {
+    const m = meat(),
+      fp = camMode === 'first' && !document.body.classList.contains('freecam');
+    m.visible = !!player.eat && fp;
+    viewModel.visible = fp && !player.eat;
+    if (m.visible) {
+      const k = Math.min(1, player.eat.t / 0.3),
+        b = Math.sin(player.eat.t * 14) * 0.012;
+      m.position.set(0.05, -0.16 + 0.07 * k + b, -0.38 + 0.06 * k);
+    }
+  }
+  if (vm && camMode === 'first') {
+    vm.userData.anim.update(dt);
+    const sw = Math.sin(player.swing * Math.PI),
+      bob = player.moving && player.onGround ? 1 : 0;
     const chop = player.ch.atk === 'melee' || player.blow; // the pistol-whip turns at the wrist: the gun comes up, then chops down (turning the whole arm swung the sleeve into view)
-    if (player.ch.close) vm.userData.inner.parent.rotation.x = player.blow ? -Math.sin(player.swing * Math.PI * 2) * 0.6 : 0; // up, then down hard
-    if (player.blow) vm.rotation.set(0, 0, 0); else if (chop) vm.rotation.set(-sw * 0.9, sw * 0.25, sw * 0.7); else vm.rotation.set(player.swing * 0.22, 0, 0);
-    vm.position.set(Math.cos(player.walk * 2.2) * 0.012 * bob, Math.abs(Math.sin(player.walk * 2.2)) * 0.02 * bob - (chop ? 0 : player.swing * 0.03), player.blow ? -sw * 0.08 : chop ? 0 : player.swing * 0.06); }
-  player.hurtT = Math.max(0, player.hurtT - dt); tickSlashes(dt);
-  { const n = player.dead || player.down > 0 ? (clearPoison(), 0) : tickPoison(dt); if (n) hurtPlayer(n, 'poison'); } // (a widow's poison, working on: poison.js)
+    if (player.ch.close)
+      vm.userData.inner.parent.rotation.x = player.blow ? -Math.sin(player.swing * Math.PI * 2) * 0.6 : 0; // up, then down hard
+    if (player.blow) vm.rotation.set(0, 0, 0);
+    else if (chop) vm.rotation.set(-sw * 0.9, sw * 0.25, sw * 0.7);
+    else vm.rotation.set(player.swing * 0.22, 0, 0);
+    vm.position.set(
+      Math.cos(player.walk * 2.2) * 0.012 * bob,
+      Math.abs(Math.sin(player.walk * 2.2)) * 0.02 * bob - (chop ? 0 : player.swing * 0.03),
+      player.blow ? -sw * 0.08 : chop ? 0 : player.swing * 0.06,
+    );
+  }
+  player.hurtT = Math.max(0, player.hurtT - dt);
+  tickSlashes(dt);
+  {
+    const n = player.dead || player.down > 0 ? (clearPoison(), 0) : tickPoison(dt);
+    if (n) hurtPlayer(n, 'poison');
+  } // (a widow's poison, working on: poison.js)
   // enemies (dormant beyond the wake radius, as in IW1)
   // turns: one enemy winds up at a time, and the next waits a moment after it (his first play: four raiders struck inside a second)
-  const NK = nightK(), fires = [campfire, ...fireSpots(), ...HEATERS(), ...torchWarm()], carried = carriedWarm(), near = (L, q) => L.some(f => Math.hypot(q.x - f.x, q.z - f.z) < f.r + 1.5),
+  const NK = nightK(),
+    fires = [campfire, ...fireSpots(), ...HEATERS(), ...torchWarm()],
+    carried = carriedWarm(),
+    near = (L, q) => L.some((f) => Math.hypot(q.x - f.x, q.z - f.z) < f.r + 1.5),
     warm = (q, type) => near(fires, q) || (FEARS_FIRE.has(type) && near(carried, q)); // (a carried torch: only against the animals that fear fire)
-  let alive = 0; const striking = new Set(enemies.filter(e => !e.dead && e.state === 'windup').map(e => e.tg)), awake = []; for (const [k, v] of strikeCD) strikeCD.set(k, v - dt);
+  let alive = 0;
+  const striking = new Set(enemies.filter((e) => !e.dead && e.state === 'windup').map((e) => e.tg)),
+    awake = [];
+  for (const [k, v] of strikeCD) strikeCD.set(k, v - dt);
   const ppl = joining() ? null : everyone();
-  LIT.length = 0; LIT.push(...torchLights(), ...lightSpots(), ...raiderCamps, CAMP, ...caveLights()); if (nightK() > 0.3) LIT.push(...lampSpots());
+  LIT.length = 0;
+  LIT.push(...torchLights(), ...lightSpots(), ...raiderCamps, CAMP, ...caveLights());
+  if (nightK() > 0.3) LIT.push(...lampSpots());
   for (const e of enemies) {
-    const st = ENEMY[e.type], u = e.mesh.userData, an = u.anim;
-    if (e.dead) { e.dead -= dt; if (e.ck) { e.ck = e.ckW = 0; e.mesh.rotation.x = 0; e.mesh.position.y = Math.max(groundY(e.x, e.z), standAt(e.x, e.z, e.mesh.position.y + 0.35)); } /* (killed on a wall: it drops to what is below) */ const tr = e.mesh.getObjectByName('threat'); if (tr) tr.visible = false; an.update(dt, { speed: 0, scale: st.scale, ground: groundY }); if (e.dead < 1.2 && !e.dropped) { e.dropped = true; dropFrom(e); } /* its arrows fall beside it */ if (e.dead < 1) e.mesh.position.y -= dt * 0.6; if (e.dead <= 0) { scene.remove(e.mesh); e.mesh.userData.dispose?.(); e.gone = true; } continue; }
-    alive++; const tg = joining() ? player : nearestP(e.x, e.z) || player, tgGone = gone(tg); if (joining()) followHost(e, dt); // a joined game's enemies go where the host's are
-    const dx = tg.x - e.x, dz = tg.z - e.z, d = Math.hypot(dx, dz) || 1e-3, tx = dx / d, tz = dz / d;
-    if (st.nest) { e.mesh.visible = d < 200; e.flashT = Math.max(0, e.flashT - dt); e.barT = Math.max(0, e.barT - dt); u.flash(e.flashT / 0.15); an.update(dt); continue; } // slice 22: a nest stands still (spiders.js sends its spiders out)
+    const st = ENEMY[e.type],
+      u = e.mesh.userData,
+      an = u.anim;
+    if (e.dead) {
+      e.dead -= dt;
+      if (e.ck) {
+        e.ck = e.ckW = 0;
+        e.mesh.rotation.x = 0;
+        e.mesh.position.y = Math.max(groundY(e.x, e.z), standAt(e.x, e.z, e.mesh.position.y + 0.35));
+      }
+      /* (killed on a wall: it drops to what is below) */ const tr = e.mesh.getObjectByName('threat');
+      if (tr) tr.visible = false;
+      an.update(dt, { speed: 0, scale: st.scale, ground: groundY });
+      if (e.dead < 1.2 && !e.dropped) {
+        e.dropped = true;
+        dropFrom(e);
+      }
+      /* its arrows fall beside it */ if (e.dead < 1) e.mesh.position.y -= dt * 0.6;
+      if (e.dead <= 0) {
+        scene.remove(e.mesh);
+        e.mesh.userData.dispose?.();
+        e.gone = true;
+      }
+      continue;
+    }
+    alive++;
+    const tg = joining() ? player : nearestP(e.x, e.z) || player,
+      tgGone = gone(tg);
+    if (joining()) followHost(e, dt); // a joined game's enemies go where the host's are
+    const dx = tg.x - e.x,
+      dz = tg.z - e.z,
+      d = Math.hypot(dx, dz) || 1e-3,
+      tx = dx / d,
+      tz = dz / d;
+    if (st.nest) {
+      e.mesh.visible = d < 200;
+      e.flashT = Math.max(0, e.flashT - dt);
+      e.barT = Math.max(0, e.barT - dt);
+      u.flash(e.flashT / 0.15);
+      an.update(dt);
+      continue;
+    } // slice 22: a nest stands still (spiders.js sends its spiders out)
     // #60 (2026-11-14: two dust hounds stood frozen over Jared's body for 5 s, still "chasing"): asleep only when every player
     // is far off, a downed one too, whose camera is still on the spot. Measured to the quarry alone, a creature whose quarry
     // fell took the next one 200 m away as its quarry and froze mid-chase; awake, it gives up the hunt below and wanders off
     const wd = ppl ? ppl.reduce((m, q) => Math.min(m, Math.hypot(q.x - e.x, q.z - e.z)), d) : d;
-    if (wd > WAKE_RADIUS && !(e.hunter?.until > t)) { e.mesh.visible = wd < 200; continue; } e.mesh.visible = true; awake.push(e); // (a pack sent hunting stays awake on its way: issue #44)
+    if (wd > WAKE_RADIUS && !(e.hunter?.until > t)) {
+      e.mesh.visible = wd < 200;
+      continue;
+    }
+    e.mesh.visible = true;
+    awake.push(e); // (a pack sent hunting stays awake on its way: issue #44)
     u.setDetail(camera.position.distanceTo(e.mesh.position) < 32); // fur shells near the camera
-    e.stag = Math.max(0, e.stag - dt); if (e.angry > 0) e.angry -= dt; e.flashT = Math.max(0, e.flashT - dt); e.barT = Math.max(0, e.barT - dt); u.flash(e.flashT / 0.15);
-    { const ring = e.mesh.getObjectByName('threat'), hunt = HUNTS.includes(e.state); let want = hunt ? (e.state === 'windup' ? 1.0 : 0.55 + 0.12 * Math.sin(t * 5)) : 0; // (no ring on a creature that is not hunting)
-      if (want) { if (!(e.eyeT > 0)) { e.eyeT = 0.2 + Math.random() * 0.1; e.inEye = inEye(e, u.height * e.mesh.scale.x); } e.eyeT -= dt; want *= ringSeen(e); } else e.eyeT = 0; // (a pack rechecks out of step; a fresh hunt looks at once) // (never plainer than the creature itself)
-      ring.material.opacity += (want - ring.material.opacity) * Math.min(1, dt * 6); ring.visible = ring.material.opacity > 0.02; }
+    e.stag = Math.max(0, e.stag - dt);
+    if (e.angry > 0) e.angry -= dt;
+    e.flashT = Math.max(0, e.flashT - dt);
+    e.barT = Math.max(0, e.barT - dt);
+    u.flash(e.flashT / 0.15);
+    {
+      const ring = e.mesh.getObjectByName('threat'),
+        hunt = HUNTS.includes(e.state);
+      let want = hunt ? (e.state === 'windup' ? 1.0 : 0.55 + 0.12 * Math.sin(t * 5)) : 0; // (no ring on a creature that is not hunting)
+      if (want) {
+        if (!(e.eyeT > 0)) {
+          e.eyeT = 0.2 + Math.random() * 0.1;
+          e.inEye = inEye(e, u.height * e.mesh.scale.x);
+        }
+        e.eyeT -= dt;
+        want *= ringSeen(e);
+      } else e.eyeT = 0; // (a pack rechecks out of step; a fresh hunt looks at once) // (never plainer than the creature itself)
+      ring.material.opacity += (want - ring.material.opacity) * Math.min(1, dt * 6);
+      ring.visible = ring.material.opacity > 0.02;
+    }
     // slice 13: at night an animal sees further, runs faster and bites harder (IW1: 1.35), unless its quarry is by a fire
-    const nb = NK && !warm(tg, e.type) ? NK : 0, aggro = st.aggro / 12 * (1 + 0.35 * nb) * (FEARS_FIRE.has(e.type) && torchOn(tg) ? 0.7 : 1), /* slice 26: a carried flame: it notices you later */ reach = 0.9 + st.scale * 0.75, bite = Math.max(1, Math.round(st.dmg * (e.sz || 1) * (1 + 0.35 * nb) * level().bite)); /* (e.sz: a spider's own size, spiders.js: a half-size one bites for half) */ e.nb = nb; // (slice 33: the difficulty; e.nb: its night boost, for the checks)
+    const nb = NK && !warm(tg, e.type) ? NK : 0,
+      aggro = (st.aggro / 12) * (1 + 0.35 * nb) * (FEARS_FIRE.has(e.type) && torchOn(tg) ? 0.7 : 1),
+      /* slice 26: a carried flame: it notices you later */ reach = 0.9 + st.scale * 0.75,
+      bite = Math.max(1, Math.round(st.dmg * (e.sz || 1) * (1 + 0.35 * nb) * level().bite));
+    /* (e.sz: a spider's own size, spiders.js: a half-size one bites for half) */ e.nb = nb; // (slice 33: the difficulty; e.nb: its night boost, for the checks)
     // issue #44: an idle animal notices a little further than IW1's sight (1.19x: the night check keeps a day wolf at 19 m
     // idle), and wolves, hounds and bears smell blood: a player under half health from twice IW1's sight; one dug in the mud
     // still only close. A creature below a player stood up on a ledge or a rock strikes up at them: its reach grows with the
     // rise, as far as it can rear (1.2 m + its size: a bear 2.8 m, a wolf 2.2 m); anyone higher than that it cannot reach,
     // and one stood up on a rock or a roof out of its reach it backs off from and circles (a slope it climbs instead)
-    const blood = SMELL.has(e.type) && tg.hp < (tg.maxHp ?? tg.mx ?? Infinity) * 0.5, notice = aggro * (e.state === 'lurk' ? 1 : blood ? 2 : 1.19);
-    const ty0 = tg.y ?? groundY(tg.x, tg.z), rise = ty0 - eFeet(e), rear = 1.2 + st.scale, up = rise <= rear, reachUp = reach + (rise > 0.4 && up ? Math.min(1.6, rise * 0.7) : 0);
+    const blood = SMELL.has(e.type) && tg.hp < (tg.maxHp ?? tg.mx ?? Infinity) * 0.5,
+      notice = aggro * (e.state === 'lurk' ? 1 : blood ? 2 : 1.19);
+    const ty0 = tg.y ?? groundY(tg.x, tg.z),
+      rise = ty0 - eFeet(e),
+      rear = 1.2 + st.scale,
+      up = rise <= rear,
+      reachUp = reach + (rise > 0.4 && up ? Math.min(1.6, rise * 0.7) : 0);
     const high = !up && ty0 - groundY(tg.x, tg.z) > 0.3; // (stood up on a rock or a roof out of reach: it circles; up a slope it climbs on)
     const hunting = HUNTS.includes(e.state);
     // perception: a pack wakes together; giving up only far away; rats and hounds run when badly hurt
     // the safe valley: nothing follows the player in; anything inside the ring wanders back out
-    const safe = Math.hypot(tg.x, tg.z) < SAFE_R - 12, inside = Math.hypot(e.x, e.z) < SAFE_R, host = !joining();
-    if (host) { if (tgGone || (safe && !e.posed)) { if (e.state !== 'lurk' && e.state !== 'idle') { e.state = 'idle'; e.wander = 0; } }
-    if (inside && e.state === 'idle' && !e.posed) { e.wyaw = Math.atan2(e.x, e.z); e.wmove = true; e.wander = Math.max(e.wander, 1); }
-    if (tgGone || (safe && !e.posed)) { /* no new hunts */ }
-    else if ((e.state === 'idle' || e.state === 'lurk') && d < notice && !(e.calmT > t && d > CLOSE)) alertPack(e); // (#66: an Easy danger that warned you off lets you go)
-    else if (e.type === 'wolf' && e.state === 'idle' && d < 45 && !(e.watchT > t)) { const w = t + 7 + rng() * 6; for (const o of enemies) if (o.pack === e.pack) o.watchT = w; wolfSay('wolfwatch', e); } // (watching you: once a pack, every 7 to 13 s)
-    else if (e.state !== 'idle' && e.state !== 'lurk' && d > Math.max(aggro * 2.6, notice * 1.3) && !(e.hunter?.until > t) && !(e.angry > 0)) e.state = 'idle'; // (a sent pack holds on until it arrives)
-    // (Jared, November 15, 2026, co-op on storm-heron-59: bears shot from range "chased him, then stopped and walked away while being
-    // hit": past the give-up distance, about 63 m by day, a bear quit even mid-hit; now a blow holds its hunt 10 s: e.angry)
-    if (e.hunter && (d < notice || tgGone || safe)) e.hunter.until = 0;
-    if (hunting && !tgGone && d < 45) tg.huntedAt = t; // (the trickle waits while anything near hunts them)
-    if ((e.type === 'rat' || e.type === 'dust_hound') && !e.fled && e.hp < e.maxHp * 0.3 && e.state !== 'idle') { e.state = 'flee'; e.fleeT = 3; e.fled = true; }
-    // slice 12: an upgraded Lauren's charm aura: an animal that closes in on her is charmed (each one at most every 10 s)
-    if (!st.raider && (e.state === 'chase' || e.state === 'windup') && !(e.auraT > t)) for (const q of everyone()) if (!gone(q) && (q === player ? upgraded('charmer') : (q.u & 8) && CHARS[q.c]?.id === 'charmer') && Math.hypot(q.x - e.x, q.z - e.z) < AURA_R) { e.auraT = t + 10; charm(e); break; } }
-    let mx = 0, mz = 0, spd = st.speed * PX * (1 + 0.15 * nb), face = false;
-    if (e.state !== 'chase' || e.dead) e.spitW = 0; an.rear?.(e.spitW > 0); // #66: a pale spider's back end is up only while it means to spit (a joined game: from the host's world)
-    if (e.cl && e.state !== 'chase') { e.cl = null; e.cs = 0; } // (stopped hunting on the way up: it lets go)
-    if (host) switch (e.state) {
-      case 'lurk': break; // buried in the mud, waiting
-      case 'emerge': e.emT -= dt; if (e.emT <= 0) { e.state = 'chase'; } face = true; break;
-      case 'idle': e.warned = false; e.cueAt = 0; e.callT = 0; e.chargeT = 0; e.spitW = 0; e.wander -= dt; if (e.wander <= 0) { e.wander = 2 + rng() * 4; e.wyaw = rng() * 6.28; e.wmove = rng() < 0.55; }
-        if (e.home && Math.hypot(e.x - e.home.x, e.z - e.home.z) > 9) { e.wyaw = Math.atan2(e.home.x - e.x, e.home.z - e.z); e.wmove = true; } // raiders drift back to their fire
-        if (e.wmove) { mx = Math.sin(e.wyaw); mz = Math.cos(e.wyaw); spd *= 0.35; } break;
-      case 'charmed': e.chT -= dt; if (e.chT <= 0) e.state = 'chase'; e.wander -= dt; if (e.wander <= 0) { e.wander = 1 + rng() * 2; e.wyaw = rng() * 6.28; } mx = Math.sin(e.wyaw); mz = Math.cos(e.wyaw); spd *= 0.3; break;
-      case 'flee': mx = -tx; mz = -tz; spd *= 1.15; e.fleeT -= dt; if (e.fleeT <= 0) e.state = 'chase'; break;
-      case 'windup': face = true; e.wT -= dt; mx = tx * 0.15; mz = tz * 0.15;
-        if (e.wT <= 0) { if (st.shoot && d > reach + 0.7) { enemyShot(e, bite, tg); strikeCD.set(tg, Math.max(strikeCD.get(tg) || 0, d / 70 + 0.45)); } /* the turn lasts until the bullet lands */ else { e.vx += tx * 5; e.vz += tz * 5; if (d < reachUp + 0.7 && up && !wallAhead(e.x, e.z, tx, tz, 0.2, d - 0.3)) hurt(tg, bite, e.type, e); } e.state = 'recover'; e.rT = st.atk / 1000 * 0.75; } break;
-      case 'recover': e.rT -= dt; face = true; if (e.type === 'wolf' || e.type === 'dust_hound' || e.type === 'rat') { if (e.rT > st.atk / 1000 * 0.4) { mx = -tx; mz = -tz; spd *= 0.7; } }
-        if (e.rT <= 0) e.state = 'chase'; break;
-      case 'chase': {
-        if (e.type === 'wolf' && d > 8 && !(e.callT > t)) { if (e.callT) wolfSay('wolfcall', e, 0.6); e.callT = t + 2.5 + rng() * 3; } // (calling on the way in)
-        // #66: a danger that sees you rears and roars before it comes (on Easy it leaves you be unless you hurt it or come close),
-        // then charges
-        // (Jared, November 15, 2026, several bears at once: "they're in sync": a group that sees you together now rears and roars
-        // one after another, each a third of a second or so after the last that began within 40 m in the last 1.5 s)
-        if (st.danger && !e.warned) { const k = enemies.filter(o => o !== e && !o.dead && o.warnAt > t - 1.5 && Math.hypot(o.x - e.x, o.z - e.z) < 40).length;
-          e.warned = true; e.warnAt = t; e.cueAt = t + (k * 0.35) % 1.05 + rng() * 0.08; e.warnT = WARN_T + e.cueAt - t; }
-        if (e.cueAt && t >= e.cueAt) { e.cueAt = 0; dangerCue(e); logEvent('danger', { enemy: e.type, d: Math.round(d) }); }
-        if (e.warnT > 0) { e.warnT -= dt; face = true;
-          if (e.warnT <= 0) { if (level() === LEVELS.easy && e.hp >= e.maxHp && d > CLOSE) { e.state = 'idle'; e.calmT = t + EASY_CALM; e.hunter = null; e.warned = false; } else e.chargeT = CHARGE.t; } break; }
-        if (e.chargeT > 0) { e.chargeT -= dt; spd *= CHARGE.k; }
-        // #66: the pale spider stands with its back end up, hissing, then spits a web glob at where its quarry stands now
-        const sp = st.spit;
-        if (sp && e.spitW > 0) { e.spitW -= dt; face = true;
-          const q = e.spitTg; if (e.spitW <= 0 && q && !gone(q)) { const qx = q.x - e.x, qz = q.z - e.z, ql = Math.hypot(qx, qz) || 1, o = new THREE.Vector3(e.x, e.mesh.position.y + 0.7 * st.scale, e.z).addScaledVector(new THREE.Vector3(qx / ql, 0, qz / ql), 0.5 * st.scale), aim = new THREE.Vector3(q.x, (q.y ?? groundY(q.x, q.z)) + 1.1, q.z), /* (at the one it hissed at, not whoever is nearest now: review) */ L = o.distanceTo(aim), fly = L / sp.speed,
-              v = aim.sub(o).multiplyScalar(1 / fly); v.y += 0.5 * 3 * fly; /* (its arc: the glob falls at 3 m/s/s) */ const m = { t: 'glob', o: o.toArray().map(q => +q.toFixed(2)), v: v.toArray().map(q => +q.toFixed(2)), k: e.type };
-            spit(m.o, m.v, m.k); send('all', m); logEvent('spit', { d: Math.round(d), by: e.type }); } break; }
-        if (sp && !tgGone && d > sp.near && d < sp.far && !(e.spitAt > t) && !(spitAt.get(tg) > t) && !(tg === player && (held.t > 0 || held.slow > 0)) && !wallAhead(e.x, e.z, tx, tz, 0.3, d - 0.5) && clearShot(e, tg)) {
-          e.spitW = sp.tele; e.spitTg = tg; e.spitAt = t + sp.tele + sp.every; spitAt.set(tg, t + sp.tele + SPIT_GAP); sfx('hiss', e); face = true; break; }
-        const aim = st.shoot && d > reach && d < st.shoot * PX; // shooters and heavies fire from range
-        const turn = !striking.has(tg) && !(strikeCD.get(tg) > 0) && !tgGone;
-        // slice 12: a wall or a shut gate in the way: an enemy at a fort (3 or more pieces) always breaks in; at a lone
-        // wall it does sometimes (IW1), and otherwise goes round, unless it is still stuck at it after 3 s
-        const blk = aim ? null : wallAhead(e.x, e.z, tx, tz, 0.4 * st.scale, Math.min(d - 0.3, 1.4 + 0.6 * st.scale));
-        if (blk) { if (e.rollFor !== blk) { e.rollFor = blk; e.rollSiege = fortSize(blk) >= 3 || rng() < 0.35; e.blkT = 0; } e.blkT += dt;
-          if (e.rollSiege || e.blkT > 3) { e.state = 'siege'; e.wall = blk; e.sT = 0.35; logEvent('siege', { enemy: e.type, key: blk.key }); break; } }
-        // slice 26: at night an animal that fears fire will not close on someone by a torch or a fire: it circles at 4.5 m, snarling
-        if (NK > 0.3 && FEARS_FIRE.has(e.type) && d < 6 && byFlame(tg)) { const k = (d - 4.5) * 0.6; mx = -tz * e.circle + tx * k; mz = tx * e.circle + tz * k; spd *= 0.55; face = true; break; }
-        if (climber(e) && !aim && (high || e.cl) && host) { if (e.clT > 0) e.clT -= dt; const w = climbStep(e, tg, ty0, dt, spd); if (w === true) break; if (w) { mx = w.mx; mz = w.mz; break; } }
-        if (high && !aim && d < 7) { const k = (d - 5) * 0.5; mx = -tz * e.circle + tx * k; mz = tx * e.circle + tz * k; spd *= 0.5; face = true; break; } // out of reach above: back off to 5 m and circle, waiting
-        if ((d <= reachUp && up && !blk || aim) && turn) { e.state = 'windup'; e.wT = aim ? 0.5 : e.type === 'bear' ? 0.6 : e.type === 'bog_lurker' ? 0.45 : 0.32; e.tg = tg; striking.add(tg); strikeCD.set(tg, e.wT + 0.45); an.attack(); if (rng() < 0.4) sfx(e.type, e, 0.7); face = true; break; }
-        if (!turn && (d < 5.5 || aim)) { // someone else's turn: circle at a few metres (shooters sidestep) and wait for an opening
-          const k = d < 5.5 ? (d - 3.6) * 0.5 : 0; mx = -tz * e.circle + tx * k; mz = tx * e.circle + tz * k; spd *= 0.55; face = true; break; }
-        // flanking: pack members curve out to their own side and close from different angles
-        const f = e.size > 1 ? e.flank * Math.min(1, Math.max(0, (d - 2.5) / 7)) : 0, c = Math.cos(f), s = Math.sin(f);
-        mx = tx * c - tz * s; mz = tz * c + tx * s; spd *= CHASE[e.type] || 1;
-        e.voiceT -= dt; if (e.voiceT <= 0) { e.voiceT = 3 + rng() * 4; sfx(e.type, e, 0.6); } break; }
-      // slice 12: at the wall in its way: up to it, then a blow every 1.4 s for 0.7 of its damage (IW1) until it falls or
-      // the way is clear again
-      case 'siege': { const w = e.wall; if (!w || !(w.hp > 0) || !built.includes(w) || tgGone) { e.state = 'chase'; break; }
-        let cd = 1e9, cx = 0, cz = 0; for (const c of w.cols) { const q = Math.hypot(c.x - e.x, c.z - e.z) - c.r; if (q < cd) { cd = q; cx = c.x; cz = c.z; } }
-        const wl = Math.hypot(cx - e.x, cz - e.z) || 1; e.wfx = (cx - e.x) / wl; e.wfz = (cz - e.z) / wl;
-        if (cd > 0.25 + st.scale * 0.35) { mx = e.wfx; mz = e.wfz; spd *= 0.8; }
-        else if ((e.sT -= dt) <= 0) { e.sT = 1.4 - 0.5 * nb; an.attack(); if (rng() < 0.5) sfx(e.type, e, 0.6); damageBuilt(w, bite * 0.7, e); /* (IW1: a blow every 0.9 s at night) */
-          if (!wallAhead(e.x, e.z, tx, tz, 0.4 * st.scale, Math.min(d, 2.6))) e.state = 'chase'; }
-        break; }
-    } else if (e.state === 'siege' && (e.sT = (e.sT ?? 0) - dt) <= 0) { e.sT = 1.4; an.attack(); } // a joined game shows the host's enemies at walls
-    else if (e.state === 'chase' && (e.voiceT -= dt) <= 0) { e.voiceT = 3 + rng() * 4; sfx(e.type, e, 0.6); } // a joined game voices the host's hunters too
+    const safe = Math.hypot(tg.x, tg.z) < SAFE_R - 12,
+      inside = Math.hypot(e.x, e.z) < SAFE_R,
+      host = !joining();
+    if (host) {
+      if (tgGone || (safe && !e.posed)) {
+        if (e.state !== 'lurk' && e.state !== 'idle') {
+          e.state = 'idle';
+          e.wander = 0;
+        }
+      }
+      if (inside && e.state === 'idle' && !e.posed) {
+        e.wyaw = Math.atan2(e.x, e.z);
+        e.wmove = true;
+        e.wander = Math.max(e.wander, 1);
+      }
+      if (tgGone || (safe && !e.posed)) {
+        /* no new hunts */
+      } else if ((e.state === 'idle' || e.state === 'lurk') && d < notice && !(e.calmT > t && d > CLOSE))
+        alertPack(e); // (#66: an Easy danger that warned you off lets you go)
+      else if (e.type === 'wolf' && e.state === 'idle' && d < 45 && !(e.watchT > t)) {
+        const w = t + 7 + rng() * 6;
+        for (const o of enemies) if (o.pack === e.pack) o.watchT = w;
+        wolfSay('wolfwatch', e);
+      } // (watching you: once a pack, every 7 to 13 s)
+      else if (
+        e.state !== 'idle' &&
+        e.state !== 'lurk' &&
+        d > Math.max(aggro * 2.6, notice * 1.3) &&
+        !(e.hunter?.until > t) &&
+        !(e.angry > 0)
+      )
+        e.state = 'idle'; // (a sent pack holds on until it arrives)
+      // (Jared, November 15, 2026, co-op on storm-heron-59: bears shot from range "chased him, then stopped and walked away while being
+      // hit": past the give-up distance, about 63 m by day, a bear quit even mid-hit; now a blow holds its hunt 10 s: e.angry)
+      if (e.hunter && (d < notice || tgGone || safe)) e.hunter.until = 0;
+      if (hunting && !tgGone && d < 45) tg.huntedAt = t; // (the trickle waits while anything near hunts them)
+      if ((e.type === 'rat' || e.type === 'dust_hound') && !e.fled && e.hp < e.maxHp * 0.3 && e.state !== 'idle') {
+        e.state = 'flee';
+        e.fleeT = 3;
+        e.fled = true;
+      }
+      // slice 12: an upgraded Lauren's charm aura: an animal that closes in on her is charmed (each one at most every 10 s)
+      if (!st.raider && (e.state === 'chase' || e.state === 'windup') && !(e.auraT > t))
+        for (const q of everyone())
+          if (
+            !gone(q) &&
+            (q === player ? upgraded('charmer') : q.u & 8 && CHARS[q.c]?.id === 'charmer') &&
+            Math.hypot(q.x - e.x, q.z - e.z) < AURA_R
+          ) {
+            e.auraT = t + 10;
+            charm(e);
+            break;
+          }
+    }
+    let mx = 0,
+      mz = 0,
+      spd = st.speed * PX * (1 + 0.15 * nb),
+      face = false;
+    if (e.state !== 'chase' || e.dead) e.spitW = 0;
+    an.rear?.(e.spitW > 0); // #66: a pale spider's back end is up only while it means to spit (a joined game: from the host's world)
+    if (e.cl && e.state !== 'chase') {
+      e.cl = null;
+      e.cs = 0;
+    } // (stopped hunting on the way up: it lets go)
+    if (host)
+      switch (e.state) {
+        case 'lurk':
+          break; // buried in the mud, waiting
+        case 'emerge':
+          e.emT -= dt;
+          if (e.emT <= 0) {
+            e.state = 'chase';
+          }
+          face = true;
+          break;
+        case 'idle':
+          e.warned = false;
+          e.cueAt = 0;
+          e.callT = 0;
+          e.chargeT = 0;
+          e.spitW = 0;
+          e.wander -= dt;
+          if (e.wander <= 0) {
+            e.wander = 2 + rng() * 4;
+            e.wyaw = rng() * 6.28;
+            e.wmove = rng() < 0.55;
+          }
+          if (e.home && Math.hypot(e.x - e.home.x, e.z - e.home.z) > 9) {
+            e.wyaw = Math.atan2(e.home.x - e.x, e.home.z - e.z);
+            e.wmove = true;
+          } // raiders drift back to their fire
+          if (e.wmove) {
+            mx = Math.sin(e.wyaw);
+            mz = Math.cos(e.wyaw);
+            spd *= 0.35;
+          }
+          break;
+        case 'charmed':
+          e.chT -= dt;
+          if (e.chT <= 0) e.state = 'chase';
+          e.wander -= dt;
+          if (e.wander <= 0) {
+            e.wander = 1 + rng() * 2;
+            e.wyaw = rng() * 6.28;
+          }
+          mx = Math.sin(e.wyaw);
+          mz = Math.cos(e.wyaw);
+          spd *= 0.3;
+          break;
+        case 'flee':
+          mx = -tx;
+          mz = -tz;
+          spd *= 1.15;
+          e.fleeT -= dt;
+          if (e.fleeT <= 0) e.state = 'chase';
+          break;
+        case 'windup':
+          face = true;
+          e.wT -= dt;
+          mx = tx * 0.15;
+          mz = tz * 0.15;
+          if (e.wT <= 0) {
+            if (st.shoot && d > reach + 0.7) {
+              enemyShot(e, bite, tg);
+              strikeCD.set(tg, Math.max(strikeCD.get(tg) || 0, d / 70 + 0.45));
+            } /* the turn lasts until the bullet lands */ else {
+              e.vx += tx * 5;
+              e.vz += tz * 5;
+              if (d < reachUp + 0.7 && up && !wallAhead(e.x, e.z, tx, tz, 0.2, d - 0.3)) hurt(tg, bite, e.type, e);
+            }
+            e.state = 'recover';
+            e.rT = (st.atk / 1000) * 0.75;
+          }
+          break;
+        case 'recover':
+          e.rT -= dt;
+          face = true;
+          if (e.type === 'wolf' || e.type === 'dust_hound' || e.type === 'rat') {
+            if (e.rT > (st.atk / 1000) * 0.4) {
+              mx = -tx;
+              mz = -tz;
+              spd *= 0.7;
+            }
+          }
+          if (e.rT <= 0) e.state = 'chase';
+          break;
+        case 'chase': {
+          if (e.type === 'wolf' && d > 8 && !(e.callT > t)) {
+            if (e.callT) wolfSay('wolfcall', e, 0.6);
+            e.callT = t + 2.5 + rng() * 3;
+          } // (calling on the way in)
+          // #66: a danger that sees you rears and roars before it comes (on Easy it leaves you be unless you hurt it or come close),
+          // then charges
+          // (Jared, November 15, 2026, several bears at once: "they're in sync": a group that sees you together now rears and roars
+          // one after another, each a third of a second or so after the last that began within 40 m in the last 1.5 s)
+          if (st.danger && !e.warned) {
+            const k = enemies.filter(
+              (o) => o !== e && !o.dead && o.warnAt > t - 1.5 && Math.hypot(o.x - e.x, o.z - e.z) < 40,
+            ).length;
+            e.warned = true;
+            e.warnAt = t;
+            e.cueAt = t + ((k * 0.35) % 1.05) + rng() * 0.08;
+            e.warnT = WARN_T + e.cueAt - t;
+          }
+          if (e.cueAt && t >= e.cueAt) {
+            e.cueAt = 0;
+            dangerCue(e);
+            logEvent('danger', { enemy: e.type, d: Math.round(d) });
+          }
+          if (e.warnT > 0) {
+            e.warnT -= dt;
+            face = true;
+            if (e.warnT <= 0) {
+              if (level() === LEVELS.easy && e.hp >= e.maxHp && d > CLOSE) {
+                e.state = 'idle';
+                e.calmT = t + EASY_CALM;
+                e.hunter = null;
+                e.warned = false;
+              } else e.chargeT = CHARGE.t;
+            }
+            break;
+          }
+          if (e.chargeT > 0) {
+            e.chargeT -= dt;
+            spd *= CHARGE.k;
+          }
+          // #66: the pale spider stands with its back end up, hissing, then spits a web glob at where its quarry stands now
+          const sp = st.spit;
+          if (sp && e.spitW > 0) {
+            e.spitW -= dt;
+            face = true;
+            const q = e.spitTg;
+            if (e.spitW <= 0 && q && !gone(q)) {
+              const qx = q.x - e.x,
+                qz = q.z - e.z,
+                ql = Math.hypot(qx, qz) || 1,
+                o = new THREE.Vector3(e.x, e.mesh.position.y + 0.7 * st.scale, e.z).addScaledVector(
+                  new THREE.Vector3(qx / ql, 0, qz / ql),
+                  0.5 * st.scale,
+                ),
+                aim = new THREE.Vector3(q.x, (q.y ?? groundY(q.x, q.z)) + 1.1, q.z),
+                /* (at the one it hissed at, not whoever is nearest now: review) */ L = o.distanceTo(aim),
+                fly = L / sp.speed,
+                v = aim.sub(o).multiplyScalar(1 / fly);
+              v.y += 0.5 * 3 * fly;
+              /* (its arc: the glob falls at 3 m/s/s) */ const m = {
+                t: 'glob',
+                o: o.toArray().map((q) => +q.toFixed(2)),
+                v: v.toArray().map((q) => +q.toFixed(2)),
+                k: e.type,
+              };
+              spit(m.o, m.v, m.k);
+              send('all', m);
+              logEvent('spit', { d: Math.round(d), by: e.type });
+            }
+            break;
+          }
+          if (
+            sp &&
+            !tgGone &&
+            d > sp.near &&
+            d < sp.far &&
+            !(e.spitAt > t) &&
+            !(spitAt.get(tg) > t) &&
+            !(tg === player && (held.t > 0 || held.slow > 0)) &&
+            !wallAhead(e.x, e.z, tx, tz, 0.3, d - 0.5) &&
+            clearShot(e, tg)
+          ) {
+            e.spitW = sp.tele;
+            e.spitTg = tg;
+            e.spitAt = t + sp.tele + sp.every;
+            spitAt.set(tg, t + sp.tele + SPIT_GAP);
+            sfx('hiss', e);
+            face = true;
+            break;
+          }
+          const aim = st.shoot && d > reach && d < st.shoot * PX; // shooters and heavies fire from range
+          const turn = !striking.has(tg) && !(strikeCD.get(tg) > 0) && !tgGone;
+          // slice 12: a wall or a shut gate in the way: an enemy at a fort (3 or more pieces) always breaks in; at a lone
+          // wall it does sometimes (IW1), and otherwise goes round, unless it is still stuck at it after 3 s
+          const blk = aim ? null : wallAhead(e.x, e.z, tx, tz, 0.4 * st.scale, Math.min(d - 0.3, 1.4 + 0.6 * st.scale));
+          if (blk) {
+            if (e.rollFor !== blk) {
+              e.rollFor = blk;
+              e.rollSiege = fortSize(blk) >= 3 || rng() < 0.35;
+              e.blkT = 0;
+            }
+            e.blkT += dt;
+            if (e.rollSiege || e.blkT > 3) {
+              e.state = 'siege';
+              e.wall = blk;
+              e.sT = 0.35;
+              logEvent('siege', { enemy: e.type, key: blk.key });
+              break;
+            }
+          }
+          // slice 26: at night an animal that fears fire will not close on someone by a torch or a fire: it circles at 4.5 m, snarling
+          if (NK > 0.3 && FEARS_FIRE.has(e.type) && d < 6 && byFlame(tg)) {
+            const k = (d - 4.5) * 0.6;
+            mx = -tz * e.circle + tx * k;
+            mz = tx * e.circle + tz * k;
+            spd *= 0.55;
+            face = true;
+            break;
+          }
+          if (climber(e) && !aim && (high || e.cl) && host) {
+            if (e.clT > 0) e.clT -= dt;
+            const w = climbStep(e, tg, ty0, dt, spd);
+            if (w === true) break;
+            if (w) {
+              mx = w.mx;
+              mz = w.mz;
+              break;
+            }
+          }
+          if (high && !aim && d < 7) {
+            const k = (d - 5) * 0.5;
+            mx = -tz * e.circle + tx * k;
+            mz = tx * e.circle + tz * k;
+            spd *= 0.5;
+            face = true;
+            break;
+          } // out of reach above: back off to 5 m and circle, waiting
+          if (((d <= reachUp && up && !blk) || aim) && turn) {
+            e.state = 'windup';
+            e.wT = aim ? 0.5 : e.type === 'bear' ? 0.6 : e.type === 'bog_lurker' ? 0.45 : 0.32;
+            e.tg = tg;
+            striking.add(tg);
+            strikeCD.set(tg, e.wT + 0.45);
+            an.attack();
+            if (rng() < 0.4) sfx(e.type, e, 0.7);
+            face = true;
+            break;
+          }
+          if (!turn && (d < 5.5 || aim)) {
+            // someone else's turn: circle at a few metres (shooters sidestep) and wait for an opening
+            const k = d < 5.5 ? (d - 3.6) * 0.5 : 0;
+            mx = -tz * e.circle + tx * k;
+            mz = tx * e.circle + tz * k;
+            spd *= 0.55;
+            face = true;
+            break;
+          }
+          // flanking: pack members curve out to their own side and close from different angles
+          const f = e.size > 1 ? e.flank * Math.min(1, Math.max(0, (d - 2.5) / 7)) : 0,
+            c = Math.cos(f),
+            s = Math.sin(f);
+          mx = tx * c - tz * s;
+          mz = tz * c + tx * s;
+          spd *= CHASE[e.type] || 1;
+          e.voiceT -= dt;
+          if (e.voiceT <= 0) {
+            e.voiceT = 3 + rng() * 4;
+            sfx(e.type, e, 0.6);
+          }
+          break;
+        }
+        // slice 12: at the wall in its way: up to it, then a blow every 1.4 s for 0.7 of its damage (IW1) until it falls or
+        // the way is clear again
+        case 'siege': {
+          const w = e.wall;
+          if (!w || !(w.hp > 0) || !built.includes(w) || tgGone) {
+            e.state = 'chase';
+            break;
+          }
+          let cd = 1e9,
+            cx = 0,
+            cz = 0;
+          for (const c of w.cols) {
+            const q = Math.hypot(c.x - e.x, c.z - e.z) - c.r;
+            if (q < cd) {
+              cd = q;
+              cx = c.x;
+              cz = c.z;
+            }
+          }
+          const wl = Math.hypot(cx - e.x, cz - e.z) || 1;
+          e.wfx = (cx - e.x) / wl;
+          e.wfz = (cz - e.z) / wl;
+          if (cd > 0.25 + st.scale * 0.35) {
+            mx = e.wfx;
+            mz = e.wfz;
+            spd *= 0.8;
+          } else if ((e.sT -= dt) <= 0) {
+            e.sT = 1.4 - 0.5 * nb;
+            an.attack();
+            if (rng() < 0.5) sfx(e.type, e, 0.6);
+            damageBuilt(w, bite * 0.7, e); /* (IW1: a blow every 0.9 s at night) */
+            if (!wallAhead(e.x, e.z, tx, tz, 0.4 * st.scale, Math.min(d, 2.6))) e.state = 'chase';
+          }
+          break;
+        }
+      }
+    else if (e.state === 'siege' && (e.sT = (e.sT ?? 0) - dt) <= 0) {
+      e.sT = 1.4;
+      an.attack();
+    } // a joined game shows the host's enemies at walls
+    else if (e.state === 'chase' && (e.voiceT -= dt) <= 0) {
+      e.voiceT = 3 + rng() * 4;
+      sfx(e.type, e, 0.6);
+    } // a joined game voices the host's hunters too
     if (e.stag > 0) mx = mz = 0;
     // round 4 (gilded-hollow-29: a rat and a dust hound hunted Jared from inside a ruins house for minutes, the rat boxed in a
     // corner by the walls and the table): a way found round (below) is followed, a waypoint at a time, for up to 8 s, and dropped
     // once the quarry is 4 m off where it was found (a wolf galloping round a player 40 m off kept to a stale way, its head turned 64
     // degrees off its heading against 55.6 without the way round: the head check's 60); a new way may then be looked for at once (a
     // hound shut in a house hunting a running player, the review), and one that scrambles free (below) drops its way
-    if (host && e.path) { let q = e.path.at(-1); if (Math.hypot(q[0] - e.x, q[1] - e.z) < 0.4) { e.path.pop(); q = e.path.at(-1); }
-      if (!q || e.state !== 'chase' || (e.pathT -= dt) <= 0 || Math.hypot(tg.x - e.pathTo[0], tg.z - e.pathTo[1]) > 4 && (e.sinceWay = 3)) e.path = null; else if (!e.stag) { const l = Math.hypot(q[0] - e.x, q[1] - e.z) || 1; mx = (q[0] - e.x) / l; mz = (q[1] - e.z) / l; e.detT = 0; } }
-    const ml = Math.hypot(mx, mz); if (ml > 1) { mx /= ml; mz /= ml; }
-    const mx0 = mx, mz0 = mz; if (e.detT > 0) { e.detT -= dt; const c = Math.cos(e.det), s = Math.sin(e.det); [mx, mz] = [mx * c - mz * s, mz * c + mx * s]; } // going round
-    e.vx *= Math.exp(-dt * 6); e.vz *= Math.exp(-dt * 6);
+    if (host && e.path) {
+      let q = e.path.at(-1);
+      if (Math.hypot(q[0] - e.x, q[1] - e.z) < 0.4) {
+        e.path.pop();
+        q = e.path.at(-1);
+      }
+      if (
+        !q ||
+        e.state !== 'chase' ||
+        (e.pathT -= dt) <= 0 ||
+        (Math.hypot(tg.x - e.pathTo[0], tg.z - e.pathTo[1]) > 4 && (e.sinceWay = 3))
+      )
+        e.path = null;
+      else if (!e.stag) {
+        const l = Math.hypot(q[0] - e.x, q[1] - e.z) || 1;
+        mx = (q[0] - e.x) / l;
+        mz = (q[1] - e.z) / l;
+        e.detT = 0;
+      }
+    }
+    const ml = Math.hypot(mx, mz);
+    if (ml > 1) {
+      mx /= ml;
+      mz /= ml;
+    }
+    const mx0 = mx,
+      mz0 = mz;
+    if (e.detT > 0) {
+      e.detT -= dt;
+      const c = Math.cos(e.det),
+        s = Math.sin(e.det);
+      [mx, mz] = [mx * c - mz * s, mz * c + mx * s];
+    } // going round
+    e.vx *= Math.exp(-dt * 6);
+    e.vz *= Math.exp(-dt * 6);
     if (climber(e) && e.y == null && slopeAt(e.x, e.z) > 1.0) spd *= CLIMB_K; // (up a cliff: slower than a run)
-    const ex = e.x, ez = e.z; if (!e.cl || e.cl.ph === 'go') { e.x += (mx * spd + e.vx) * dt; e.z += (mz * spd + e.vz) * dt; } if (host && !(e.cl && e.cl.ph !== 'go')) { if (e.y == null) creatureCollide(e, 0.45 * st.scale); else collide(e, 0.45 * st.scale, e.y); } // (up on something: its own feet)
+    const ex = e.x,
+      ez = e.z;
+    if (!e.cl || e.cl.ph === 'go') {
+      e.x += (mx * spd + e.vx) * dt;
+      e.z += (mz * spd + e.vz) * dt;
+    }
+    if (host && !(e.cl && e.cl.ph !== 'go')) {
+      if (e.y == null) creatureCollide(e, 0.45 * st.scale);
+      else collide(e, 0.45 * st.scale, e.y);
+    } // (up on something: its own feet)
     // too steep or too deep: slide along it one axis at a time, as the player does; still pinned while meaning to move for
     // a third of a second, turn off to one side for a second or two (the other side if that pins too). His log, 2026-11-03:
     // hunting wolves and hounds held one distance for 5 to 10 s at the foot of slopes they could not climb
-    const bad = (x, z) => (!climber(e) && slopeAt(x, z) > (hunting ? 1.4 : 1.0) && groundY(x, z) > groundY(ex, ez)) || (groundY(x, z) < WATER_Y - 0.8 && groundY(x, z) < groundY(ex, ez) && e.type !== 'bog_lurker'); // (deeper only: an ice crawler already in deep water froze there, every step undone, silent-marsh-90)
-    if (host && e.y == null && bad(e.x, e.z)) { if (!bad(e.x, ez)) e.z = ez; else if (!bad(ex, e.z)) e.x = ex; else { e.x = ex; e.z = ez; } e.wander = 0; }
-    const want = Math.hypot(mx, mz) * spd * dt; e.pin = host && want > 1e-3 && Math.hypot(e.x - ex, e.z - ez) < want * 0.3 ? (e.pin || 0) + dt : 0;
+    const bad = (x, z) =>
+      (!climber(e) && slopeAt(x, z) > (hunting ? 1.4 : 1.0) && groundY(x, z) > groundY(ex, ez)) ||
+      (groundY(x, z) < WATER_Y - 0.8 && groundY(x, z) < groundY(ex, ez) && e.type !== 'bog_lurker'); // (deeper only: an ice crawler already in deep water froze there, every step undone, silent-marsh-90)
+    if (host && e.y == null && bad(e.x, e.z)) {
+      if (!bad(e.x, ez)) e.z = ez;
+      else if (!bad(ex, e.z)) e.x = ex;
+      else {
+        e.x = ex;
+        e.z = ez;
+      }
+      e.wander = 0;
+    }
+    const want = Math.hypot(mx, mz) * spd * dt;
+    e.pin = host && want > 1e-3 && Math.hypot(e.x - ex, e.z - ez) < want * 0.3 ? (e.pin || 0) + dt : 0;
     // pinned: try headings further and further off to one side, then the other, for the first whose next 1 and 2.5 m are
     // neither too steep nor too deep nor solid (a single fixed turn left a wolf in a cliff's notch for 8 s, 2026-11-04); a
     // heading that pinned it again is not tried twice in a row
-    if (e.pin > 0.35 && host && climber(e) && e.state === 'chase' && !e.cl && e.y == null) { const c = overSpot(e, mx0, mz0); if (c) { e.cl = c; e.pin = 0; } } // (a spider climbs what pins it)
+    if (e.pin > 0.35 && host && climber(e) && e.state === 'chase' && !e.cl && e.y == null) {
+      const c = overSpot(e, mx0, mz0);
+      if (c) {
+        e.cl = c;
+        e.pin = 0;
+      }
+    } // (a spider climbs what pins it)
     // pinned while hunting: find the way round on a 0.5 m grid before trying headings to one side (at most once in 3 s)
-    e.sinceWay = (e.sinceWay ?? 9) + dt; if (e.pin > 0.35) {
-      if (e.sinceWay > 3 && (e.sinceWay = 0, true) && e.state === 'chase' && !tgGone && !e.path && (e.path = wayRound(e.x, e.z, tg.x, tg.z, 0.45 * st.scale, bad))) { e.pathT = 8; e.pathTo = [tg.x, tg.z]; e.pin = 0; } }
-    if (e.pin > 0.35) { const side = e.detT > 0 ? -Math.sign(e.det) : rng() < 0.5 ? 1 : -1, L = Math.hypot(mx0, mz0) || 1, r = 0.45 * st.scale, failed = e.detT > 0 ? e.det : null;
-      const clear = (a) => { if (a === failed) return false; const c = Math.cos(a), s = Math.sin(a), hx = (mx0 * c - mz0 * s) / L, hz = (mz0 * c + mx0 * s) / L;
-        return [0.3, 1, 2.5].every(k => { const x = e.x + hx * k, z = e.z + hz * k; return !bad(x, z) && !nearColliders(x, z).some(q => q.r && Math.hypot(q.x - x, q.z - z) < colR(q, x, z) + r); }); };
-      e.det = side * Math.PI; for (const a of [0.8, 1.35, 1.9, 2.5]) { if (clear(a * side)) { e.det = a * side; break; } if (clear(-a * side)) { e.det = -a * side; break; } }
-      e.detT = 1.2 + rng() * 1.2; e.pin = 0; }
+    e.sinceWay = (e.sinceWay ?? 9) + dt;
+    if (e.pin > 0.35) {
+      if (
+        e.sinceWay > 3 &&
+        ((e.sinceWay = 0), true) &&
+        e.state === 'chase' &&
+        !tgGone &&
+        !e.path &&
+        (e.path = wayRound(e.x, e.z, tg.x, tg.z, 0.45 * st.scale, bad))
+      ) {
+        e.pathT = 8;
+        e.pathTo = [tg.x, tg.z];
+        e.pin = 0;
+      }
+    }
+    if (e.pin > 0.35) {
+      const side = e.detT > 0 ? -Math.sign(e.det) : rng() < 0.5 ? 1 : -1,
+        L = Math.hypot(mx0, mz0) || 1,
+        r = 0.45 * st.scale,
+        failed = e.detT > 0 ? e.det : null;
+      const clear = (a) => {
+        if (a === failed) return false;
+        const c = Math.cos(a),
+          s = Math.sin(a),
+          hx = (mx0 * c - mz0 * s) / L,
+          hz = (mz0 * c + mx0 * s) / L;
+        return [0.3, 1, 2.5].every((k) => {
+          const x = e.x + hx * k,
+            z = e.z + hz * k;
+          return (
+            !bad(x, z) && !nearColliders(x, z).some((q) => q.r && Math.hypot(q.x - x, q.z - z) < colR(q, x, z) + r)
+          );
+        });
+      };
+      e.det = side * Math.PI;
+      for (const a of [0.8, 1.35, 1.9, 2.5]) {
+        if (clear(a * side)) {
+          e.det = a * side;
+          break;
+        }
+        if (clear(-a * side)) {
+          e.det = -a * side;
+          break;
+        }
+      }
+      e.detT = 1.2 + rng() * 1.2;
+      e.pin = 0;
+    }
     // the play logs of 2026-11-15: a hunting wolf in water just too deep for it, a hound in a crack in a dune and an ice crawler in
     // a pocket among rocks went nowhere for 5 to 14 s (every step undone, every turn off blocked). One that has gone nowhere for
     // 1.5 s while meaning to move scrambles out to the nearest open ground 2 to 5 m off (on the side of its quarry), over half a second
-    if (host && e.y == null && !e.cl) { const a = e.prog ||= { x: e.x, z: e.z, t: 0 };
-      if (e.scr) { const k = Math.min(1, dt / Math.max(dt, e.scr.t)); e.x += (e.scr.x - e.x) * k; e.z += (e.scr.z - e.z) * k; e.pin = 0; if ((e.scr.t -= dt) <= 0) e.scr = null; }
-      if (want <= 1e-3 || e.scr || Math.hypot(e.x - a.x, e.z - a.z) > 0.6) { a.x = e.x; a.z = e.z; a.t = 0; }
-      else if ((a.t += dt) > 1.5) { a.t = 0; const o = openNear(e, 0.45 * st.scale, tg); if (o) { e.scr = { x: o.x, z: o.z, t: 0.5 }; e.path = null; } } }
-    const ty = joining() ? e.nyaw ?? e.yaw : e.state === 'siege' && e.wfx != null ? Math.atan2(-e.wfx, -e.wfz) : face ? Math.atan2(-tx, -tz) : (mx || mz) ? Math.atan2(-mx, -mz) : e.yaw; let dd = ty - e.yaw; dd = Math.atan2(Math.sin(dd), Math.cos(dd)); e.yaw += dd * Math.min(1, dt * 8);
-    if (host && e.y != null && (!e.cl || e.cl.ph === 'go')) { const u = standAt(e.x, e.z, e.y + 0.35), g = groundY(e.x, e.z); // up on something: its feet go with what it stands on; off the edge, it drops
-      if (u >= e.y - 0.4 && u > g + 0.3) { e.y = u; e.fallV = 0; } else { e.fallV = (e.fallV || 0) + 18 * dt; e.y -= e.fallV * dt; if (e.y <= Math.max(g, u)) { e.y = null; e.fallV = 0; } } }
+    if (host && e.y == null && !e.cl) {
+      const a = (e.prog ||= { x: e.x, z: e.z, t: 0 });
+      if (e.scr) {
+        const k = Math.min(1, dt / Math.max(dt, e.scr.t));
+        e.x += (e.scr.x - e.x) * k;
+        e.z += (e.scr.z - e.z) * k;
+        e.pin = 0;
+        if ((e.scr.t -= dt) <= 0) e.scr = null;
+      }
+      if (want <= 1e-3 || e.scr || Math.hypot(e.x - a.x, e.z - a.z) > 0.6) {
+        a.x = e.x;
+        a.z = e.z;
+        a.t = 0;
+      } else if ((a.t += dt) > 1.5) {
+        a.t = 0;
+        const o = openNear(e, 0.45 * st.scale, tg);
+        if (o) {
+          e.scr = { x: o.x, z: o.z, t: 0.5 };
+          e.path = null;
+        }
+      }
+    }
+    const ty = joining()
+      ? (e.nyaw ?? e.yaw)
+      : e.state === 'siege' && e.wfx != null
+        ? Math.atan2(-e.wfx, -e.wfz)
+        : face
+          ? Math.atan2(-tx, -tz)
+          : mx || mz
+            ? Math.atan2(-mx, -mz)
+            : e.yaw;
+    let dd = ty - e.yaw;
+    dd = Math.atan2(Math.sin(dd), Math.cos(dd));
+    e.yaw += dd * Math.min(1, dt * 8);
+    if (host && e.y != null && (!e.cl || e.cl.ph === 'go')) {
+      const u = standAt(e.x, e.z, e.y + 0.35),
+        g = groundY(e.x, e.z); // up on something: its feet go with what it stands on; off the edge, it drops
+      if (u >= e.y - 0.4 && u > g + 0.3) {
+        e.y = u;
+        e.fallV = 0;
+      } else {
+        e.fallV = (e.fallV || 0) + 18 * dt;
+        e.y -= e.fallV * dt;
+        if (e.y <= Math.max(g, u)) {
+          e.y = null;
+          e.fallV = 0;
+        }
+      }
+    }
     if (!e.cl && e.cs) e.cs = 0;
-    const g0 = groundY(e.x, e.z), fo = floorAt(e.x, e.z, g0) - g0; e.fo = e.fo == null ? fo : e.fo + (fo - e.fo) * Math.min(1, dt * 10); // (onto a house floor or deck eased, not snapped: the quality pass)
-    const gy = g0 + e.fo, sink = e.state === 'lurk' ? 0.85 : e.state === 'emerge' ? 0.85 * Math.max(0, e.emT / 0.8) : 0;
-    if (e.state === 'emerge' && e.emT > 0.7) { const at = new THREE.Vector3(e.x, Math.max(gy, WATER_Y), e.z); if (gy < WATER_Y + 0.2) { splash(at); sfx('splash', e); } else dustPuff(at, 14); e.emT = 0.7; }
-    e.mesh.position.set(e.x, e.y ?? Math.max(gy, WATER_Y - 0.55 * st.scale) - sink * st.scale + (e.dropH || 0), e.z); e.mesh.rotation.y = e.yaw;
-    if (climber(e)) { const want = host ? (e.cl && e.cl.ph === 'up' ? 1 : e.cl && e.cl.ph === 'over' ? 1 - e.cl.k : 0) : e.ckW || 0; e.ck = (e.ck || 0) + (want - (e.ck || 0)) * Math.min(1, dt * 8); e.mesh.rotation.order = 'YXZ'; e.mesh.rotation.x = e.ck * Math.PI / 2; } // (on a wall: tipped up, belly to it) // (dropH: a spider on its thread, slice 22)
+    const g0 = groundY(e.x, e.z),
+      fo = floorAt(e.x, e.z, g0) - g0;
+    e.fo = e.fo == null ? fo : e.fo + (fo - e.fo) * Math.min(1, dt * 10); // (onto a house floor or deck eased, not snapped: the quality pass)
+    const gy = g0 + e.fo,
+      sink = e.state === 'lurk' ? 0.85 : e.state === 'emerge' ? 0.85 * Math.max(0, e.emT / 0.8) : 0;
+    if (e.state === 'emerge' && e.emT > 0.7) {
+      const at = new THREE.Vector3(e.x, Math.max(gy, WATER_Y), e.z);
+      if (gy < WATER_Y + 0.2) {
+        splash(at);
+        sfx('splash', e);
+      } else dustPuff(at, 14);
+      e.emT = 0.7;
+    }
+    e.mesh.position.set(e.x, e.y ?? Math.max(gy, WATER_Y - 0.55 * st.scale) - sink * st.scale + (e.dropH || 0), e.z);
+    e.mesh.rotation.y = e.yaw;
+    if (climber(e)) {
+      const want = host ? (e.cl && e.cl.ph === 'up' ? 1 : e.cl && e.cl.ph === 'over' ? 1 - e.cl.k : 0) : e.ckW || 0;
+      e.ck = (e.ck || 0) + (want - (e.ck || 0)) * Math.min(1, dt * 8);
+      e.mesh.rotation.order = 'YXZ';
+      e.mesh.rotation.x = (e.ck * Math.PI) / 2;
+    } // (on a wall: tipped up, belly to it) // (dropH: a spider on its thread, slice 22)
     e.mesh.visible = e.state !== 'lurk' || d < 4;
     // slice 19: built creatures plant their feet on the ground and turn their heads to the one they hunt
-    const eyes = !tgGone && ['chase', 'windup', 'recover', 'emerge', 'siege'].includes(e.state) ? (e.lookV ||= new THREE.Vector3()).set(tg.x, groundY(tg.x, tg.z) + 1.3, tg.z) : null;
-    if (d < 80) an.update(dt, { speed: joining() ? e.spd || 0 : Math.hypot(e.x - ex, e.z - ez) / Math.max(dt, 1e-3), scale: st.scale, ground: e.y != null ? () => e.y : e.fo > 0.01 ? FLOOR : groundY, look: eyes, climb: e.ck || 0, cs: e.cs || (e.ck > 0.5 ? 2 : 0) }); // (on a house's floor, its feet too: the quality pass found wolves walking with only their heads above the boards)
+    const eyes =
+      !tgGone && ['chase', 'windup', 'recover', 'emerge', 'siege'].includes(e.state)
+        ? (e.lookV ||= new THREE.Vector3()).set(tg.x, groundY(tg.x, tg.z) + 1.3, tg.z)
+        : null;
+    if (d < 80)
+      an.update(dt, {
+        speed: joining() ? e.spd || 0 : Math.hypot(e.x - ex, e.z - ez) / Math.max(dt, 1e-3),
+        scale: st.scale,
+        ground: e.y != null ? () => e.y : e.fo > 0.01 ? FLOOR : groundY,
+        look: eyes,
+        climb: e.ck || 0,
+        cs: e.cs || (e.ck > 0.5 ? 2 : 0),
+      }); // (on a house's floor, its feet too: the quality pass found wolves walking with only their heads above the boards)
   }
   // keep awake enemies from stacking on one another
-  for (let i = 0; i < awake.length; i++) for (let j = i + 1; j < awake.length; j++) { const a = awake[i], b = awake[j]; if (a.state === 'lurk' || b.state === 'lurk') continue;
-    const r = 0.45 * (a.mesh.scale.x + b.mesh.scale.x), dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz);
-    if (d < r && d > 1e-4) { const push = (r - d) / 2 / d; a.x -= dx * push; a.z -= dz * push; b.x += dx * push; b.z += dz * push; } }
+  for (let i = 0; i < awake.length; i++)
+    for (let j = i + 1; j < awake.length; j++) {
+      const a = awake[i],
+        b = awake[j];
+      if (a.state === 'lurk' || b.state === 'lurk') continue;
+      const r = 0.45 * (a.mesh.scale.x + b.mesh.scale.x),
+        dx = b.x - a.x,
+        dz = b.z - a.z,
+        d = Math.hypot(dx, dz);
+      if (d < r && d > 1e-4) {
+        const push = (r - d) / 2 / d;
+        a.x -= dx * push;
+        a.z -= dz * push;
+        b.x += dx * push;
+        b.z += dz * push;
+      }
+    }
   for (let i = enemies.length - 1; i >= 0; i--) if (enemies[i].gone) enemies.splice(i, 1);
-  tickSpiders(dt, { scene, enemies, players: everyone().filter(q => !gone(q)), host: !joining(), spawn: spawnEnemy, log, logEvent, t, me: running ? player : null, easy: level() === LEVELS.easy }); // slice 22: webs, nests, the drop at night
+  tickSpiders(dt, {
+    scene,
+    enemies,
+    players: everyone().filter((q) => !gone(q)),
+    host: !joining(),
+    spawn: spawnEnemy,
+    log,
+    logEvent,
+    t,
+    me: running ? player : null,
+    easy: level() === LEVELS.easy,
+  }); // slice 22: webs, nests, the drop at night
   // the land round the player stays alive: spawns follow them (the cap counts only animals within 150 m), far idle ones are cleared
   // (co-op: round every player; the host's game spawns for all)
-  if (!joining() && Math.floor(t) % 4 === 0 && Math.floor(t) !== spawnTick) { spawnTick = Math.floor(t); const P = everyone();
-    if (NK > 0.6) for (const q of P) { if (q.howlAt > t || gone(q) || Math.hypot(q.x, q.z) < SAFE_R) continue; // (never in the safe valley)
-      const w = enemies.find(e => e.type === 'wolf' && !e.dead && e.state === 'idle' && Math.hypot(e.x - q.x, e.z - q.z) > 50 && Math.hypot(e.x - q.x, e.z - q.z) < 160); if (w) { q.howlAt = t + 30 + rng() * 45; wolfSay('howl', w); } }
-    for (const e of enemies) if (!e.home && !e.posed && e.state === 'idle' && P.every(q => Math.hypot(e.x - q.x, e.z - q.z) > 320)) { dropFrom(e); scene.remove(e.mesh); e.mesh.userData.dispose?.(); e.gone = true; }
-    for (const q of P) if (enemies.filter(e => !e.dead && !e.home && Math.hypot(e.x - q.x, e.z - q.z) < 150).length < 20 + Math.round(12 * NK)) spawnAround(q.x, q.z, 4 + Math.round(3 * NK), 50, 105); // (busier at night: slice 13; slice 21 raised the cap from 12 + 6)
-    for (const k of PASSES) { const o = outside(k); if (P.some(q => Math.hypot(q.x - o.x, q.z - o.z) < 200) && around(o, 35) < PASS_OUT - 1) spawnAround(o.x, o.z, 2, 0, 20); }
-    for (const q of P) { if (gone(q) || q.away) continue; // (away: a hidden window; no pack is sent at a player who is not there) issue #44: the hunting trickle (sendHunt); the clock waits in the valley, and starts afresh on a teleport or a respawn
-      if (q.huntedAt == null || Math.hypot(q.x, q.z) < SAFE_R) { q.huntedAt = t; q.huntWait = HUNT_WAIT(NK); continue; }
-      if (t - q.huntedAt >= q.huntWait) { q.huntedAt = t; q.huntWait = HUNT_WAIT(NK); sendHunt(q, t, NK); } } }
+  if (!joining() && Math.floor(t) % 4 === 0 && Math.floor(t) !== spawnTick) {
+    spawnTick = Math.floor(t);
+    const P = everyone();
+    if (NK > 0.6)
+      for (const q of P) {
+        if (q.howlAt > t || gone(q) || Math.hypot(q.x, q.z) < SAFE_R) continue; // (never in the safe valley)
+        const w = enemies.find(
+          (e) =>
+            e.type === 'wolf' &&
+            !e.dead &&
+            e.state === 'idle' &&
+            Math.hypot(e.x - q.x, e.z - q.z) > 50 &&
+            Math.hypot(e.x - q.x, e.z - q.z) < 160,
+        );
+        if (w) {
+          q.howlAt = t + 30 + rng() * 45;
+          wolfSay('howl', w);
+        }
+      }
+    for (const e of enemies)
+      if (!e.home && !e.posed && e.state === 'idle' && P.every((q) => Math.hypot(e.x - q.x, e.z - q.z) > 320)) {
+        dropFrom(e);
+        scene.remove(e.mesh);
+        e.mesh.userData.dispose?.();
+        e.gone = true;
+      }
+    for (const q of P)
+      if (
+        enemies.filter((e) => !e.dead && !e.home && Math.hypot(e.x - q.x, e.z - q.z) < 150).length <
+        20 + Math.round(12 * NK)
+      )
+        spawnAround(q.x, q.z, 4 + Math.round(3 * NK), 50, 105); // (busier at night: slice 13; slice 21 raised the cap from 12 + 6)
+    for (const k of PASSES) {
+      const o = outside(k);
+      if (P.some((q) => Math.hypot(q.x - o.x, q.z - o.z) < 200) && around(o, 35) < PASS_OUT - 1)
+        spawnAround(o.x, o.z, 2, 0, 20);
+    }
+    for (const q of P) {
+      if (gone(q) || q.away) continue; // (away: a hidden window; no pack is sent at a player who is not there) issue #44: the hunting trickle (sendHunt); the clock waits in the valley, and starts afresh on a teleport or a respawn
+      if (q.huntedAt == null || Math.hypot(q.x, q.z) < SAFE_R) {
+        q.huntedAt = t;
+        q.huntWait = HUNT_WAIT(NK);
+        continue;
+      }
+      if (t - q.huntedAt >= q.huntWait) {
+        q.huntedAt = t;
+        q.huntWait = HUNT_WAIT(NK);
+        sendHunt(q, t, NK);
+      }
+    }
+  }
   // projectiles
-  for (let i = shots.length - 1; i >= 0; i--) { const s = shots[i]; s.life -= dt; if (s.kind === 'shield') { if (tickShield(s, dt)) { scene.remove(s.mesh); shots.splice(i, 1); } continue; }
-    s.v.y -= s.grav * dt; const p = s.mesh.position; const prev = p.clone(); p.addScaledVector(s.v, dt);
-    if (s.grav) s.mesh.lookAt(p.clone().add(s.v)); if (s.kind === 'charmer') s.mesh.rotateZ(dt * 12);
+  for (let i = shots.length - 1; i >= 0; i--) {
+    const s = shots[i];
+    s.life -= dt;
+    if (s.kind === 'shield') {
+      if (tickShield(s, dt)) {
+        scene.remove(s.mesh);
+        shots.splice(i, 1);
+      }
+      continue;
+    }
+    s.v.y -= s.grav * dt;
+    const p = s.mesh.position;
+    const prev = p.clone();
+    p.addScaledVector(s.v, dt);
+    if (s.grav) s.mesh.lookAt(p.clone().add(s.v));
+    if (s.kind === 'charmer') s.mesh.rotateZ(dt * 12);
     // ground, trunks, rocks and walls stop a shot: sampled every 0.3 m along this frame's path, so a fast one cannot skip a wall
     // (a frame's path is far shorter than a grid cell, so one lookup at its middle covers it; a collider stops shots below its top)
-    let hit = false, stop = null, last = prev; const n = Math.max(1, Math.ceil(prev.distanceTo(p) / 0.3)), near = nearColliders((prev.x + p.x) / 2, (prev.z + p.z) / 2);
-    for (let k = 1; k <= n && !hit; k++) { const q = prev.clone().lerp(p, k / n), gq = groundY(q.x, q.z); hit = q.y < gq || slabAcross(q.x, q.z, last.y, q.y); // (the quality pass: a floor, stair or roof stops a shot too)
-      for (const c of near) if (c.r && !(c.gate && c.gate.open) && Math.hypot(c.x - q.x, c.z - q.z) < colR(c, q.x, q.z, q.y) && q.y < (c.top ?? gq + 4) && !(q.y < c.bot)) { hit = true; stop = c; } if (hit) p.copy(q); else last = q; }
-    if (stop) hitScenery(stop, p.clone(), s.v.clone().setY(0).normalize()); else if (hit) dustPuff(prev, 4);
+    let hit = false,
+      stop = null,
+      last = prev;
+    const n = Math.max(1, Math.ceil(prev.distanceTo(p) / 0.3)),
+      near = nearColliders((prev.x + p.x) / 2, (prev.z + p.z) / 2);
+    for (let k = 1; k <= n && !hit; k++) {
+      const q = prev.clone().lerp(p, k / n),
+        gq = groundY(q.x, q.z);
+      hit = q.y < gq || slabAcross(q.x, q.z, last.y, q.y); // (the quality pass: a floor, stair or roof stops a shot too)
+      for (const c of near)
+        if (
+          c.r &&
+          !(c.gate && c.gate.open) &&
+          Math.hypot(c.x - q.x, c.z - q.z) < colR(c, q.x, q.z, q.y) &&
+          q.y < (c.top ?? gq + 4) &&
+          !(q.y < c.bot)
+        ) {
+          hit = true;
+          stop = c;
+        }
+      if (hit) p.copy(q);
+      else last = q;
+    }
+    if (stop) hitScenery(stop, p.clone(), s.v.clone().setY(0).normalize());
+    else if (hit) dustPuff(prev, 4);
     if (stop?.bp && s.hostile && !s.ghost && !joining()) damageBuilt(stop.bp, s.dmg * 0.5, s.o); // a raider's bullet chips the wall it hits (slice 12)
-    if (s.hostile && s.ghost) { /* another game's shot: seen here, felt there */ }
-    else if (s.hostile) { if (!hit) for (const q of everyone()) if (!gone(q) && segD(prev, p, q.x, q.z) < 0.5 && p.y > q.y && p.y < q.y + 1.9) { hurt(q, s.dmg, s.from); hit = true; break; } }
+    if (s.hostile && s.ghost) {
+      /* another game's shot: seen here, felt there */
+    } else if (s.hostile) {
+      if (!hit)
+        for (const q of everyone())
+          if (!gone(q) && segD(prev, p, q.x, q.z) < 0.5 && p.y > q.y && p.y < q.y + 1.9) {
+            hurt(q, s.dmg, s.from);
+            hit = true;
+            break;
+          }
+    }
     // (an enemy is tested along this frame's whole path, at its closest point: a fast shot tested only where the frame ended
     // could pass through a wolf, 2 m a frame for an arrow at 20 fps; found by slice 12's spread check)
-    else for (const e of enemies) { if (e.dead || hit || e.state === 'lurk') continue; const sc = e.mesh.scale.x, top = e.mesh.position.y + e.mesh.userData.height * sc + 0.25;
-      const sx = p.x - prev.x, sz = p.z - prev.z, L2 = sx * sx + sz * sz || 1, tt = Math.max(0, Math.min(1, ((e.x - prev.x) * sx + (e.z - prev.z) * sz) / L2)), cq = prev.clone().lerp(p, tt);
-      if (Math.hypot(e.x - cq.x, e.z - cq.z) < 0.55 * sc + 0.3 + (s.wide || 0) && cq.y < top && cq.y > e.mesh.position.y - 0.2) { p.copy(cq); const v = s.v.clone().setY(0).normalize(); if (!s.ghost) hitEnemy(e, s.dmg + (s.boom ? 16 : 0), v.x * 0.6, v.z * 0.6, p.clone()); hit = true; s.inE = e; if (s.charm && !e.dead && !s.ghost) charm(e); } }
+    else
+      for (const e of enemies) {
+        if (e.dead || hit || e.state === 'lurk') continue;
+        const sc = e.mesh.scale.x,
+          top = e.mesh.position.y + e.mesh.userData.height * sc + 0.25;
+        const sx = p.x - prev.x,
+          sz = p.z - prev.z,
+          L2 = sx * sx + sz * sz || 1,
+          tt = Math.max(0, Math.min(1, ((e.x - prev.x) * sx + (e.z - prev.z) * sz) / L2)),
+          cq = prev.clone().lerp(p, tt);
+        if (
+          Math.hypot(e.x - cq.x, e.z - cq.z) < 0.55 * sc + 0.3 + (s.wide || 0) &&
+          cq.y < top &&
+          cq.y > e.mesh.position.y - 0.2
+        ) {
+          p.copy(cq);
+          const v = s.v.clone().setY(0).normalize();
+          if (!s.ghost) hitEnemy(e, s.dmg + (s.boom ? 16 : 0), v.x * 0.6, v.z * 0.6, p.clone());
+          hit = true;
+          s.inE = e;
+          if (s.charm && !e.dead && !s.ghost) charm(e);
+        }
+      }
     // slice 33: this game's own shots (the turret's too) strike another player where the rules let them; another game's are seen, not felt
-    if (!hit && !s.ghost && !s.hostile && pvp()) for (const o of others.values()) { if (gone(o)) continue;
-      const sx = p.x - prev.x, sz = p.z - prev.z, L2 = sx * sx + sz * sz || 1, tt = Math.max(0, Math.min(1, ((o.x - prev.x) * sx + (o.z - prev.z) * sz) / L2)), cq = prev.clone().lerp(p, tt);
-      // (to the top of the head: a shot from a first-person eye a little upslope passed over 1.9)
-      if (Math.hypot(o.x - cq.x, o.z - cq.z) < 0.45 + (s.wide || 0) && cq.y > o.y - 0.1 && cq.y < o.y + 2.15) { p.copy(cq); const v = s.v.clone().setY(0).normalize(); hitRival(o, s.dmg + (s.boom ? 16 : 0), [v.x, v.z], p.clone()); hit = true; s.inP = o; break; } }
+    if (!hit && !s.ghost && !s.hostile && pvp())
+      for (const o of others.values()) {
+        if (gone(o)) continue;
+        const sx = p.x - prev.x,
+          sz = p.z - prev.z,
+          L2 = sx * sx + sz * sz || 1,
+          tt = Math.max(0, Math.min(1, ((o.x - prev.x) * sx + (o.z - prev.z) * sz) / L2)),
+          cq = prev.clone().lerp(p, tt);
+        // (to the top of the head: a shot from a first-person eye a little upslope passed over 1.9)
+        if (Math.hypot(o.x - cq.x, o.z - cq.z) < 0.45 + (s.wide || 0) && cq.y > o.y - 0.1 && cq.y < o.y + 2.15) {
+          p.copy(cq);
+          const v = s.v.clone().setY(0).normalize();
+          hitRival(o, s.dmg + (s.boom ? 16 : 0), [v.x, v.z], p.clone());
+          hit = true;
+          s.inP = o;
+          break;
+        }
+      }
     // slice 12: a fire arrow that struck an enemy bursts (and burns up); an upgraded charm flower charms all round where it lands
-    if (hit && s.boom && s.inE) { blast(p.clone(), s.ghost, s.inE); scene.remove(s.mesh); shots.splice(i, 1); continue; }
+    if (hit && s.boom && s.inE) {
+      blast(p.clone(), s.ghost, s.inE);
+      scene.remove(s.mesh);
+      shots.splice(i, 1);
+      continue;
+    }
     if (hit && s.aura) charmBurst(p.clone(), s.ghost);
     // an arrow stays where it struck (slice 11): in the ground, a trunk, a rock or a wall, or in the creature it hit
-    if (hit && s.kind === 'ranger') { stick(s.mesh, s.inP ? new THREE.Vector3(p.x, groundY(p.x, p.z) + 0.15, p.z) : struck(s, last, p, stop), s.v.clone().normalize(), !s.ghost, s.inE); shots.splice(i, 1); }
-    else if (hit || s.life <= 0) { scene.remove(s.mesh); shots.splice(i, 1); } }
+    if (hit && s.kind === 'ranger') {
+      stick(
+        s.mesh,
+        s.inP ? new THREE.Vector3(p.x, groundY(p.x, p.z) + 0.15, p.z) : struck(s, last, p, stop),
+        s.v.clone().normalize(),
+        !s.ghost,
+        s.inE,
+      );
+      shots.splice(i, 1);
+    } else if (hit || s.life <= 0) {
+      scene.remove(s.mesh);
+      shots.splice(i, 1);
+    }
+  }
   // pickups: pop out of the kill, settle, bob; drawn in when close
-  for (let i = pickups.length - 1; i >= 0; i--) { const k = pickups[i], m = k.mesh, u = m.userData; k.t += dt; k.age += dt;
+  for (let i = pickups.length - 1; i >= 0; i--) {
+    const k = pickups[i],
+      m = k.mesh,
+      u = m.userData;
+    k.t += dt;
+    k.age += dt;
     const gy = groundY(m.position.x, m.position.z);
-    if (!k.landed) { k.vy -= 14 * dt; m.position.x += k.vx * dt; m.position.z += k.vz * dt; m.position.y += k.vy * dt; if (m.position.y < gy + 0.3 && k.vy < 0) { k.landed = true; unbury(m.position); } }
-    else { m.position.y = gy + 0.35 + Math.sin(k.t * 2.5) * 0.06; }
-    u.item.rotation.y += dt * 1.6; u.ring.position.y = gy - m.position.y + 0.05; u.ring.scale.setScalar(1 + Math.sin(k.t * 3) * 0.08); u.beam.position.y = gy - m.position.y + 1.3;
+    if (!k.landed) {
+      k.vy -= 14 * dt;
+      m.position.x += k.vx * dt;
+      m.position.z += k.vz * dt;
+      m.position.y += k.vy * dt;
+      if (m.position.y < gy + 0.3 && k.vy < 0) {
+        k.landed = true;
+        unbury(m.position);
+      }
+    } else {
+      m.position.y = gy + 0.35 + Math.sin(k.t * 2.5) * 0.06;
+    }
+    u.item.rotation.y += dt * 1.6;
+    u.ring.position.y = gy - m.position.y + 0.05;
+    u.ring.scale.setScalar(1 + Math.sin(k.t * 3) * 0.08);
+    u.beam.position.y = gy - m.position.y + 1.3;
     // the host's game hands each pickup to the nearest player standing (a joined game only draws them, until the host says)
     // slice 21 (Jared, 2026-11-14: "someone else tried to pick up wood and it's like it couldn't be picked up by them"): the host
     // judged by a moment-old copy of where the joined player was, so a joined player who touches a pickup on their own screen
     // claims it, and the host gives it to the first claim (a gun's rounds still only to the Gunslinger)
-    if (joining()) { if (k.age > 190) { scene.remove(m); pickups.splice(i, 1); continue; } /* (the host's take was lost: its pickups go at 180 s) */ if (k.landed && !gone(player) && (k.kind !== 'ammo' || player.ch.id === 'gunslinger') && t - (k.claimT ?? -9) > 1.5 && Math.hypot(player.x - m.position.x, player.z - m.position.z) < 1) { k.claimT = t; send(net.host, { t: 'claim', id: k.id }); } continue; }
-    const q = joining() ? null : k.kind === 'ammo' ? nearestGun(m.position.x, m.position.z) : nearestP(m.position.x, m.position.z), dx = q ? q.x - m.position.x : 0, dz = q ? q.z - m.position.z : 0, dd = q ? Math.hypot(dx, dz) : 1e9;
-    if (k.landed && dd < 2.6) { m.position.x += dx / dd * dt * 6; m.position.z += dz / dd * dt * 6; }
-    if (dd < 0.8 || k.age > 180) { if (dd < 0.8) { if (q === player) gotPickup(k.kind); else send(q.id, { t: 'got', kind: k.kind }); } send('all', { t: 'take', id: k.id });
-      scene.remove(m); pickups.splice(i, 1); } }
-  for (const c of caches) if (!c.opened && !c.hinted && Math.hypot(c.x - player.x, c.z - player.z) < 2.8 && Math.abs(feetY() - c.y) < 2.6) { c.hinted = true;
-    log(c.camp?.name ? `${c.camp.name}'s stores. Clear off what guards it, then search it (E).` : c.camp ? 'The raiders\' supply crate. Clear the camp, then search it (E).' : 'A supply crate. Search it (E).'); }
-  tickArrows(dt); tickBuild(dt);
+    if (joining()) {
+      if (k.age > 190) {
+        scene.remove(m);
+        pickups.splice(i, 1);
+        continue;
+      }
+      /* (the host's take was lost: its pickups go at 180 s) */ if (
+        k.landed &&
+        !gone(player) &&
+        (k.kind !== 'ammo' || player.ch.id === 'gunslinger') &&
+        t - (k.claimT ?? -9) > 1.5 &&
+        Math.hypot(player.x - m.position.x, player.z - m.position.z) < 1
+      ) {
+        k.claimT = t;
+        send(net.host, { t: 'claim', id: k.id });
+      }
+      continue;
+    }
+    const q = joining()
+        ? null
+        : k.kind === 'ammo'
+          ? nearestGun(m.position.x, m.position.z)
+          : nearestP(m.position.x, m.position.z),
+      dx = q ? q.x - m.position.x : 0,
+      dz = q ? q.z - m.position.z : 0,
+      dd = q ? Math.hypot(dx, dz) : 1e9;
+    if (k.landed && dd < 2.6) {
+      m.position.x += (dx / dd) * dt * 6;
+      m.position.z += (dz / dd) * dt * 6;
+    }
+    if (dd < 0.8 || k.age > 180) {
+      if (dd < 0.8) {
+        if (q === player) gotPickup(k.kind);
+        else send(q.id, { t: 'got', kind: k.kind });
+      }
+      send('all', { t: 'take', id: k.id });
+      scene.remove(m);
+      pickups.splice(i, 1);
+    }
+  }
+  for (const c of caches)
+    if (!c.opened && !c.hinted && Math.hypot(c.x - player.x, c.z - player.z) < 2.8 && Math.abs(feetY() - c.y) < 2.6) {
+      c.hinted = true;
+      log(
+        c.camp?.name
+          ? `${c.camp.name}'s stores. Clear off what guards it, then search it (E).`
+          : c.camp
+            ? "The raiders' supply crate. Clear the camp, then search it (E)."
+            : 'A supply crate. Search it (E).',
+      );
+    }
+  tickArrows(dt);
+  tickBuild(dt);
   // slice 13: the clock (the host's; a joined game follows the host's), nightfall and dawn, and sleeping the night away
-  const turn = tickDay(dt, !!player.sleep && everyone().every(q => q === player || q.sl || gone(q)), joining());
-  if (turn === 'night') { log('Night falls. Packs are out hunting, bolder and hungrier: keep near a fire, behind walls, or sleep it off in a bed.'); sfx('night'); logEvent('night', { day: day.n });
+  const turn = tickDay(dt, !!player.sleep && everyone().every((q) => q === player || q.sl || gone(q)), joining());
+  if (turn === 'night') {
+    log(
+      'Night falls. Packs are out hunting, bolder and hungrier: keep near a fire, behind walls, or sleep it off in a bed.',
+    );
+    sfx('night');
+    logEvent('night', { day: day.n });
     // slice 21: dusk sends a pack at everyone outside the valley at once (IW1's night waves, in small)
-    if (!joining() && level().night) for (const q of everyone()) if (!gone(q) && !q.away && Math.hypot(q.x, q.z) >= SAFE_R) { q.huntedAt = t; q.huntWait = HUNT_WAIT(1) + 20; sendHunt(q, t, 1); } } // (+20 s: the dusk pack is not followed straight away by the trickle; slice 33: none on Easy)
-  if (turn === 'day') { log(`Day ${day.n} dawns.`); sfx('dawn'); logEvent('dawn', { day: day.n }); }
+    if (!joining() && level().night)
+      for (const q of everyone())
+        if (!gone(q) && !q.away && Math.hypot(q.x, q.z) >= SAFE_R) {
+          q.huntedAt = t;
+          q.huntWait = HUNT_WAIT(1) + 20;
+          sendHunt(q, t, 1);
+        }
+  } // (+20 s: the dusk pack is not followed straight away by the trickle; slice 33: none on Easy)
+  if (turn === 'day') {
+    log(`Day ${day.n} dawns.`);
+    sfx('dawn');
+    logEvent('dawn', { day: day.n });
+  }
   tickSleep(dt);
   // the campfire mends wounds, as in IW1 (every 2 s within a few metres); so does a campfire a player built (slice 11)
-  const warmF = !player.dead && [campfire, ...fireSpots(), ...HEATERS()].find(f => Math.hypot(player.x - f.x, player.z - f.z) < f.r && !(Math.abs(player.y - (f.y ?? player.y)) > 2)); // (the quality pass: a fire upstairs mended the room below)
-  if (warmF) { campT += dt; // (slice 23: the frozen outpost's heater too)
-    if (!warmLogged) { log(warmF.heater ? 'The heater\'s warmth mends your wounds.' : 'The campfire\'s warmth mends your wounds.'); warmLogged = true; }
-    if (campT > 2) { campT = 0; if (player.hp < player.maxHp) { const h = Math.min(8, player.maxHp - player.hp); player.hp += h; floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `+${h}`, '#8aff9a'); } } }
-  else { campT = 0; warmLogged = false; }
-  tickLog(dt, { player, cam: camMode, biome: biomeAt(player.x, player.z), fps: lastFps, enemies }, il > 0.1 && !player.dead); tickWatch(dt); // slice 13d
-  tickCoop(dt); tickEffects(dt); tickFireflies(dt, camera.position, true); setListener(player.x, player.z, camMode === 'top' ? topYaw : player.yaw);
-  windLevel(windNow() * hush()); setMusicMode(isNight() ? 'night' : 'day', dt); // (the 'boss' track is ready in audio.js for when IW2 has bosses)
+  const warmF =
+    !player.dead &&
+    [campfire, ...fireSpots(), ...HEATERS()].find(
+      (f) => Math.hypot(player.x - f.x, player.z - f.z) < f.r && !(Math.abs(player.y - (f.y ?? player.y)) > 2),
+    ); // (the quality pass: a fire upstairs mended the room below)
+  if (warmF) {
+    campT += dt; // (slice 23: the frozen outpost's heater too)
+    if (!warmLogged) {
+      log(warmF.heater ? "The heater's warmth mends your wounds." : "The campfire's warmth mends your wounds.");
+      warmLogged = true;
+    }
+    if (campT > 2) {
+      campT = 0;
+      if (player.hp < player.maxHp) {
+        const h = Math.min(8, player.maxHp - player.hp);
+        player.hp += h;
+        floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `+${h}`, '#8aff9a');
+      }
+    }
+  } else {
+    campT = 0;
+    warmLogged = false;
+  }
+  tickLog(
+    dt,
+    { player, cam: camMode, biome: biomeAt(player.x, player.z), fps: lastFps, enemies },
+    il > 0.1 && !player.dead,
+  );
+  tickWatch(dt); // slice 13d
+  tickCoop(dt);
+  tickEffects(dt);
+  tickFireflies(dt, camera.position, true);
+  setListener(player.x, player.z, camMode === 'top' ? topYaw : player.yaw);
+  windLevel(windNow() * hush());
+  setMusicMode(isNight() ? 'night' : 'day', dt); // (the 'boss' track is ready in audio.js for when IW2 has bosses)
   ambient(dt, biomeAt(player.x, player.z), nightK(), Math.hypot(player.x, player.z) < SAFE_R); // (slice 13: storms, the open biomes' wind, the night's sounds)
   riverLevel(riverNow() * hush()); // (slice 31: the river rushes as you near it)
 }
 // the wind and the river: on the pause screen a quarter as loud, like the music pausing (the quality pass, 2026-11-15: they kept their volume)
-const hush = () => paused ? 0.25 : 1, windNow = () => 0.03 + Math.min(0.06, Math.max(0, player.y - 20) / 600) + W.wind + (BIOME_WIND[biomeAt(player.x, player.z)] || 0);
-const riverNow = () => running ? 0.1 * Math.max(0, 1 - riverDist(player.x, player.z) / 45) ** 2 : 0; // (0: a game over earlier in this frame; the quality pass)
+const hush = () => (paused ? 0.25 : 1),
+  windNow = () =>
+    0.03 + Math.min(0.06, Math.max(0, player.y - 20) / 600) + W.wind + (BIOME_WIND[biomeAt(player.x, player.z)] || 0);
+const riverNow = () => (running ? 0.1 * Math.max(0, 1 - riverDist(player.x, player.z) / 45) ** 2 : 0); // (0: a game over earlier in this frame; the quality pass)
 const FLOOR = (x, z) => floorAt(x, z, groundY(x, z)); // (a creature's feet on a house floor)
-const HUNTS = ['chase', 'windup', 'recover', 'emerge', 'siege'], SMELL = new Set(['wolf', 'dust_hound', 'bear']);
-const HEATERS = () => places.filter(q => q.heater).map(q => ({ ...q.heater, heater: true })); // slice 23
-let spawnTick = -1, campT = 0, warmLogged = false, lastFps = 0, cooking = false;
+const HUNTS = ['chase', 'windup', 'recover', 'emerge', 'siege'],
+  SMELL = new Set(['wolf', 'dust_hound', 'bear']);
+const HEATERS = () => places.filter((q) => q.heater).map((q) => ({ ...q.heater, heater: true })); // slice 23
+let spawnTick = -1,
+  campT = 0,
+  warmLogged = false,
+  lastFps = 0,
+  cooking = false;
 
 const strikeCD = new Map(); // player -> seconds until the next enemy may wind up at them
 const spitAt = new Map(); // #66: player -> game time before which no pale spider (or bog lurker) spits at them
 // a spitter spits only down a clear line (bog lurker spit, November 15, 2026): not through a rock, a tree, a house wall, the ground
 // or a cave's side (wallAhead sees only the walls players build); the solid test is the watcher's (watch.js solidAt)
-function clearShot(e, q) { const y0 = e.mesh.position.y + 0.7, y1 = (q.y ?? groundY(q.x, q.z)) + 1.1, dx = q.x - e.x, dz = q.z - e.z, L = Math.hypot(dx, dz), cv = caveAt(e.x, e.z);
-  for (let s = 0.8; s < L - 0.6; s += 0.5) { const k = s / L, x = e.x + dx * k, z = e.z + dz * k, y = y0 + (y1 - y0) * k;
+function clearShot(e, q) {
+  const y0 = e.mesh.position.y + 0.7,
+    y1 = (q.y ?? groundY(q.x, q.z)) + 1.1,
+    dx = q.x - e.x,
+    dz = q.z - e.z,
+    L = Math.hypot(dx, dz),
+    cv = caveAt(e.x, e.z);
+  for (let s = 0.8; s < L - 0.6; s += 0.5) {
+    const k = s / L,
+      x = e.x + dx * k,
+      z = e.z + dz * k,
+      y = y0 + (y1 - y0) * k;
     if ((cv && caveDepth(cv.L, x, z).d < 0.3) || groundY(x, z) > y) return false; // (in a cave: the glob's width inside the passage)
-    for (const c of nearColliders(x, z)) if (c.r && !c.gate?.open && !(c.stand != null && y >= c.stand - 0.1) && !(c.top != null && y >= c.top) && Math.hypot(x - c.x, z - c.z) < colR(c, x, z)) return false; }
-  return true; }
+    for (const c of nearColliders(x, z))
+      if (
+        c.r &&
+        !c.gate?.open &&
+        !(c.stand != null && y >= c.stand - 0.1) &&
+        !(c.top != null && y >= c.top) &&
+        Math.hypot(x - c.x, z - c.z) < colR(c, x, z)
+      )
+        return false;
+  }
+  return true;
+}
 // IW1: food picked up while hurt heals 15, else it is stored
 // (slice 12, the owner: food picked up goes into the pack, eaten later with G; rounds are the Gunslinger's, +3 a box)
 // rounds go only to a Gunslinger on his feet (the nearest), or lie there
-function nearestGun(x, z) { let best = null, bd = 1e9; for (const q of everyone()) { if (gone(q) || (q === player ? player.ch.id : CHARS[q.c]?.id) !== 'gunslinger' || (q === player && ammo.clip + ammo.reserve >= MAX_ROUNDS)) continue; const d = Math.hypot(q.x - x, q.z - z); if (d < bd) { bd = d; best = q; } } return best; }
-export function gotPickup(kind) { if (kind.startsWith('find_')) { const [name, c] = FINDS[kind.slice(5)] || ['find', 0xffffff]; player.inv.finds = (player.inv.finds || 0) + 1; sfx('pickup'); logEvent('got', { kind });
-    floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `+1 ${name}`, '#' + c.toString(16).padStart(6, '0')); return; } // (a cave find: any kind counts toward the upgrades that want them)
-  if (kind === 'ammo') { const n = addRounds(3); sfx('pickup'); floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `+${n} rounds`, '#ffe08a'); return; }
-  player.inv[kind] = (player.inv[kind] || 0) + 1; sfx('pickup'); logEvent('got', { kind }); // (slice 21: pickups were not logged, so "couldn't pick it up" had no trail)
-  floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `+1 ${kind}`, { food: '#ff9a7a', metal: '#ffc070', wood: '#e8b878' }[kind] || '#efe6b0'); }
-let snapCam = true; export function snapCamera() { snapCam = true; }
+function nearestGun(x, z) {
+  let best = null,
+    bd = 1e9;
+  for (const q of everyone()) {
+    if (
+      gone(q) ||
+      (q === player ? player.ch.id : CHARS[q.c]?.id) !== 'gunslinger' ||
+      (q === player && ammo.clip + ammo.reserve >= MAX_ROUNDS)
+    )
+      continue;
+    const d = Math.hypot(q.x - x, q.z - z);
+    if (d < bd) {
+      bd = d;
+      best = q;
+    }
+  }
+  return best;
+}
+export function gotPickup(kind) {
+  if (kind.startsWith('find_')) {
+    const [name, c] = FINDS[kind.slice(5)] || ['find', 0xffffff];
+    player.inv.finds = (player.inv.finds || 0) + 1;
+    sfx('pickup');
+    logEvent('got', { kind });
+    floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `+1 ${name}`, '#' + c.toString(16).padStart(6, '0'));
+    return;
+  } // (a cave find: any kind counts toward the upgrades that want them)
+  if (kind === 'ammo') {
+    const n = addRounds(3);
+    sfx('pickup');
+    floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `+${n} rounds`, '#ffe08a');
+    return;
+  }
+  player.inv[kind] = (player.inv[kind] || 0) + 1;
+  sfx('pickup');
+  logEvent('got', { kind }); // (slice 21: pickups were not logged, so "couldn't pick it up" had no trail)
+  floatText(
+    new THREE.Vector3(player.x, player.y + 2, player.z),
+    `+1 ${kind}`,
+    { food: '#ff9a7a', metal: '#ffc070', wood: '#e8b878' }[kind] || '#efe6b0',
+  );
+}
+let snapCam = true;
+export function snapCamera() {
+  snapCam = true;
+}
 export function placeCamera(dt) {
-  const k = snapCam ? 1 : null; snapCam = false;
-  const P = player.out ? [...others.values()].find(o => !o.out) || player : player, drop = P !== player ? 0 : player.down > 0 ? 1.25 : player.dead ? Math.min(1.25, (3 - player.dead) * 1.2) : 0;
+  const k = snapCam ? 1 : null;
+  snapCam = false;
+  const P = player.out ? [...others.values()].find((o) => !o.out) || player : player,
+    drop = P !== player ? 0 : player.down > 0 ? 1.25 : player.dead ? Math.min(1.25, (3 - player.dead) * 1.2) : 0;
   const head = new THREE.Vector3(P.x, P.y + 1.62 - drop, P.z); // an out player watches a friend
-  if (camMode === 'first') { camera.position.copy(head); camera.position.y = player.under ? head.y : Math.max(head.y, WATER_Y + 0.4); camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ'); camera.fov = 75; }
-  else if (camMode === 'angled') { const p = Math.max(-0.2, -player.pitch + 0.25), right = new THREE.Vector3(Math.cos(player.yaw), 0, -Math.sin(player.yaw));
-    const pivot = head.clone().addScaledVector(right, 0.75), back = new THREE.Vector3(Math.sin(player.yaw) * Math.cos(p), Math.sin(p), Math.cos(player.yaw) * Math.cos(p));
+  if (camMode === 'first') {
+    camera.position.copy(head);
+    camera.position.y = player.under ? head.y : Math.max(head.y, WATER_Y + 0.4);
+    camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
+    camera.fov = 75;
+  } else if (camMode === 'angled') {
+    const p = Math.max(-0.2, -player.pitch + 0.25),
+      right = new THREE.Vector3(Math.cos(player.yaw), 0, -Math.sin(player.yaw));
+    const pivot = head.clone().addScaledVector(right, 0.75),
+      back = new THREE.Vector3(Math.sin(player.yaw) * Math.cos(p), Math.sin(p), Math.cos(player.yaw) * Math.cos(p));
     const dist = 5;
-    const want = pivot.clone().addScaledVector(back, dist); want.y += 0.5;
-    want.y = Math.max(want.y, Math.max(groundY(want.x, want.z), WATER_Y) + 0.6); camera.position.lerp(want, k ?? Math.min(1, dt * 14));
-    camera.lookAt(pivot.clone().add(new THREE.Vector3(-Math.sin(player.yaw) * 3, 0.1, -Math.cos(player.yaw) * 3))); camera.fov = 65; }
-  else { const want = head.clone().add(new THREE.Vector3(Math.sin(topYaw) * 10.5, 19, Math.cos(topYaw) * 10.5)); camera.position.lerp(want, k ?? Math.min(1, dt * 10)); camera.lookAt(head); camera.fov = 50; }
-  if (player.shake > 0) { player.shake -= dt; const k = player.shake * 0.12; camera.position.x += (Math.random() - 0.5) * k; camera.position.y += (Math.random() - 0.5) * k; }
-  camera.updateProjectionMatrix(); hideOccluders(camera, camMode !== 'first' ? head : null);
+    const want = pivot.clone().addScaledVector(back, dist);
+    want.y += 0.5;
+    want.y = Math.max(want.y, Math.max(groundY(want.x, want.z), WATER_Y) + 0.6);
+    camera.position.lerp(want, k ?? Math.min(1, dt * 14));
+    camera.lookAt(pivot.clone().add(new THREE.Vector3(-Math.sin(player.yaw) * 3, 0.1, -Math.cos(player.yaw) * 3)));
+    camera.fov = 65;
+  } else {
+    const want = head.clone().add(new THREE.Vector3(Math.sin(topYaw) * 10.5, 19, Math.cos(topYaw) * 10.5));
+    camera.position.lerp(want, k ?? Math.min(1, dt * 10));
+    camera.lookAt(head);
+    camera.fov = 50;
+  }
+  if (player.shake > 0) {
+    player.shake -= dt;
+    const k = player.shake * 0.12;
+    camera.position.x += (Math.random() - 0.5) * k;
+    camera.position.y += (Math.random() - 0.5) * k;
+  }
+  camera.updateProjectionMatrix();
+  hideOccluders(camera, camMode !== 'first' ? head : null);
   env.follow(new THREE.Vector3(P.x, P.y, P.z));
 }
 // performance hint: a steady low frame rate for 12 s on Medium or High suggests Low once (the headless check runs slow,
 // so the hint is skipped when the page runs under automation)
-let slowT = 0, slowHinted = false;
-function perfHint(fps, dt) { if (slowHinted || navigator.webdriver || paused || QUALITY_KEY === 'low') return;
-  slowT = fps > 0 && fps < 24 ? slowT + dt : 0; if (slowT > 12) { slowHinted = true; log('Running slowly here: try Quality → Low (P opens settings).'); } }
-export function hud(fps, dt = 0) { perfHint(fps, dt); lastFps = fps; if (paused) { pauseChars(); document.getElementById('pausefall').textContent = fallNow(); } // (the world runs on in co-op: down or up again while paused, review)
-  const watch = player.out && [...others.values()].find(o => !o.out); // co-op: down, or out and watching a friend
+let slowT = 0,
+  slowHinted = false;
+function perfHint(fps, dt) {
+  if (slowHinted || navigator.webdriver || paused || QUALITY_KEY === 'low') return;
+  slowT = fps > 0 && fps < 24 ? slowT + dt : 0;
+  if (slowT > 12) {
+    slowHinted = true;
+    log('Running slowly here: try Quality → Low (P opens settings).');
+  }
+}
+export function hud(fps, dt = 0) {
+  perfHint(fps, dt);
+  lastFps = fps;
+  if (paused) {
+    pauseChars();
+    document.getElementById('pausefall').textContent = fallNow();
+  } // (the world runs on in co-op: down or up again while paused, review)
+  const watch = player.out && [...others.values()].find((o) => !o.out); // co-op: down, or out and watching a friend
   document.getElementById('name').textContent = `${player.ch.player.toUpperCase()} · ${player.ch.title}`; // health moved onto the bar (#37)
   // a fall says so in the middle of the screen, large (2026-11-15; it used to be a line after the name): down and how to get up, knocked out, out
-  const dn = player.out ? ['OUT', watch ? `Watching ${watch.name} until everyone is out` : 'Watching the others'] : player.down > 0 && rules.ffa ? ['KNOCKED OUT', `Back in ${Math.ceil(player.down)} s at ${hasBed() ? 'your bed' : 'the camp'}`]
-    : player.down > 0 ? [`DOWN · ${Math.ceil(player.down)} s`, player.revT > 0 ? `${watch?.name || 'A friend'} is reviving you: ${Math.round(player.revT / 2.5 * 100)}%` : `Waiting for a friend to revive you (${[...others.values()].filter(o => !gone(o)).length} still standing). If not: ${hasBed() ? 'you wake at your bed' : 'you are out until everyone falls'}.`]
-    : player.dead > 0 ? ['DOWN', `${player.ch.player} went down… ${hasBed() ? 'waking at your bed' : 'no bed slept in: game over'}`] : null;
-  const dEl = document.getElementById('downed'); dEl.classList.toggle('hidden', !dn); if (dn) { if (!dEl.firstChild) dEl.innerHTML = '<b></b><span></span>'; dEl.firstChild.textContent = dn[0]; dEl.lastChild.textContent = dn[1]; }
-  document.getElementById('hpfill').style.width = Math.max(0, player.hp / player.maxHp * 100) + '%';
+  const dn = player.out
+    ? ['OUT', watch ? `Watching ${watch.name} until everyone is out` : 'Watching the others']
+    : player.down > 0 && rules.ffa
+      ? ['KNOCKED OUT', `Back in ${Math.ceil(player.down)} s at ${hasBed() ? 'your bed' : 'the camp'}`]
+      : player.down > 0
+        ? [
+            `DOWN · ${Math.ceil(player.down)} s`,
+            player.revT > 0
+              ? `${watch?.name || 'A friend'} is reviving you: ${Math.round((player.revT / 2.5) * 100)}%`
+              : `Waiting for a friend to revive you (${[...others.values()].filter((o) => !gone(o)).length} still standing). If not: ${hasBed() ? 'you wake at your bed' : 'you are out until everyone falls'}.`,
+          ]
+        : player.dead > 0
+          ? ['DOWN', `${player.ch.player} went down… ${hasBed() ? 'waking at your bed' : 'no bed slept in: game over'}`]
+          : null;
+  const dEl = document.getElementById('downed');
+  dEl.classList.toggle('hidden', !dn);
+  if (dn) {
+    if (!dEl.firstChild) dEl.innerHTML = '<b></b><span></span>';
+    dEl.firstChild.textContent = dn[0];
+    dEl.lastChild.textContent = dn[1];
+  }
+  document.getElementById('hpfill').style.width = Math.max(0, (player.hp / player.maxHp) * 100) + '%';
   document.getElementById('hpnum').textContent = `${Math.max(0, Math.ceil(player.hp))} / ${player.maxHp}`;
-  document.getElementById('biome').textContent = `${BIOME[biomeAt(player.x, player.z)].label} · Day ${day.n} · ${phase()}`; // (slice 13: the time of day)
+  document.getElementById('biome').textContent =
+    `${BIOME[biomeAt(player.x, player.z)].label} · Day ${day.n} · ${phase()}`; // (slice 13: the time of day)
   // the resources (slice 11), each chip bumping when it goes up; Abigail's arrows beside them
-  for (const k of ['wood', 'metal', 'fiber', 'food', 'cooked']) chip(k, k[0].toUpperCase() + k.slice(1), player.inv[k] || 0);
-  chip('finds', 'Cave finds', player.inv.finds || 0); document.getElementById('inv-finds').classList.toggle('hidden', !player.inv.finds); // (shown once you have one)
+  for (const k of ['wood', 'metal', 'fiber', 'food', 'cooked'])
+    chip(k, k[0].toUpperCase() + k.slice(1), player.inv[k] || 0);
+  chip('finds', 'Cave finds', player.inv.finds || 0);
+  document.getElementById('inv-finds').classList.toggle('hidden', !player.inv.finds); // (shown once you have one)
   // what this character shoots and can run out of: Abigail's arrows, the Gunslinger's rounds (clip | reserve), Lauren's flowers (slice 12)
-  const cid = player.ch.id, ammoEl = document.getElementById('inv-arrows'), shows = cid === 'ranger' || cid === 'gunslinger' || cid === 'charmer'; ammoEl.classList.toggle('hidden', !shows);
-  if (cid === 'ranger') { chip('arrows', 'Arrows', quiver.n, `/${quiver.max}`); ammoEl.classList.toggle('empty', quiver.n === 0); }
-  else if (cid === 'gunslinger') { chip('arrows', player.reloadT > 0 ? 'Reloading' : 'Rounds', ammo.clip, ` | ${ammo.reserve}`); ammoEl.classList.toggle('empty', ammo.clip === 0); }
-  else if (cid === 'charmer') { chip('arrows', 'Flowers', ammo.flowers); ammoEl.classList.toggle('empty', ammo.flowers === 0); }
+  const cid = player.ch.id,
+    ammoEl = document.getElementById('inv-arrows'),
+    shows = cid === 'ranger' || cid === 'gunslinger' || cid === 'charmer';
+  ammoEl.classList.toggle('hidden', !shows);
+  if (cid === 'ranger') {
+    chip('arrows', 'Arrows', quiver.n, `/${quiver.max}`);
+    ammoEl.classList.toggle('empty', quiver.n === 0);
+  } else if (cid === 'gunslinger') {
+    chip('arrows', player.reloadT > 0 ? 'Reloading' : 'Rounds', ammo.clip, ` | ${ammo.reserve}`);
+    ammoEl.classList.toggle('empty', ammo.clip === 0);
+  } else if (cid === 'charmer') {
+    chip('arrows', 'Flowers', ammo.flowers);
+    ammoEl.classList.toggle('empty', ammo.flowers === 0);
+  }
   // the ring round the crosshair while eating or cooking
-  { const busy = player.eat || player.cook, el = document.getElementById('eat'); el.classList.toggle('hidden', !busy); if (busy) { el.style.setProperty('--p', (busy.t / busy.T * 100).toFixed(0)); el.classList.toggle('cook', !!player.cook); } }
-  if (rules.ffa && coop()) chip('kills', 'Score ★', score(player)); else chip('kills', 'Kills', player.kills); prompt(dt); // (slice 33: free-for-all keeps score)
+  {
+    const busy = player.eat || player.cook,
+      el = document.getElementById('eat');
+    el.classList.toggle('hidden', !busy);
+    if (busy) {
+      el.style.setProperty('--p', ((busy.t / busy.T) * 100).toFixed(0));
+      el.classList.toggle('cook', !!player.cook);
+    }
+  }
+  if (rules.ffa && coop()) chip('kills', 'Score ★', score(player));
+  else chip('kills', 'Kills', player.kills);
+  prompt(dt); // (slice 33: free-for-all keeps score)
   // co-op: each friend's name and a small health bar under the player's own (red and counting down while they are down)
-  const team = [...others.values()].map(o => { const dn = o.down > 0 && !o.out, f = o.out ? 0 : dn ? o.down / 15 : Math.max(0, o.hp) / (o.mx || 1);
-    return `<div class="mate"><span style="color:${rules.ffa ? RIVAL : '#' + CHARS[o.c].color.toString(16).padStart(6, '0')}">${o.name}</span>${rules.ffa ? ` ★ ${score(o)} ·` : ''} ${o.out ? 'out' : o.away ? 'away (window hidden)' : performance.now() - o.seen > 3000 ? 'no word…' : dn ? (rules.ffa ? 'knocked out' : `DOWN ${Math.ceil(o.down)} s`) : `${Math.max(0, o.hp)}/${o.mx}`}<i><b style="width:${(f * 100).toFixed(0)}%${dn ? ';background:#ff8a6a' : ''}"></b></i></div>`; }).join(''), tEl = document.getElementById('team');
-  if (tEl.innerHTML !== team) tEl.innerHTML = team; tEl.classList.toggle('hidden', !team);
-  const sec = document.getElementById('sec'), sh = `${kc('special')} ${player.ch.sec}${upgraded(player.ch.id) ? ' ★' : ''}` + (player.secT > 0 ? ` ${Math.ceil(player.secT)} s` : ''); if (chipV.sec !== sh) sec.innerHTML = chipV.sec = sh; /* (#16: the key cap for the keyboard or the pad) */ sec.style.opacity = player.secT > 0 ? 0.55 : 1;
+  const team = [...others.values()]
+      .map((o) => {
+        const dn = o.down > 0 && !o.out,
+          f = o.out ? 0 : dn ? o.down / 15 : Math.max(0, o.hp) / (o.mx || 1);
+        return `<div class="mate"><span style="color:${rules.ffa ? RIVAL : '#' + CHARS[o.c].color.toString(16).padStart(6, '0')}">${o.name}</span>${rules.ffa ? ` ★ ${score(o)} ·` : ''} ${o.out ? 'out' : o.away ? 'away (window hidden)' : performance.now() - o.seen > 3000 ? 'no word…' : dn ? (rules.ffa ? 'knocked out' : `DOWN ${Math.ceil(o.down)} s`) : `${Math.max(0, o.hp)}/${o.mx}`}<i><b style="width:${(f * 100).toFixed(0)}%${dn ? ';background:#ff8a6a' : ''}"></b></i></div>`;
+      })
+      .join(''),
+    tEl = document.getElementById('team');
+  if (tEl.innerHTML !== team) tEl.innerHTML = team;
+  tEl.classList.toggle('hidden', !team);
+  const sec = document.getElementById('sec'),
+    sh =
+      `${kc('special')} ${player.ch.sec}${upgraded(player.ch.id) ? ' ★' : ''}` +
+      (player.secT > 0 ? ` ${Math.ceil(player.secT)} s` : '');
+  if (chipV.sec !== sh) sec.innerHTML = chipV.sec = sh;
+  /* (#16: the key cap for the keyboard or the pad) */ sec.style.opacity = player.secT > 0 ? 0.55 : 1;
   document.getElementById('cross').style.opacity = player.atkT > 0 ? 0.35 : 1; // dim while the attack recovers
   document.getElementById('fps').textContent = fps ? fps + ' fps' : ''; // (not "0 fps" before the first count: round 1 of 13d)
-  const list = []; for (const e of enemies) { if (e.dead || e.state === 'lurk') continue; const d = Math.hypot(e.x - player.x, e.z - player.z);
-    if (d < 28 && (e.barT > 0 || e.state === 'chase' || e.state === 'windup' || e.state === 'recover')) list.push({ d, p: new THREE.Vector3(e.x, e.mesh.position.y + e.mesh.userData.height * e.mesh.scale.x + 0.15, e.z), frac: Math.max(0, e.hp / e.maxHp) }); }
+  const list = [];
+  for (const e of enemies) {
+    if (e.dead || e.state === 'lurk') continue;
+    const d = Math.hypot(e.x - player.x, e.z - player.z);
+    if (d < 28 && (e.barT > 0 || e.state === 'chase' || e.state === 'windup' || e.state === 'recover'))
+      list.push({
+        d,
+        p: new THREE.Vector3(e.x, e.mesh.position.y + e.mesh.userData.height * e.mesh.scale.x + 0.15, e.z),
+        frac: Math.max(0, e.hp / e.maxHp),
+      });
+  }
   list.push(...pieceBars(player.x, player.z)); // walls and gates hit lately (slice 12)
-  list.sort((a, b) => a.d - b.d); healthBars(camMode === 'first' || camMode === 'angled' || camMode === 'top' ? list : []);
+  list.sort((a, b) => a.d - b.d);
+  healthBars(camMode === 'first' || camMode === 'angled' || camMode === 'top' ? list : []);
   document.getElementById('hurt').style.boxShadow = `inset 0 0 120px rgba(200,30,20,${player.hurtT > 0 ? 0.55 : 0})`;
 }
 
 const chipV = {};
 // (redrawn when any of its text changes, not only its number: the reserve and Reloading went stale; the review of slice 12)
-function chip(k, label, v, tail = '') { const txt = `${label} ${v}${tail}`; if (chipV[k + 't'] === txt) return; const el = document.getElementById('inv-' + k); el.lastChild.textContent = txt;
-  if (chipV[k] !== undefined && v > chipV[k]) { el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump'); } chipV[k] = v; chipV[k + 't'] = txt; }
+function chip(k, label, v, tail = '') {
+  const txt = `${label} ${v}${tail}`;
+  if (chipV[k + 't'] === txt) return;
+  const el = document.getElementById('inv-' + k);
+  el.lastChild.textContent = txt;
+  if (chipV[k] !== undefined && v > chipV[k]) {
+    el.classList.remove('bump');
+    void el.offsetWidth;
+    el.classList.add('bump');
+  }
+  chipV[k] = v;
+  chipV[k + 't'] = txt;
+}
 // what E (B on a pad) does here, shown over the bottom bar, with the chopping's progress while E is held (slice 11)
-const promptEl = document.getElementById('prompt'); let promptT = 0;
-function prompt(dt) { const c = player.chop || player.tear || player.fix || player.eat || player.cook, bar = promptEl.querySelector('i b'); promptEl.classList.toggle('busy', !!c); if (c) bar.style.width = Math.min(100, c.t / c.T * 100).toFixed(0) + '%';
-  if ((promptT -= dt) > 0 && !c) return; promptT = 0.15; const E = padActive ? 'B' : 'E', TAB = padActive ? 'View' : 'Tab', x = player.x, z = player.z; let t = '';
+const promptEl = document.getElementById('prompt');
+let promptT = 0;
+function prompt(dt) {
+  const c = player.chop || player.tear || player.fix || player.eat || player.cook,
+    bar = promptEl.querySelector('i b');
+  promptEl.classList.toggle('busy', !!c);
+  if (c) bar.style.width = Math.min(100, (c.t / c.T) * 100).toFixed(0) + '%';
+  if ((promptT -= dt) > 0 && !c) return;
+  promptT = 0.15;
+  const E = padActive ? 'B' : 'E',
+    TAB = padActive ? 'View' : 'Tab',
+    x = player.x,
+    z = player.z;
+  let t = '';
   if (!running || player.dead || player.down > 0 || player.out || craftOpen()) t = '';
   else if (player.tear) t = `Hold ${padActive ? 'RB' : 'X'} · tearing down the ${pieceName(player.tear.b)}`;
-  else if (player.fix) t = `Hold ${padActive ? 'd-pad right' : 'H'} · mending the ${pieceName(player.fix.b)}: ${fixCostText(player.fix.b)} for +${fixGain(player.fix.b)} (${Math.round(player.fix.b.hp)}/${player.fix.b.max})`;
-  else if (player.eat) t = `Hold ${padActive ? 'd-pad down' : 'G'} · eating the ${player.eat.what === 'cooked' ? 'roast meat' : 'raw meat'} (a hit stops you)`;
+  else if (player.fix)
+    t = `Hold ${padActive ? 'd-pad right' : 'H'} · mending the ${pieceName(player.fix.b)}: ${fixCostText(player.fix.b)} for +${fixGain(player.fix.b)} (${Math.round(player.fix.b.hp)}/${player.fix.b.max})`;
+  else if (player.eat)
+    t = `Hold ${padActive ? 'd-pad down' : 'G'} · eating the ${player.eat.what === 'cooked' ? 'roast meat' : 'raw meat'} (a hit stops you)`;
   else if (player.cook) t = `Hold ${E} · cooking over the fire (${player.inv.food} raw left)`;
   else if (building()) t = '';
   else if (c) t = `Hold ${E} · ${harvestDoing(c.it, true)}`;
-  else if (!rules.ffa && [...others.values()].some(o => o.down > 0 && !o.out && Math.hypot(o.x - x, o.z - z) < 2.4)) t = `Hold ${E} · revive`;
-  else if (repairTarget(x, z)) { const b = repairTarget(x, z); t = `Hold ${padActive ? 'd-pad right' : 'H'} · repair the ${pieceName(b)}: ${fixCostText(b)} for +${fixGain(b)} (${Math.round(b.hp)}/${b.max})`; }
-  else if (caches.some(q => !q.opened && Math.hypot(q.x - x, q.z - z) < 2.4 && Math.abs(feetY() - q.y) < 2.6)) t = `${E} · search the crate`;
-  else if (foodNear(x, feetY(), z)) t = `${E} · take the ${foodName(foodNear(x, feetY(), z))}`; // (places round 2)
-  else if (relicPrompt(player, E)) t = relicPrompt(player, E); // #53
-  else if (placePrompt(player, E)) t = placePrompt(player, E); // slice 23 (a crate in reach comes first)
+  else if (!rules.ffa && [...others.values()].some((o) => o.down > 0 && !o.out && Math.hypot(o.x - x, o.z - z) < 2.4))
+    t = `Hold ${E} · revive`;
+  else if (repairTarget(x, z)) {
+    const b = repairTarget(x, z);
+    t = `Hold ${padActive ? 'd-pad right' : 'H'} · repair the ${pieceName(b)}: ${fixCostText(b)} for +${fixGain(b)} (${Math.round(b.hp)}/${b.max})`;
+  } else if (caches.some((q) => !q.opened && Math.hypot(q.x - x, q.z - z) < 2.4 && Math.abs(feetY() - q.y) < 2.6))
+    t = `${E} · search the crate`;
+  else if (foodNear(x, feetY(), z))
+    t = `${E} · take the ${foodName(foodNear(x, feetY(), z))}`; // (places round 2)
+  else if (relicPrompt(player, E))
+    t = relicPrompt(player, E); // #53
+  else if (placePrompt(player, E))
+    t = placePrompt(player, E); // slice 23 (a crate in reach comes first)
   else if (gateNear(x, z)) t = `${E} · ${gateNear(x, z).open ? 'shut the gate' : 'hold the gate open'}`;
   else if (bedNear(x, z)) t = `${E} · sleep (you wake here if you fall)`;
   else if (atTent(x, z)) t = `${E} · change character`;
-  else if ((placed.scrap || []).concat(placed.hulk || []).some(q => !q.gone && !q.salvaged && Math.hypot(q.x - x, q.z - z) < (q.type === 'hulk' ? 4 : 2.6))) t = `${E} · salvage metal`;
-  else { const h = harvestTarget(x, z); if (h) t = `Hold ${E} · ${harvestDoing(h)}`; }
+  else if (
+    (placed.scrap || [])
+      .concat(placed.hulk || [])
+      .some((q) => !q.gone && !q.salvaged && Math.hypot(q.x - x, q.z - z) < (q.type === 'hulk' ? 4 : 2.6))
+  )
+    t = `${E} · salvage metal`;
+  else {
+    const h = harvestTarget(x, z);
+    if (h) t = `Hold ${E} · ${harvestDoing(h)}`;
+  }
   if (!t && benchNear(x, z) && !craftOpen() && running && !player.dead) t = `${TAB} · craft at the bench`;
   if (!t && running && !player.dead && carryPrompt(player)) t = carryPrompt(player); // #53: where to take it
-  if (!t && running && !player.dead && player.inv.food > 0 && fireNear()) t = `Hold ${E} · cook raw meat (${player.inv.food}): it mends ${HEAL.cooked}, not ${HEAL.food}`;
-  if (!t && running && !player.dead && !building() && foodCount() && player.hp < player.maxHp) { const G = padActive ? 'd-pad down' : 'G', w = player.inv.cooked ? `roast meat, +${HEAL.cooked}` : `raw meat, +${HEAL.food}`;
-    t = player.fightT > 0 ? `In a fight · you can eat (${G}) ${Math.ceil(player.fightT)} s after the last blow` : `Hold ${G} · eat (${w})`; }
-  if (!t && running && !player.dead && !building() && !craftOpen()) { const b = tearTarget(x, z); if (b) { const back = Object.entries(refundOf(b.key)).map(([k, v]) => `${v} ${k}`).join(', '); t = `Hold ${padActive ? 'RB' : 'X'} · tear down the ${pieceName(b)}${back ? ` (${back} back)` : ''}`; } }
-  const h = capLine(t); if (promptH !== h) promptEl.firstChild.innerHTML = promptH = h; promptEl.classList.toggle('hidden', !t); } // (#16: its key as a key cap)
+  if (!t && running && !player.dead && player.inv.food > 0 && fireNear())
+    t = `Hold ${E} · cook raw meat (${player.inv.food}): it mends ${HEAL.cooked}, not ${HEAL.food}`;
+  if (!t && running && !player.dead && !building() && foodCount() && player.hp < player.maxHp) {
+    const G = padActive ? 'd-pad down' : 'G',
+      w = player.inv.cooked ? `roast meat, +${HEAL.cooked}` : `raw meat, +${HEAL.food}`;
+    t =
+      player.fightT > 0
+        ? `In a fight · you can eat (${G}) ${Math.ceil(player.fightT)} s after the last blow`
+        : `Hold ${G} · eat (${w})`;
+  }
+  if (!t && running && !player.dead && !building() && !craftOpen()) {
+    const b = tearTarget(x, z);
+    if (b) {
+      const back = Object.entries(refundOf(b.key))
+        .map(([k, v]) => `${v} ${k}`)
+        .join(', ');
+      t = `Hold ${padActive ? 'RB' : 'X'} · tear down the ${pieceName(b)}${back ? ` (${back} back)` : ''}`;
+    }
+  }
+  const h = capLine(t);
+  if (promptH !== h) promptEl.firstChild.innerHTML = promptH = h;
+  promptEl.classList.toggle('hidden', !t);
+} // (#16: its key as a key cap)
 let promptH = '';
 
 // ── Menu ─────────────────────────────────────────────────────────────
@@ -1222,13 +4513,52 @@ export const isPadActive = () => padActive;
 export const liveShots = () => shots; // (for the checks)
 // where the player aims on the ground, min to max metres off (build mode's ghost goes there, slice 12): the crosshair's
 // ray in the first and angled cameras, the mouse in the top camera, else straight ahead
-export function aimGround(min = 1.6, max = 6) { const clampTo = (x, z) => { const dx = x - player.x, dz = z - player.z, d = Math.hypot(dx, dz) || 1e-3, k = Math.min(max, Math.max(min, d)) / d; return { x: player.x + dx * k, z: player.z + dz * k }; };
-  if (camMode === 'top') { const ray = new THREE.Raycaster(), hit = new THREE.Vector3(); ray.setFromCamera(mouseNDC, camera);
-    if (!padActive && ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -player.y), hit)) return clampTo(hit.x, hit.z); }
-  else { const o = camera.position, dir = new THREE.Vector3(), q = new THREE.Vector3(); camera.getWorldDirection(dir);
-    for (let t = 0.5; t < 16; t += 0.25) { q.copy(o).addScaledVector(dir, t); if (q.y < groundY(q.x, q.z) + 0.05) return clampTo(q.x, q.z); } }
-  const h = camMode === 'top' ? player.faceYaw : player.yaw; return clampTo(player.x - Math.sin(h) * max, player.z - Math.cos(h) * max); }
-export function teleport(x, z) { player.huntedAt = null; player.x = x; player.z = z; player.y = Math.max(groundY(x, z), WATER_Y - 1.25); player.swimY = WATER_Y - 1.25; player.mantle = null; player.vy = 0; player.fallTop = null; snapCam = true; }
+export function aimGround(min = 1.6, max = 6) {
+  const clampTo = (x, z) => {
+    const dx = x - player.x,
+      dz = z - player.z,
+      d = Math.hypot(dx, dz) || 1e-3,
+      k = Math.min(max, Math.max(min, d)) / d;
+    return { x: player.x + dx * k, z: player.z + dz * k };
+  };
+  if (camMode === 'top') {
+    const ray = new THREE.Raycaster(),
+      hit = new THREE.Vector3();
+    ray.setFromCamera(mouseNDC, camera);
+    if (!padActive && ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -player.y), hit))
+      return clampTo(hit.x, hit.z);
+  } else {
+    const o = camera.position,
+      dir = new THREE.Vector3(),
+      q = new THREE.Vector3();
+    camera.getWorldDirection(dir);
+    for (let t = 0.5; t < 16; t += 0.25) {
+      q.copy(o).addScaledVector(dir, t);
+      if (q.y < groundY(q.x, q.z) + 0.05) return clampTo(q.x, q.z);
+    }
+  }
+  const h = camMode === 'top' ? player.faceYaw : player.yaw;
+  return clampTo(player.x - Math.sin(h) * max, player.z - Math.cos(h) * max);
+}
+export function teleport(x, z) {
+  player.huntedAt = null;
+  player.x = x;
+  player.z = z;
+  player.y = Math.max(groundY(x, z), WATER_Y - 1.25);
+  player.swimY = WATER_Y - 1.25;
+  player.mantle = null;
+  player.vy = 0;
+  player.fallTop = null;
+  snapCam = true;
+}
 // test hook: hold a key (scripts/walktest.js drives the player through the real movement code)
-export function press(code, on = true) { if (on) keys.add(code); else keys.delete(code); }
-export function look(yaw, pitch) { player.yaw = yaw; player.pitch = pitch; player.faceYaw = yaw; snapCam = true; }
+export function press(code, on = true) {
+  if (on) keys.add(code);
+  else keys.delete(code);
+}
+export function look(yaw, pitch) {
+  player.yaw = yaw;
+  player.pitch = pitch;
+  player.faceYaw = yaw;
+  snapCam = true;
+}
