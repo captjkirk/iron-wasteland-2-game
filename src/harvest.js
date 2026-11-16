@@ -13,7 +13,7 @@ import * as THREE from 'three';
 import { placed, nearColliders, addCollider } from './props.js';
 import { markDirty } from './scatter.js';
 import { pbr } from './propmodels.js';
-import { BARK } from './trees.js';
+import { BARK, SPECIES } from './trees.js';
 import { groundY } from './world.js';
 import { hitBurst, dustPuff, grainDisc, splash } from './effects.js';
 import { ripple } from './water.js';
@@ -28,7 +28,8 @@ import { day, onNewGame } from './daynight.js';
 import { send, joining } from './coop.js';
 
 export const TREES = new Set(['pine', 'oak', 'aspen', 'snowpine', 'deadtree', 'swamptree', 'shroom']);
-const BUSHES = ['bush', 'drybush'], NAME = { pine: 'pine', oak: 'oak', aspen: 'aspen', snowpine: 'pine', deadtree: 'dead tree', swamptree: 'swamp tree', bush: 'bush', drybush: 'dry bush', shroom: 'giant mushroom' };
+const BUSHES = Object.keys(SPECIES).filter(k => SPECIES[k].bush), NAME = { pine: 'pine', oak: 'oak', aspen: 'aspen', snowpine: 'pine', deadtree: 'dead tree', swamptree: 'swamp tree', bush: 'bush', drybush: 'dry bush', shroom: 'giant mushroom',
+  berrybush: 'berry bush', flowerbush: 'flowering shrub', sage: 'sagebrush', juniper: 'juniper', thornscrub: 'thorn scrub' }; // (ticket 56: each biome's own shrubs)
 const CHOP = { architect: 1.5, gunslinger: 4 };
 export const chopTime = (ch, it) => (CHOP[ch.id] ?? 2.5) * (it.felled ? 1.2 : it.type === 'shroom' ? 0.7 : TREES.has(it.type) ? 1 : 0.4); // (a stump digs a little slower than its tree chopped)
 export const felled = []; // [type, index, fall heading, when (game days), state: 1 dug up, 2 grown back] of every tree felled and bush picked (for players who join later)
@@ -37,6 +38,7 @@ const dayNow = () => day.n + day.t;
 const stumps = new Set(); // felled trees whose stump (or sapling) still stands
 // what you would do to it, for the prompt: `doing` while you do it
 export function harvestDoing(it, doing) { const n = NAME[it.type] || it.type; if (it.felled) return `${doing ? 'digging up' : 'dig up'} the ${it.type === 'shroom' ? 'mushroom stalk' : n + ' stump'}`;
+  if (SPECIES[it.type]?.loot === 'food') return `${doing ? 'picking' : 'pick'} berries from the ${n}`;
   return BUSHES.includes(it.type) ? `${doing ? 'pulling' : 'pull'} fiber from the ${n}` : `${doing ? 'chopping' : 'chop'} the ${n}`; }
 const live = new Map(), Y = new THREE.Vector3(0, 1, 0); // trees shaking or falling: item -> { g, shake, t, idle, fall }
 const idx = (it) => it.pi ??= placed[it.type].indexOf(it);
@@ -110,7 +112,7 @@ export function fell(k, i, d, host, quick = false, at = dayNow(), st = 0) { cons
       L.fall = { a: 0.03, w: 0.12, t: 0, land: 0, host, axis: new THREE.Vector3(fz, 0, -fx), fx, fz, max: Math.max(1.15, Math.min(1.75, Math.PI / 2 - Math.atan2(hEnd, L0 * 0.6))) };
       sfx('creak', it); if (Math.hypot(it.x - player.x, it.z - player.z) < 30) log(`Timber! The ${NAME[k]} comes down.`); } }
   else { it.gone = true; markDirty(); if (!quick) { const at = new THREE.Vector3(it.x, groundY(it.x, it.z) + 0.5, it.z); hitBurst(at, Y, 'leaf', 26, false); sfx('salvage', it, 0.5); }
-    if (host && !quick) { const n = 1 + (rng() < 0.5 ? 1 : 0); for (let j = 0; j < n; j++) dropLoot(it.x, it.z, 'fiber'); } }
+    if (host && !quick) { const n = 1 + (rng() < 0.5 ? 1 : 0); for (let j = 0; j < n; j++) dropLoot(it.x, it.z, SPECIES[k]?.loot || 'fiber'); } }
   return true; }
 export const onChop = (m) => fell(m.k, m.i, m.d, true);
 export const onFell = (m) => fell(m.k, m.i, m.d, false, false, m.at ?? dayNow());
@@ -171,5 +173,5 @@ function tickLive(it, L, dt) { L.t += dt;
       if (Math.hypot(it.x - player.x, it.z - player.z) < 25) player.shake = 0.3; } else F.w = 0; } }
   L.g.rotation.set(0, 0, 0); L.g.quaternion.setFromAxisAngle(F.axis, F.a);
   if (F.land && F.t - F.land > 1.6) { if (!F.broke) { F.broke = true; for (let k = 1; k <= 7; k += 2) dustPuff(new THREE.Vector3(it.x + F.fx * len * k / 10, groundY(it.x + F.fx * len * k / 10, it.z + F.fz * len * k / 10), it.z + F.fz * len * k / 10), 12);
-      if (F.host) { const n = 2 + (rng() < 0.5 ? 1 : 0); for (let j = 0; j < n; j++) { const s = 0.12 + j * 0.13; dropLoot(it.x + F.fx * len * s, it.z + F.fz * len * s, it.type === 'shroom' ? (j ? 'fiber' : 'food') : 'wood'); } } /* (a mushroom: its flesh and fibers) */ }
+      if (F.host) { const n = it.young ? 1 : 2 + (rng() < 0.5 ? 1 : 0); /* (ticket 56: a young tree is one log) */ for (let j = 0; j < n; j++) { const s = 0.12 + j * 0.13; dropLoot(it.x + F.fx * len * s, it.z + F.fz * len * s, it.type === 'shroom' ? (j ? 'fiber' : 'food') : 'wood'); } } /* (a mushroom: its flesh and fibers) */ }
     L.g.position.y -= dt * 3; if (F.t - F.land > 2.4) unlift(it); } }

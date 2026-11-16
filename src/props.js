@@ -2,13 +2,13 @@
 // Each is drawn through scatter.js (instanced, distance LOD); trunks, rocks and wrecks get collision circles; props
 // between the camera and the player are hidden (occluders).
 import * as THREE from 'three';
-import { HALF, WATER_Y, Q, CAMP, SEED } from './config.js';
+import { HALF, WATER_Y, Q, CAMP, SEED, CELL, SEG, N } from './config.js';
 import { rng, fbm, vnoise, mulberry32 } from './noise.js';
-import { groundY, biomeAt, slopeAt, isWet, forestAt, canyonAt, street, PASSES, river, lateGround, withoutLate } from './world.js';
+import { groundY, biomeAt, slopeAt, isWet, forestAt, canyonAt, street, PASSES, river, lateGround, withoutLate, SPLAT_C } from './world.js';
 import { rocksInWater } from './environment.js';
 import { addLayer, markDirty } from './scatter.js';
 import { buildTrees, SPECIES } from './trees.js';
-import { rockParts, cactusParts, fernParts, reedParts, flowerParts, loadPropMeshes, scrapParts, wreckParts, wallParts, spireParts, glowcapParts, SPIRE_REACH, pebbleParts, driftwoodParts } from './propmodels.js';
+import { rockParts, cactusParts, fernParts, reedParts, flowerParts, loadPropMeshes, scrapParts, wreckParts, wallParts, spireParts, glowcapParts, SPIRE_REACH, pebbleParts, driftwoodParts, tuftParts, puffballParts, bracketParts, barrelCactusParts } from './propmodels.js';
 import { mushroomParts, archParts } from './landmarks.js';
 import { planBuildings, clearOf } from './buildings.js';
 const AS = [9.4, 13]; // arch sizes: metres per unit of landmarks.js's arch (legs at +-0.85, leg radius 0.3)
@@ -87,7 +87,7 @@ export const floorY = (x, z) => floorAt(x, z, groundY(x, z)); // (the ground, or
 export function floorAt(x, z, gy) { let s = gy; over(x, z, (h) => { if (h > s && h <= gy + 0.9) s = h; }); return s; }
 
 export const placed = {}; // type -> items (game.js salvages placed.scrap and placed.hulk)
-const TREE_TYPES = ['pine', 'oak', 'aspen', 'snowpine', 'deadtree', 'swamptree'];
+const TREE_TYPES = ['pine', 'oak', 'aspen', 'snowpine', 'deadtree', 'swamptree'], SHRUBS = Object.keys(SPECIES).filter(k => SPECIES[k].bush);
 const add = (type, it) => { (placed[type] = placed[type] || []).push(it); return it; };
 const dry = (x, z, y, bio) => bio === 'swamp' ? y > WATER_Y + 0.1 : (y > WATER_Y + 0.6 && !isWet(x, z));
 
@@ -198,6 +198,41 @@ function place() {
     if (roll > 0.16 || y > WATER_Y - 1.2 || spawnClear(px, pz, 20)) continue;
     const kind = ROCK[STONE[biomeAt(px, pz)] ?? 0], it = { x: px, y: y - 0.3, z: pz, s: 1.9 + sv * 1.0, ry: turn * 6.283, v: Math.floor(sv * 3), tilt: [(turn - 0.5) * 0.3, (sv - 0.5) * 0.3] };
     add(kind, it); boulders.push(it); it.shore = true; }
+  // ticket 56 (slice 27; Jared, November 14, 2026: "also baby trees? also some more variety in things like shrubs, grass clumps,
+  // etc."): young trees at forest edges and in clearings, each biome's own shrubs, grass clumps that vary, wildflowers in drifts of
+  // one colour and small stones in the grass. Their own random stream, after everything above (as the shore's), so every older
+  // prop lies where it did in every world, the classic one too; each is marked `flora`, and none stands on an older one
+  const fr = mulberry32(SEED + 56), CS = 1.5, taken = new Set(), DENSE = 2; // (DENSE: shrubs and clumps, against the frame cost on Low)
+  // (and none on a path: the ground's paving or gravel at the nearest grid point; Jared, November 15, 2026, with the water check's change)
+  const paved = (x, z) => { const k = (Math.min(SEG, Math.max(0, Math.round((z + HALF) / CELL))) * N + Math.min(SEG, Math.max(0, Math.round((x + HALF) / CELL)))) * 4; return SPLAT_C[k] + SPLAT_C[k + 1] > 0.3 * 255; };
+  const mark = (x, z, r) => { for (let a = Math.floor((x - r) / CS); a <= Math.floor((x + r) / CS); a++) for (let b = Math.floor((z - r) / CS); b <= Math.floor((z + r) / CS); b++) taken.add(a + ',' + b); };
+  for (const t in placed) for (const it of placed[t]) { if (t === 'arch') { for (const k of [-0.85, 0.85]) mark(it.x + Math.cos(it.ry) * it.s * k, it.z - Math.sin(it.ry) * it.s * k, 0.3 * it.s + 0.5); continue; }
+    mark(it.x, it.z, /rock$/.test(t) ? it.s * 1.5 + 0.5 : /spire/.test(t) ? 6.5 * it.s + 0.5 : /hulk|ruinwall/.test(t) ? 4 * it.s : (COL[t]?.[0] ?? 0.1) * it.s + 0.5); } // (a rock's outline reaches up to 1.45 times its size; a spire's base about 6 m, SPIRE_REACH, measured only once its mesh is built)
+  for (let z = -HALF + 30; z < HALF - 30; z += 4) for (let x = -HALF + 30; x < HALF - 30; x += 4) {
+    const px = x + (fr() - 0.5) * 3.8, pz = z + (fr() - 0.5) * 3.8, roll = fr(), pick = fr(), sv = fr(), ry = fr() * 6.283, y = groundY(px, pz), bio = biomeAt(px, pz);
+    if (spawnClear(px, pz, 7) || y > 75 || slopeAt(px, pz) > 0.6 || paved(px, pz) || taken.has(Math.floor(px / CS) + ',' + Math.floor(pz / CS))) continue;
+    const put = (type, s, r, o = {}) => { add(type, { x: px, y: y - 0.05, z: pz, s, ry, v: Math.floor(sv * 3), flora: true, ...o }); mark(px, pz, r); };
+    if (bio === 'swamp' && y > WATER_Y - 0.4 && y < WATER_Y + 0.5) { if (roll < 0.22) put('cattails', 0.9 + sv * 0.5, 0.5); continue; } // (the Bog's shallows and banks)
+    if (!dry(px, pz, y, bio)) continue;
+    const forest = forestAt(px, pz), edge = Math.max(0, 1 - Math.abs(forest - 0.35) * 4), open = 1 - forest, meadow = fbm(px * 0.03 + 5, pz * 0.03, 2), drift = vnoise(px * 0.012 - 7, pz * 0.012 + 3);
+    let r = roll; const C = (c) => { if (r < c) return true; r -= c; return false; };
+    // young trees of the biome's own kinds, most where the forest thins (its edges, and clearings in it); none in the Greenbelt's and
+    // Frostline's open meadows away from any forest, which stay open ground to build a fort on (a sapling's trunk is solid: the
+    // walk test's 9 m flat circle near the Greenbelt's centre found none with saplings strewn over the open meadow, November 15, 2026)
+    if (C({ grass: forest > 0.1 ? 0.012 + edge * 0.09 : 0, tundra: forest > 0.1 ? 0.01 + edge * 0.06 : 0, swamp: 0.03, ruins: 0.01, waste: 0.005, desert: 0.002, fungal: 0 }[bio])) {
+      const type = { grass: forest > 0.5 || pick < 0.3 ? 'pine' : pick < 0.7 ? 'oak' : 'aspen', tundra: 'snowpine', swamp: pick < 0.7 ? 'swamptree' : 'deadtree', ruins: pick < 0.6 ? 'oak' : 'deadtree' }[bio] || 'deadtree';
+      put(type, SPECIES[type].h[0] * (0.14 + sv * 0.32), 1.2, { y: y - 0.1, young: true }); continue; }
+    const own = { grass: [['berrybush', 0.006 + edge * 0.02], ['flowerbush', open * Math.max(0, meadow - 0.4) * 0.05]], desert: [['sage', 0.05 + meadow * 0.03], ['barrelcactus', 0.012]],
+      tundra: [['juniper', 0.035], ['heather', 0.07 * open]], waste: [['thornscrub', 0.035]], ruins: [['thornscrub', 0.015], ['berrybush', 0.006]], swamp: [['flowerbush', 0.004]],
+      fungal: [['puffball', 0.05], ['bracket', 0.012 + forest * 0.02]] }[bio] || [];
+    const hit = own.find(([, c]) => C(c * DENSE));
+    if (hit) { const t = hit[0], sp = SPECIES[t]; put(t, sp ? sp.h[0] + (sp.h[1] - sp.h[0]) * sv : 0.7 + sv * 0.6, sp ? 0.8 : 0.4, t === 'juniper' ? { sx: 1.5 } : {}); continue; }
+    if (C(({ grass: 0.05 * (0.4 + open), ruins: 0.05, tundra: 0.03, swamp: 0.05 }[bio] || 0) * DENSE)) { put('tussock', 0.8 + sv * 0.6, 0.4); continue; }
+    if (C(bio === 'grass' ? open * Math.max(0, meadow - 0.35) * 0.12 * DENSE : 0)) { put('clover', 0.8 + sv * 0.6, 0.4); continue; }
+    if (C(({ waste: 0.07, desert: 0.03, ruins: 0.05, grass: Math.max(0, drift - 0.6) * 0.2 }[bio] || 0) * DENSE)) { put('drypatch', 0.8 + sv * 0.7, 0.4); continue; }
+    if (C(bio === 'grass' || bio === 'ruins' ? open * Math.max(0, drift - 0.45) * 0.35 : 0)) { put('flowers', 0.8 + sv * 0.5, 0.3, { v: Math.floor(vnoise(px * 0.01 + 40, pz * 0.01) * 4) % 4 }); continue; }
+    if (C({ grass: 0.02, tundra: 0.03, ruins: 0.03, waste: 0.02 }[bio] || 0)) put('pebbles', 0.2 + sv * 0.15, 0.4, { v: bio === 'tundra' ? 2 : bio === 'waste' ? 1 : 0, y: y - 0.03 }); // (small stones in the grass: the shore's patch at a fifth to a third its size, under 0.8 m across with its largest stone about 0.15 m; at 0.3 to 0.7 its biggest stones read as one dark boulder against a trunk)
+  }
   // the buildings' sites stay open: filtered after placing, so the seeded layout everywhere else is exactly slice 7's
   for (const t in placed) placed[t] = placed[t].filter(it => it.keep || clearOf(it.x, it.z, /spire|arch/.test(t) ? 3 : 2));
   // the passes are the valley's only ways out: no hoodoo, ice spire or arch stands in one before the ring ends (two
@@ -208,21 +243,23 @@ function place() {
 }
 
 const COL = { shroom: [0.11, 0.15], pine: [0.03, 0.16], snowpine: [0.03, 0.16], oak: [0.035, 0.22], aspen: [0.02, 0.1], deadtree: [0.04, 0.12], swamptree: [0.04, 0.2],
-  rock: [0.75, 0.9], icerock: [0.75, 0.9], sandrock: [0.75, 0.9], wasterock: [0.75, 0.9], scrap: [1.1, 1.3], hulk: [2.1, 2.3], cactus: [0.4, 0.8] };
+  rock: [0.75, 0.9], icerock: [0.75, 0.9], sandrock: [0.75, 0.9], wasterock: [0.75, 0.9], scrap: [1.1, 1.3], hulk: [2.1, 2.3], cactus: [0.4, 0.8], barrelcactus: [0.3, 0.5], bracket: [0.25, 0.6] };
 export async function buildProps(scene, renderer, status) {
   place();
   if (status) status('Growing trees…');
-  const trees = await buildTrees(renderer, [...TREE_TYPES, 'bush', 'drybush']);
+  const trees = await buildTrees(renderer, [...TREE_TYPES, ...SHRUBS]);
   await loadPropMeshes();
   const byVariant = (type, n) => { const lists = Array.from({ length: n }, () => []); for (const it of placed[type] || []) lists[it.v % n].push(it); return lists; };
-  for (const type of [...TREE_TYPES, 'bush', 'drybush']) { const T = trees[type], small = type.endsWith('bush');
+  for (const type of [...TREE_TYPES, ...SHRUBS]) { const T = trees[type], small = SPECIES[type].bush;
     byVariant(type, T.variants.length).forEach((items, v) => { if (items.length) addLayer(scene, { name: type + '#' + v, parts: T.variants[v].parts, far: T.variants[v].far,
       nearR: small ? Q.bushNear : Q.treeNear, farR: small ? Math.min(Q.drawDist, 260) : Q.drawDist, items }); }); }
   const simple = [['rock', 3, v => rockParts('rock', v + 1), Q.propFar], ['icerock', 3, v => rockParts('icerock', v + 4), Q.propFar], ['sandrock', 3, v => rockParts('sandrock', v + 7), Q.propFar],
     ['wasterock', 3, v => rockParts('wasterock', v + 10), Q.propFar], ['cactus', 3, v => cactusParts(v * 3.1), Q.propFar * 0.6], ['fern', 3, v => fernParts(v + 1), Q.smallDist],
     ['reeds', 3, v => reedParts(v + 1), Q.smallDist * 1.3], ['flowers', 4, v => flowerParts(v), Q.smallDist], ['scrap', 6, scrapParts, Math.min(90, Q.propFar * 0.3)], ['hulk', 3, wreckParts, Q.propFar],
     ['ruinwall', 2, wallParts, Q.propFar], ['spire', 3, v => spireParts(v, 'sandrock'), Q.drawDist], ['icespire', 3, v => spireParts(v, 'icerock'), Q.drawDist],
-    ['arch', 2, v => archParts(v), Q.drawDist], ['pebbles', 3, pebbleParts, Q.smallDist], ['driftwood', 3, driftwoodParts, Q.propFar * 0.5], ['shroom', 3, mushroomParts, Math.min(Q.drawDist, Q.propFar * 1.2)], ['glowcap', 3, glowcapParts, Q.smallDist * 1.3]];
+    ['arch', 2, v => archParts(v), Q.drawDist], ['pebbles', 3, pebbleParts, Q.smallDist], ['driftwood', 3, driftwoodParts, Q.propFar * 0.5], ['shroom', 3, mushroomParts, Math.min(Q.drawDist, Q.propFar * 1.2)], ['glowcap', 3, glowcapParts, Q.smallDist * 1.3],
+    ...['tussock', 'drypatch', 'heather', 'clover'].map(k => [k, 3, v => tuftParts(k, v), Q.smallDist]), ['cattails', 3, v => reedParts(v + 4, 2), Q.smallDist * 1.3], // (ticket 56)
+    ['puffball', 3, puffballParts, Q.smallDist], ['bracket', 3, bracketParts, Q.smallDist * 1.3], ['barrelcactus', 3, barrelCactusParts, Q.propFar * 0.4]];
   for (const [type, n, make, dist] of simple) byVariant(type, n).forEach((items, v) => { if (!items.length) return; const m = make(v);
     if (type.endsWith('rock')) { const prof = footprint(m.parts[0].geo); for (const it of items) it.prof = prof; }
     const hgt = Math.max(...m.parts.map(q => (q.geo.boundingBox || (q.geo.computeBoundingBox(), q.geo.boundingBox)).max.y)); for (const it of items) it.hgt = hgt; // how high a foot stands on it

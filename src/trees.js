@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { Tree } from '@dgreenheck/ez-tree';
 import { Q } from './config.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { skyLight } from './environment.js';
 
 export const wind = { value: 0 };
@@ -26,6 +27,13 @@ export const SPECIES = {
   swamptree: { h: [8, 13], preset: ['Oak Medium', 'Ash Medium'], k: { sec: 0.6, seg0: 6, leaf: 0.5, leafSize: 1.3 }, leaf: 0x6c7450, bark: 0x8a8070, crown: 0.55, droop: true },
   bush:      { h: [1.3, 2.6], preset: ['Bush 1', 'Bush 2', 'Bush 3'], k: { sec: 0.45, seg0: 4, leaf: 0.7, leafSize: 1.35 }, leaf: 0xa8bc88, bark: 0xb0a090, crown: 0.5, bush: true },
   drybush:   { h: [0.8, 1.6], preset: ['Bush 2', 'Bush 1'], k: { sec: 0.45, seg0: 4, leaf: 0.35, leafSize: 1.0 }, leaf: 0xc8a070, bark: 0x9a8a78, crown: 0.5, bush: true },
+  // ticket 56 (slice 27; Jared, November 14, 2026: "some more variety in things like shrubs"): each biome's own shrubs, picked like
+  // the bushes (loot: what a pick gives, fiber if none); dots: [colour, size, how many] berries or blossom among the leaves
+  berrybush:  { h: [1.0, 1.9], preset: ['Bush 1', 'Bush 3', 'Bush 2'], k: { sec: 0.45, seg0: 4, leaf: 0.7, leafSize: 1.2 }, leaf: 0x8aa070, bark: 0xa09080, crown: 0.5, bush: true, low: true, loot: 'food', dots: [0xa8142a, 0.022, 80] },
+  flowerbush: { h: [1.2, 2.2], preset: ['Bush 2', 'Bush 3', 'Bush 1'], k: { sec: 0.45, seg0: 4, leaf: 0.7, leafSize: 1.25 }, leaf: 0xa0b480, bark: 0xb0a090, crown: 0.5, bush: true, low: true, dots: [0xf6d2e2, 0.03, 120] },
+  sage:       { h: [0.6, 1.2], preset: ['Bush 2', 'Bush 1', 'Bush 3'], k: { sec: 0.45, seg0: 4, leaf: 0.6, leafSize: 0.9 }, leaf: 0x8c9c78, bark: 0x9a8a78, crown: 0.5, bush: true, low: true },
+  juniper:    { h: [0.5, 1.0], preset: ['Bush 3', 'Bush 1', 'Bush 2'], k: { sec: 0.45, seg0: 4, leaf: 0.6, leafSize: 1.0 }, leaf: 0x6a8a74, bark: 0x8a7a68, crown: 0.45, bush: true, low: true, snow: true },
+  thornscrub: { h: [0.9, 1.6], preset: ['Bush 1', 'Bush 2', 'Bush 3'], k: { sec: 0.45, seg0: 4, leaf: 0, leafSize: 1 }, leaf: 0xffffff, bark: 0x7a6a5a, crown: 0.5, bush: true, low: true, dead: true },
 };
 
 function grow(sp, v) {
@@ -43,7 +51,13 @@ function grow(sp, v) {
   if (o.leaves.count) { const p = lg.attributes.position, n = lg.attributes.normal, c = new THREE.Vector3(0, sp.crown, 0), a = new THREE.Vector3(), b = new THREE.Vector3();
     for (let i = 0; i < p.count; i++) { a.fromBufferAttribute(p, i).sub(c); a.y *= 1.4; a.normalize(); b.fromBufferAttribute(n, i);
       a.multiplyScalar(0.8).addScaledVector(b, 0.2); a.y = a.y * 0.6 + 0.55; a.normalize(); /* tipped skywards: crown undersides still see the sky */ n.setXYZ(i, a.x, a.y, a.z); } }
-  return { bark: bg, leaves: o.leaves.count ? lg : null, barkSrc: t.branchesMesh.material, leafSrc: t.leavesMesh.material, tree: t };
+  // ticket 56: berries or blossom, a small bead at the middle of some of the leaf cards (four corners a card)
+  let dots = null; if (sp.dots && o.leaves.count) { const p = lg.attributes.position, cards = Math.floor(p.count / 4), m = new THREE.Vector3(), bits = [], [, size, n] = sp.dots;
+    for (let i = 0; i < n; i++) { const s = Math.sin((i + 1) * 12.9898 + v * 78.233) * 43758.5453, j = Math.floor((s - Math.floor(s)) * cards) * 4; m.set(0, 0, 0);
+      for (let q = 0; q < 4; q++) m.add(new THREE.Vector3().fromBufferAttribute(p, j + q)); m.multiplyScalar(0.25);
+      bits.push(new THREE.IcosahedronGeometry(size * (0.8 + (s * 7 % 1) * 0.4), 0).translate(m.x, m.y, m.z)); }
+    dots = mergeGeometries(bits); }
+  return { bark: bg, leaves: o.leaves.count ? lg : null, dots, barkSrc: t.branchesMesh.material, leafSrc: t.leavesMesh.material, tree: t };
 }
 
 function cloneTex(t, rx, ry) { const c = t.clone(); c.wrapS = c.wrapT = THREE.RepeatWrapping; c.repeat.set(rx, ry); c.needsUpdate = true; return c; }
@@ -82,7 +96,7 @@ function bakeAtlas(renderer, variants, mats, res, bg) {
   const prev = { rt: renderer.getRenderTarget(), color: renderer.getClearColor(new THREE.Color()), alpha: renderer.getClearAlpha(), auto: renderer.autoClear, sh: renderer.shadowMap.enabled };
   renderer.setRenderTarget(rt); renderer.setClearColor(bg, 0); /* the species' own mid colour: edge texels and mipmaps fade to it, not to black */ renderer.autoClear = false; renderer.clear(); renderer.shadowMap.enabled = false;
   variants.forEach((v, row) => {
-    const g = new THREE.Group(); g.add(new THREE.Mesh(v.bark, mats.bark)); if (v.leaves) g.add(new THREE.Mesh(v.leaves, mats.leafBake)); scene.add(g);
+    const g = new THREE.Group(); g.add(new THREE.Mesh(v.bark, mats.bark)); if (v.leaves) g.add(new THREE.Mesh(v.leaves, mats.leafBake)); if (v.dots) g.add(new THREE.Mesh(v.dots, mats.dots)); scene.add(g);
     const hw = v.halfW; cam.left = -hw; cam.right = hw; cam.top = 1.02; cam.bottom = -0.02; cam.updateProjectionMatrix();
     for (let k = 0; k < VIEWS; k++) { const a = k * Math.PI * 2 / VIEWS; cam.position.set(Math.sin(a) * 4, 0.5, Math.cos(a) * 4); cam.lookAt(0, 0.5, 0);
       // the sun keeps its world height and swings with the view so every frame is lit from the same side of the screen
@@ -147,9 +161,11 @@ export async function buildTrees(renderer, names) {
     if (leafBake) leafBake.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <normal_fragment_begin>', THREE.ShaderChunk.normal_fragment_begin.replace('gl_FrontFacing ? 1.0 : - 1.0', '1.0')); };
     for (const v of vs) { const b = new THREE.Box3().setFromBufferAttribute(v.bark.attributes.position); if (v.leaves) b.union(new THREE.Box3().setFromBufferAttribute(v.leaves.attributes.position));
       v.halfW = Math.max(-b.min.x, b.max.x, -b.min.z, b.max.z) * 1.04; }
-    const atlas = bakeAtlas(renderer, vs, { bark, leafBake }, Q.impostorRes, new THREE.Color(src.leaves && name !== 'drybush' ? sp.leaf : sp.bark).multiplyScalar(src.leaves && name !== 'drybush' ? 0.32 : 0.6));
+    const shade = !(sp.low && Q.label === 'Low'); // (ticket 56: the new low shrubs cast no shadow on Low, for the frame rate)
+    const dots = sp.dots ? new THREE.MeshStandardMaterial({ color: sp.dots[0], roughness: sp.loot === 'food' ? 0.45 : 0.8, metalness: 0 }) : null;
+    const atlas = bakeAtlas(renderer, vs, { bark, leafBake, dots }, Q.impostorRes, new THREE.Color(src.leaves && name !== 'drybush' ? sp.leaf : sp.bark).multiplyScalar(src.leaves && name !== 'drybush' ? 0.32 : 0.6));
     out[name] = { variants: vs.map((v, row) => ({ halfW: v.halfW,
-      parts: [{ geo: v.bark, mat: bark, cast: true, name: name + ' bark' }, ...(v.leaves ? [{ geo: v.leaves, mat: leaf, cast: true, receive: false, name: name + ' leaves' }] : [])],
+      parts: [{ geo: v.bark, mat: bark, cast: shade, name: name + ' bark' }, ...(v.leaves ? [{ geo: v.leaves, mat: leaf, cast: shade, receive: false, name: name + ' leaves' }] : []), ...(v.dots ? [{ geo: v.dots, mat: dots, cast: false, name: name + ' dots' }] : [])],
       far: [{ geo: quad, mat: impostorMaterial(atlas, row, vs.length, v.halfW, sp.dead || name === 'drybush' ? 1.35 : sp.bush ? 0.85 : 0.8, sp.dead ? [0.3, 0.27, 0.23, 0.75] : [0, 0, 0, 0]), cast: false, receive: false, name: name + ' impostor' }] })) };
     for (const v of vs) v.tree.leavesMesh.material.dispose?.();
   }

@@ -146,7 +146,7 @@ export function flowerParts(kind) {
   flowerMat.vertexColors = true; flowerMat.map.wrapS = THREE.ClampToEdgeWrapping; upFacing(flowerMat);
   return { parts: [{ geo: g, mat: flowerMat, cast: false, name: 'flowers' }] };
 }
-export function reedParts(seed) {
+export function reedParts(seed, every = 5) { // every: a cattail head on every n-th stem
   reedMat = reedMat || new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: 0.75 });
   const pos = [], col = [], nor = [], idx = []; const nb = 22;
   for (let b = 0; b < nb; b++) { const a = h3(seed, b, 1) * 6.283, r = Math.sqrt(h3(b, seed, 2)) * 0.45, x0 = Math.cos(a) * r, z0 = Math.sin(a) * r, hgt = 1.1 + h3(seed, b, 3) * 1.1,
@@ -155,7 +155,7 @@ export function reedParts(seed) {
       const c = new THREE.Color(0x3a5224).lerp(new THREE.Color(0xa8a060), t * 0.8);
       for (const side of [-1, 1]) { pos.push(cx + Math.cos(la + 1.57) * ww * side, y, cz + Math.sin(la + 1.57) * ww * side); col.push(c.r, c.g, c.b); nor.push(Math.cos(la) * 0.3, 0.9, Math.sin(la) * 0.3); } }
     for (let s = 0; s < S; s++) { const o = base + s * 2; idx.push(o, o + 1, o + 2, o + 1, o + 3, o + 2); }
-    if (b % 5 === 0) { const ty = hgt * 0.92, o = pos.length / 3, tx = x0 + Math.cos(la) * lean * 0.85 * hgt, tz = z0 + Math.sin(la) * lean * 0.85 * hgt; // cattail head
+    if (b % every === 0) { const ty = hgt * 0.92, o = pos.length / 3, tx = x0 + Math.cos(la) * lean * 0.85 * hgt, tz = z0 + Math.sin(la) * lean * 0.85 * hgt; // cattail head
       for (const [dx, dz] of [[0.03, 0], [0, 0.03], [-0.03, 0], [0, -0.03]]) for (const dy of [0, 0.2]) { pos.push(tx + dx, ty + dy, tz + dz); col.push(0.22, 0.13, 0.07); nor.push(dx * 30, 0.2, dz * 30); }
       for (let k = 0; k < 4; k++) { const a0 = o + k * 2, a1 = o + ((k + 1) % 4) * 2; idx.push(a0, a1, a0 + 1, a1, a1 + 1, a0 + 1); } } }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
@@ -308,3 +308,55 @@ export function glowcapParts(v) {
   const sg = fix(stems), sc = new Float32Array(sg.attributes.position.count * 3).fill(0.85); sg.setAttribute('color', new THREE.BufferAttribute(sc, 3));
   return { parts: [{ geo: sg, mat: shroomMats.stem, cast: false, name: 'glowcap stems' }, { geo: fix(caps), mat: shroomMats.glow[v % 3], cast: false, name: 'glowcaps' }] };
 }
+
+// ── Ticket 56 (slice 27; Jared, November 14, 2026: "some more variety in things like shrubs, grass clumps, etc."): ground cover
+// drawn in code on one vertex-coloured material: grass clumps (tall tussocks, dry patches, clover, heather in flower), puffballs
+// and bracket fungi on a rotten stump for the Fungal Hollow, small barrel cacti in flower for the Glass Desert ──
+let plantMat = null;
+const pm = () => plantMat ||= upFacing(new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: 0.85, metalness: 0 }));
+const paint = (g, c) => { g.deleteAttribute('uv'); g = g.toNonIndexed(); const C = new THREE.Color(c), a = new Float32Array(g.attributes.position.count * 3);
+  for (let i = 0; i < a.length; i += 3) a.set([C.r, C.g, C.b], i); g.setAttribute('color', new THREE.BufferAttribute(a, 3)); return g; };
+// blades (n, height range in metres, spread, width, base and tip colour, lean); head: [on every n-th blade, colour, size]
+const TUFT = {
+  tussock:  { n: 46, h: [0.55, 1.05], r: 0.32, w: 0.03, base: 0x34461a, tip: 0x8c9a4c, lean: 0.55 },
+  drypatch: { n: 30, h: [0.18, 0.4], r: 0.5, w: 0.028, base: 0x5a4a28, tip: 0xa88c50, lean: 0.8 },
+  heather:  { n: 60, h: [0.16, 0.32], r: 0.42, w: 0.02, base: 0x34361f, tip: 0x5a5a38, lean: 0.3, head: [2, 0x9a5aa0, 0.03] },
+  clover:   { n: 40, h: [0.06, 0.13], r: 0.45, w: 0.06, base: 0x2e4a1c, tip: 0x5a8a34, lean: 0.25, head: [6, 0xeeeedd, 0.028] },
+};
+export function tuftParts(kind, v) { const T = TUFT[kind], pos = [], col = [], nor = [], idx = [], S = 3;
+  for (let b = 0; b < T.n; b++) { const a = h3(v, b, 11) * 6.283, r = Math.sqrt(h3(b, v, 12)) * T.r, x0 = Math.cos(a) * r, z0 = Math.sin(a) * r, la = a + (h3(b, b, v + 14) - 0.5) * 1.2,
+      hgt = (T.h[0] + (T.h[1] - T.h[0]) * h3(v, b, 13)) * (1 - r / T.r * 0.4), lean = T.lean * (0.4 + r / T.r), w = T.w * (0.7 + h3(b, 15, v) * 0.6), base = pos.length / 3;
+    let tx = 0, ty = 0, tz = 0;
+    for (let s = 0; s <= S; s++) { const t = s / S, off = lean * t * t * hgt, cx = x0 + Math.cos(la) * off, cz = z0 + Math.sin(la) * off, y = t * hgt * (1 - 0.3 * lean * t), ww = w * (1 - t * 0.85);
+      const c = new THREE.Color(T.base).lerp(new THREE.Color(T.tip), t); tx = cx; ty = y; tz = cz;
+      for (const side of [-1, 1]) { pos.push(cx + Math.cos(la + 1.57) * ww * side, y, cz + Math.sin(la + 1.57) * ww * side); col.push(c.r, c.g, c.b); nor.push(Math.cos(la) * 0.3, 0.9, Math.sin(la) * 0.3); } }
+    for (let s = 0; s < S; s++) { const o = base + s * 2; idx.push(o, o + 1, o + 2, o + 1, o + 3, o + 2); }
+    if (T.head && b % T.head[0] === 0) { const o = pos.length / 3, c = new THREE.Color(T.head[1]).offsetHSL(0, 0, (h3(b, v, 16) - 0.5) * 0.12), z = T.head[2]; // (a little bead: six points)
+      for (const [dx, dy, dz] of [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]) { pos.push(tx + dx * z, ty + dy * z, tz + dz * z); col.push(c.r, c.g, c.b); nor.push(dx, dy * 0.5 + 0.5, dz); }
+      for (const [p, q] of [[0, 4], [4, 1], [1, 5], [5, 0]]) idx.push(o + p, o + q, o + 2, o + q, o + p, o + 3); } }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); g.setIndex(idx);
+  return { parts: [{ geo: g, mat: pm(), cast: false, name: kind }] }; }
+export function puffballParts(v) { const bits = [], n = 3 + Math.floor(h3(v, 1, 21) * 4);
+  for (let k = 0; k < n; k++) { const a = h3(k, v, 22) * 6.283, r = k ? 0.1 + h3(v, k, 23) * 0.3 : 0, s = (k ? 0.04 : 0.09) + h3(k, k, v + 24) * 0.07;
+    bits.push(paint(new THREE.SphereGeometry(s, 12, 8).scale(1, 0.8, 1).translate(Math.cos(a) * r, s * 0.6, Math.sin(a) * r), new THREE.Color(0xd2c4a4).lerp(new THREE.Color(0x8c7250), h3(k, v, 25)))); }
+  const g = mergeGeometries(bits), P = g.attributes.position, C = g.attributes.color; // (a darker, earthy foot and brown freckles: plain spheres in one colour read as smooth stones)
+  for (let i = 0; i < P.count; i++) { const f = (0.62 + Math.min(1, P.getY(i) / 0.12) * 0.38) * (h3(i, v, 26) < 0.18 ? 0.72 : 1); C.setXYZ(i, C.getX(i) * f, C.getY(i) * f * 0.97, C.getZ(i) * f * 0.92); }
+  return { parts: [{ geo: g, mat: pm(), cast: false, name: 'puffballs' }] }; }
+// a rotten stump about knee high, ringed by shelf fungi (half discs standing out from its bark)
+export function bracketParts(v) { const R = 0.2 + h3(v, 1, 31) * 0.1, H = 0.45 + h3(v, 2, 31) * 0.4, bits = [paint(new THREE.CylinderGeometry(R * 0.8, R, H, 9, 2).translate(0, H / 2, 0), 0x4e3e2c)];
+  bits.push(paint(new THREE.CircleGeometry(R * 0.8, 9).rotateX(-Math.PI / 2).translate(0, H + 0.002, 0), 0x8a6a48)); // (its broken top, paler wood)
+  const n = 4 + Math.floor(h3(v, 3, 31) * 4);
+  for (let k = 0; k < n; k++) { const a = h3(k, v, 32) * 6.283, y = 0.08 + h3(v, k, 33) * (H - 0.12), w = 0.1 + h3(k, k, 34 + v) * 0.12, rr = R * (1 - y / H * 0.2);
+    const c = new THREE.Color(0xc87a30).lerp(new THREE.Color(0xe8c890), h3(k, v, 35));
+    bits.push(paint(new THREE.CylinderGeometry(w, w * 0.9, 0.035, 10, 1, false, a - Math.PI / 2, Math.PI).translate(Math.sin(a) * rr, y, Math.cos(a) * rr), c)); }
+  return { parts: [{ geo: mergeGeometries(bits), mat: pm(), cast: false, name: 'bracket fungi' }] }; }
+// one to three ribbed barrel cacti, a crown of pink flowers on the biggest
+export function barrelCactusParts(v) { const bits = [], n = 1 + Math.floor(h3(v, 1, 41) * 3);
+  for (let k = 0; k < n; k++) { const a = k * 2.3 + v, d = k ? 0.35 + h3(k, v, 42) * 0.2 : 0, R = (k ? 0.14 : 0.24) + h3(v, k, 43) * 0.08, cx = Math.cos(a) * d, cz = Math.sin(a) * d;
+    const g = new THREE.SphereGeometry(R, 24, 10).scale(1, 1.25, 1), p = g.attributes.position, col = new Float32Array(p.count * 3);
+    for (let i = 0; i < p.count; i++) { const rib = Math.cos(Math.atan2(p.getZ(i), p.getX(i)) * 16), s = 1 + rib * 0.07; p.setX(i, p.getX(i) * s + cx); p.setZ(i, p.getZ(i) * s + cz); p.setY(i, p.getY(i) + R * 0.95);
+      const c = new THREE.Color(0x3a5030).lerp(new THREE.Color(0x7a9058), rib * 0.5 + 0.5); col.set([c.r, c.g, c.b], i * 3); }
+    g.deleteAttribute('uv'); g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.computeVertexNormals(); bits.push(g.toNonIndexed());
+    if (!k) for (let f = 0; f < 6; f++) { const fa = f / 6 * 6.283; bits.push(paint(new THREE.SphereGeometry(0.035, 6, 4).scale(1, 0.6, 1).translate(Math.cos(fa) * R * 0.35, R * 2.45, Math.sin(fa) * R * 0.35), 0xe86a9a)); } }
+  return { parts: [{ geo: mergeGeometries(bits), mat: pm(), cast: false, name: 'barrel cactus' }] }; }
