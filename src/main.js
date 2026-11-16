@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { CAMP, CHARS, BIOME, Q, QUALITY, QUALITY_KEY, setQuality, WATER_Y, HALF, SEED_TEXT, params, cleanSeed, JOINER } from './config.js';
 import { places } from './places.js';
 import { groundY, findBiome, seeds, river, lakes, biomeAt, forestAt, slopeAt, canyonAt, PASSES, SHAPE, LEAN, reachable } from './world.js';
-import { buildTerrain } from './terrain.js';
+import { buildTerrain, edgeLand } from './terrain.js';
 import { buildEnvironment, FOG_COLOR } from './environment.js';
 import { buildBog, localFog } from './bog.js';
 import { markExplored, fogReach, exploredStats } from './explore.js';
@@ -37,7 +37,7 @@ import { quiver, stuckArrows } from './arrows.js';
 import { warmCreatures, pickups, initGame, hurtPlayer, gotPickup, selected, liveShots, spreadAt, upgraded, aimGround, togglePause, startGame, setCam, update, placeCamera, hud, menuPad, isRunning, worldWaits, getCamMode, player, enemies, spawnEnemy, attack, teleport, creatureCollide, look, hitEnemy, press, secondary, turrets, dropLoot, spawnPack , gameOver } from './game.js';
 import * as spiders from './spiders.js';
 import { buildCaves, caveScene, caveDark, caveLights, caveHere, caveFade, caves, caveAt, caveCam } from './caves.js'; // #8
-import { caveDepth } from './cavemap.js';
+import { caveDepth, beyond } from './cavemap.js';
 
 const status = document.getElementById('loading');
 const renderer = new THREE.WebGLRenderer({ antialias: Q.antialias, powerPreference: 'high-performance' });
@@ -139,7 +139,7 @@ function frame(now) {
   wind.value = clock; if (!caveHere()) { updateScatter(camera.position); updateGrass(camera.position); } // (#8: none of it grows in a cave)
   tickBuildings(camera.position, player.x, player.z, player.y, isRunning() && getCamMode() === 'first' && !freeCam);
   if (isRunning()) tickTracks(scene, clock, everyone(), enemies, camera.position); // (slice 43: prints on the ground)
-  env.tick(dt); tickCamp(dt, clock); renderer.render(scene, camera); snapFrame(renderer.domElement); rendered++;
+  env.tick(dt); tickCamp(dt, clock); if (edgeLand) edgeLand.visible = !beyond(camera.position.z); renderer.render(scene, camera); snapFrame(renderer.domElement); rendered++;
 }
 requestAnimationFrame(frame);
 // slice 21 (#60; Jared's logs of 2026-11-14: his game was hidden 12 times while he answered Claude, and each time the world stood

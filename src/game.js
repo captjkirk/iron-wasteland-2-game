@@ -584,6 +584,10 @@ function hitScenery(c, at, dir) { if (c.cache) return smashCrate(c.cache, at, di
 // E: search a crate, salvage metal from a scrap pile or a wreck, or sleep in a bed (slice 11); holding E chops (harvest.js)
 // the floor a player reaches a crate from: their feet's, or in a jump the floor under them (the quality pass: an upstairs crate opened from the room below)
 const feetY = () => player.onGround ? player.y : Math.max(groundY(player.x, player.z), player.swimY, standAt(player.x, player.z, player.y));
+// a player not on the ladder gets on it walking into it from below (the way a climber faces), or backing to the hatch with S from above
+function ladderGrab(lad, wx, wz, iz) { if (player.y >= lad.y1 - 0.5) { const [tx, tz] = lad.at(lad.y1), dx = tx - lad.off[0], dz = tz - lad.off[1], L = Math.hypot(dx, dz) || 1;
+    return iz > 0.3 && player.y > lad.y0 + 0.02 && (wx * dx + wz * dz) / L > 0.3; }
+  return player.y < lad.y1 - 0.02 && -wx * lad.b.sa + wz * lad.b.ca > 0.3; }
 function interact(quiet) {
   // a supply crate first (a raider camp's stays shut while any of its crew lives, as in IW1)
   const cache = caches.find(c => !c.opened && Math.hypot(c.x - player.x, c.z - player.z) < 2.4 && Math.abs(feetY() - c.y) < 2.6); // (slice 23: at the crate's own height: a deck, a cap, a lake's bottom)
@@ -732,9 +736,11 @@ export function update(dt, t) {
   if (player.mantle) { const m = player.mantle; m.t = Math.min(1, m.t + dt / 0.45); const f = Math.max(0, m.t * 2 - 1); // up first, then over the edge
     player.y = m.y0 + (m.y1 - m.y0) * Math.min(1, m.t * 1.6); player.x = m.x0 + (m.x1 - m.x0) * f; player.z = m.z0 + (m.z1 - m.z0) * f; player.vy = 0;
     if (m.t >= 1) { player.mantle = null; player.onGround = true; } }
-  else if (lad && ((wasClimbing && !jumpKey && player.y > lad.y0 + 0.02 && player.y < lad.y1 - 0.02) || (iz < -0.3 && player.y < lad.y1 - 0.02) || (iz > 0.3 && player.y > lad.y0 + 0.02))) { player.climbing = true; // holds on with no input; jump lets go
+  // (getting on, Jared, November 15, 2026: "like I keep bouncing on it": W and S grabbed the ladder from any side, so turning away at its foot
+  // climbed again, and the landing turned some climbers back to the hatch; now only walking into it from below, or backing to the hatch from above)
+  else if (lad && (wasClimbing ? (!jumpKey && player.y > lad.y0 + 0.02 && player.y < lad.y1 - 0.02) || (iz < -0.3 && player.y < lad.y1 - 0.02) || (iz > 0.3 && player.y > lad.y0 + 0.02) : ladderGrab(lad, wx, wz, iz))) { player.climbing = true; // holds on with no input; jump lets go
     player.y = Math.min(lad.y1, Math.max(lad.y0, player.y - (Math.abs(iz) > 0.3 ? iz : 0) * 2.2 * dt)); [player.x, player.z] = lad.at(player.y); player.vy = 0; player.onGround = true; player.faceYaw = Math.atan2(lad.b.sa, -lad.b.ca); // facing the wall
-    if (iz < -0.3 && player.y >= lad.y1 - 0.02) { player.mantle = { t: 0, x0: player.x, y0: lad.y1, z0: player.z, x1: lad.off[0], y1: lad.y1, z1: lad.off[1] }; player.yaw += Math.PI; logEvent('ladder top'); } } // up through the hatch, turned to face the room
+    if (iz < -0.3 && player.y >= lad.y1 - 0.02) { player.mantle = { t: 0, x0: player.x, y0: lad.y1, z0: player.z, x1: lad.off[0], y1: lad.y1, z1: lad.off[1] }; player.yaw = lad.face ? Math.atan2(-lad.face[0], -lad.face[1]) : Math.atan2(player.x - lad.off[0], player.z - lad.off[1]); logEvent('ladder top'); } } // up through the hatch, turned to face where it lands (the room, or the radio mast's platform)
   else { gy = Math.max(groundY(player.x, player.z), player.swimY, standAt(player.x, player.z, player.y));
     if (jumpKey && !player.onGround && il > 0.1 && player.vy < 5 && !(standAt(player.x, player.z, Infinity) > player.y + 1.9)) { // not under a roof
       const ax = player.x + wx / il * 0.75, az = player.z + wz / il * 0.75, ledge = standAt(ax, az, Infinity);

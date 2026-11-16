@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { HALF, CELL, SEG, N, LAYERS, Q, WATER_Y } from './config.js';
 import { H, NORMAL, SPLAT_A, SPLAT_B, SPLAT_C } from './world.js';
+import { ridged, smooth } from './noise.js';
 
 const CHUNK = 32; // cells per chunk side (64 m)
 
@@ -107,6 +108,30 @@ function chunkGeometry(ci, cj, step, cx, cy, cz) {
   g.setIndex(idx); g.computeBoundingSphere(); return g;
 }
 
+// the land past the world's edge (Jared, November 15, 2026, at the north edge of kirkawesome: "something looked like off the end
+// of the map?": the ground stopped and the sky showed under the skyline): the border range goes on as a wall of mountains,
+// rising steeply from the edge (too steep to climb, as the player's own slope rule says) out past the fog. Only to look at:
+// nothing stands or walks there. 16 m squares; its first row starts 3 m under the edge, behind the terrain's own skirt.
+// Hidden inside a cave (they lie past the north edge, where these mountains would cut through them)
+export let edgeLand = null;
+function edgeGeometry() {
+  const S = 16, R = S / CELL, E = Math.ceil((Q.drawDist + 64) / S) * S, M = 2 * (HALF + E) / S + 1, pos = new Float32Array(M * M * 3);
+  const sa = new Uint8Array(M * M * 4), sb = new Uint8Array(M * M * 4), sc = new Uint8Array(M * M * 4), idx = [];
+  for (let b = 0; b < M; b++) for (let a = 0; a < M; a++) { const v = b * M + a, x = -HALF - E + a * S, z = -HALF - E + b * S;
+    const qx = Math.max(-HALF, Math.min(HALF, x)), qz = Math.max(-HALF, Math.min(HALF, z)), i = Math.round((qx + HALF) / CELL), j = Math.round((qz + HALF) / CELL), k = j * N + i, d = Math.hypot(x - qx, z - qz);
+    // its foot: the lowest edge ground within 16 m along the edge, 3 m down, so between two of these 16 m columns the line never
+    // stands above the real edge (a gap there showed sky under it, the review)
+    let low = H[k]; for (let t = -R; t <= R; t++) { if (Math.abs(qx) === HALF) low = Math.min(low, H[Math.max(0, Math.min(SEG, j + t)) * N + i]); if (Math.abs(qz) === HALF) low = Math.min(low, H[j * N + Math.max(0, Math.min(SEG, i + t))]); }
+    pos[v * 3] = x; pos[v * 3 + 2] = z; pos[v * 3 + 1] = low - 3 + 1.7 * Math.min(d, 70) + Math.max(0, d - 70) * 0.45 + ridged(x * 0.004 + 4, z * 0.004 - 2, 4) * 150 * smooth(16, 220, d);
+    // the edge's paint, turning to bare rock up the wall
+    const f = smooth(0, 60, d); for (const [to, from] of [[sa, SPLAT_A], [sb, SPLAT_B], [sc, SPLAT_C]]) for (let c = 0; c < 4; c++) to[v * 4 + c] = from === SPLAT_B && c === 3 ? from[k * 4 + c] : Math.round(from[k * 4 + c] * (1 - f));
+    sa[v * 4 + 3] = Math.min(255, sa[v * 4 + 3] + Math.round(f * 255)); }
+  for (let b = 0; b < M - 1; b++) for (let a = 0; a < M - 1; a++) { const v = b * M + a, x0 = -HALF - E + a * S, z0 = -HALF - E + b * S;
+    if (x0 >= -HALF && x0 + S <= HALF && z0 >= -HALF && z0 + S <= HALF) continue; idx.push(v, v + M, v + 1, v + M + 1, v + 1, v + M); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('splatA', new THREE.BufferAttribute(sa, 4, true)); g.setAttribute('splatB', new THREE.BufferAttribute(sb, 4, true)); g.setAttribute('splatC', new THREE.BufferAttribute(sc, 4, true));
+  g.setIndex(idx); g.computeVertexNormals(); g.computeBoundingSphere(); return g; }
+
 export async function buildTerrain(scene, renderer) {
   const aniso = Math.min(Q.anisotropy, renderer.capabilities.getMaxAnisotropy());
   const [alb, nor] = await Promise.all([layerArray('diff', Q.albedoRes, true, aniso), layerArray('nor', Q.albedoRes / 2, false, aniso)]);
@@ -120,5 +145,7 @@ export async function buildTerrain(scene, renderer) {
       const m = new THREE.Mesh(chunkGeometry(ci, cj, step, cx, cy, cz), mat); m.receiveShadow = true; m.castShadow = step < 4; lod.addLevel(m, dist); });
     group.add(lod);
   }
+  // ponytail: one mesh, never culled (about 20k triangles on Low, 80k on High, also in the mirror-water pass); split it per side if the frame time shows it
+  edgeLand = new THREE.Mesh(edgeGeometry(), mat); edgeLand.name = 'edge land'; edgeLand.receiveShadow = true; group.add(edgeLand);
   scene.add(group); return group;
 }

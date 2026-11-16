@@ -53,6 +53,11 @@ export const gAt = (b, lx, lz) => { const [x, z] = toW(b, lx, lz); return ground
 export function collideRun(b, lx0, lz0, lx1, lz1, r = 0.3, topAt = () => b.y + 3) { const L = Math.hypot(lx1 - lx0, lz1 - lz0); if (L < 0.05) { const [x, z] = toW(b, lx0, lz0); Object.assign(addCollider(x, z, r, b), { vr: 0, top: topAt(lx0, lz0), stand: r > 0.2 ? topAt(lx0, lz0) : null }); return; }
   const n = Math.max(1, Math.ceil((L - 2 * r) / 0.45));
   for (let k = 0; k <= n; k++) { const s = L <= 2 * r ? L / 2 : r + (L - 2 * r) * k / n, lx = lx0 + (lx1 - lx0) * s / L, lz = lz0 + (lz1 - lz0) * s / L, [x, z] = toW(b, lx, lz); Object.assign(addCollider(x, z, r, b), { vr: 0, top: topAt(lx, lz), stand: r > 0.2 ? topAt(lx, lz) : null }); } }
+// a box-shaped solid lying at yaw in the building's frame (a shipping container): rows of circles filling its width, its ends reaching its ends,
+// its footprint kept on b.solids for the walk test (Jared, November 15, 2026: one run of circles down its middle stopped 0.6 m short at each end)
+export function collideBox(b, lx, lz, len, wid, yaw, topAt) { const ax = Math.sin(yaw), az = Math.cos(yaw), n = Math.max(1, Math.round(wid / 1.2)), r = wid / (2 * n);
+  for (let i = 0; i < n; i++) { const s = r * (2 * i + 1) - wid / 2, cx = lx + az * s, cz = lz - ax * s; collideRun(b, cx - ax * len / 2, cz - az * len / 2, cx + ax * len / 2, cz + az * len / 2, r, topAt); }
+  const [x, z] = toW(b, lx, lz), [x1, z1] = toW(b, lx + ax, lz + az); (b.solids ||= []).push({ x, z, ux: x1 - x, uz: z1 - z, len, wid, top: topAt(lx, lz) }); }
 // a roof or floor a foot can stand on: at(lx, lz) gives its height in the building's frame, or null off its edge
 export function surface(b, at, o = {}) { surfaces.push({ ...o, x: b.x, z: b.z, r: Math.max(Math.abs(b.cx || 0) + b.w / 2, Math.abs(b.cz || 0) + b.d / 2) + 1.5, at: (x, z) => { const [lx, lz] = toL(b, x, z); return at(lx, lz); } }); }
 export const ladders = []; // the tower's: y0 to y1, at(y) is where the climber's feet are at that height, off the step-off point at the top
@@ -120,7 +125,7 @@ function table(b, P, x, z, ry) { const y = gAt(b, x, z); box(P, 'planks', 1.4, 0
 function stool(b, P, x, z) { const y = gAt(b, x, z); box(P, 'planks', 0.38, 0.05, 0.38, x, y + 0.45, z, R()); for (const [a, c] of [[0.13, 0.13], [-0.13, 0.13], [0.13, -0.13], [-0.13, -0.13]]) box(P, 'beam', 0.05, 0.44, 0.05, x + a, y + 0.22, z + c); }
 // a supply crate to search: a Poly Haven crate with a soft gold ring on the ground while it is still full
 export function cache(b, g, lx, lz, camp = null, o = {}) { const [x, z] = toW(b, lx, lz), m = new THREE.Mesh(CRATE.geo, CRATE.mat), y = o.y ?? groundY(x, z); // (o, slice 23: a place's crate: its loot k, rounds, a deck or cap it stands on)
-  m.scale.setScalar(1.25); m.position.set(x, y, z); m.rotation.y = -b.a + R() * 0.6; m.castShadow = m.receiveShadow = true; g.add(m);
+  m.scale.setScalar(1.25); m.position.set(x, y, z); m.rotation.y = -b.a + (o.ry ?? R() * 0.6); m.castShadow = m.receiveShadow = true; g.add(m);
   const ring = new THREE.Mesh(new THREE.RingGeometry(0.75, 0.95, 32).rotateX(-Math.PI / 2), mats().ring); ring.position.set(x, y + 0.05, z); g.add(ring);
   const col = Object.assign(addCollider(x, z, 0.6, b), { vr: 0, top: y + 0.8, stand: y + CRATE.h });
   // a few hits smash it (game.js): the crate is gone, its collider with it
@@ -181,7 +186,8 @@ function buildTower(b, P, g) { const { w, d, h } = b, slit = (at) => [win(at, 0.
   floor(b, P, 'floor', w - t, d - t); const fw = (w - t) / 2, z0 = -d * 0.005, z1 = d * 0.445, hz = d / 2 - t / 2 - 1.55; // the old upper floor, half gone, with a hatch the ladder comes up through
   for (const s of [-1, 1]) box(P, 'beam', fw - 0.55, 0.2, z1 - z0, s * (fw + 0.55) / 2, b.y + 5.6, (z0 + z1) / 2); box(P, 'beam', 1.1, 0.2, hz - z0, 0, b.y + 5.6, (z0 + hz) / 2);
   surface(b, (lx, lz) => Math.abs(lx) <= fw && lz >= z0 && lz <= z1 && !(Math.abs(lx) < 0.55 && lz > hz) ? b.y + 5.7 : null); // the ladder climbs to it (slice 9b)
-  ladders.push({ b, y0: b.y, y1: b.y + 5.7, off: toW(b, 0, hz - 0.5), at: (y) => toW(b, 0, d / 2 - t / 2 - 0.25 - (y - b.y) * 0.08 - 0.42) });
+  // (face: off the ladder turned along the floor, not at its broken edge 0.7 m ahead: Jared, November 15, 2026, the ladder that kept bouncing)
+  ladders.push({ b, y0: b.y, y1: b.y + 5.7, off: toW(b, 0, hz - 0.5), face: [b.ca, b.sa], at: (y) => toW(b, 0, d / 2 - t / 2 - 0.25 - (y - b.y) * 0.08 - 0.42) });
   for (const s of [-0.25, 0.25]) box(P, 'beam', 0.07, 5.8, 0.08, s, b.y + 2.85, d / 2 - t / 2 - 0.25, 0, -0.08); for (let y = 0.4; y < 5.6; y += 0.35) box(P, 'beam', 0.5, 0.05, 0.05, 0, b.y + y, d / 2 - t / 2 - 0.25 - y * 0.08);
   rubble(b, P, 'brick', w / 2 - 1.2, -d / 2 + 1.3, 1.1, 12); cache(b, g, -w / 2 + 1, -d / 2 + 1.1); }
 
@@ -1268,14 +1274,20 @@ function buildBarge(b, P, g) { const L = 28, W = 7.6, D = 2.7, cw = 2.25, hs = -
   const hh = D - 0.25 + 0.9, hy = (0.9 - D + 0.25) / 2;
   for (const s of [-1, 1]) { box(T, 'green', 0.08, hh, he - hs, s * cw, hy, (hs + he) / 2); box(T, 'green', 0.22, 0.05, he - hs + 0.2, s * (cw + 0.05), 0.92, (hs + he) / 2);
     for (let z = hs + 0.7; z < he; z += 1.4) box(T, 'green', 0.22, 0.55, 0.04, s * (cw + 0.12), 0.3, z); colAt(s * (cw + 0.05), hs - 0.05, s * (cw + 0.05), he + 0.05, 0.15, 1.0); }
-  for (const z of [hs, he]) { box(T, 'green', 2 * cw, hh, 0.08, 0, hy, z); box(T, 'green', 2 * cw + 0.2, 0.05, 0.22, 0, 0.92, z); colAt(-cw, z, cw, z, 0.15, 1.0); }
+  // (the aft one open above the deck at the ladder: Jared, November 15, 2026, "an empty area in the center that you can't actually get to")
+  const xl = -1.2; box(T, 'green', 2 * cw, hh, 0.08, 0, hy, hs); box(T, 'green', 2 * cw + 0.2, 0.05, 0.22, 0, 0.92, hs); colAt(-cw, hs, cw, hs, 0.15, 1.0);
+  box(T, 'green', 2 * cw, D - 0.25, 0.08, 0, (0.25 - D) / 2, he); for (const [a, e] of [[-cw - 0.1, xl - 0.55], [xl + 0.55, cw + 0.1]]) { box(T, 'green', e - a, 0.9, 0.08, (a + e) / 2, 0.45, he); box(T, 'green', e - a, 0.05, 0.22, (a + e) / 2, 0.92, he); }
+  colAt(-cw, he, xl - 0.65, he, 0.15, 1.0); colAt(xl + 0.65, he, cw, he, 0.15, 1.0); colAt(xl - 0.5, he + 0.35, xl + 0.5, he + 0.35, 0.25, -0.1); // (and shut below the deck there: nobody walks from the hold in under it)
   const cover = (zc, dx = 0, dy = 0, ry = 0) => { const C = bag(), hf = cw + 0.18;
     for (const s of [-1, 1]) { box(C, 'green', hf, 0.1, 4.15, s * hf / 2, 1.06, 0, 0, 0, -s * 0.05); for (const z of [-1.55, -0.52, 0.52, 1.55]) box(C, 'green', hf - 0.05, 0.07, 0.08, s * hf / 2, 1.14, z, 0, 0, -s * 0.05); box(C, 'green', 0.05, 0.24, 4.15, s * hf, 0.92, 0); }
     for (const z of [-2.05, 2.05]) box(C, 'green', 2 * hf, 0.24, 0.05, 0, 0.98, z); for (const q of C.green) T.green.push(q.rotateY(ry).translate(dx, dy, zc)); };
   const slot = (k) => hs + 2.125 + 4.25 * k; cover(slot(0)); cover(slot(0) + 0.3, 0.22, 0.3, 0.07); cover(slot(2)); cover(slot(3));
   { const C = container('contB', false), m = new THREE.Matrix4().makeTranslation(0.3, 1.12, slot(2) + 2.125).multiply(new THREE.Matrix4().makeRotationY(0.06)); for (const k in C) for (const q of C[k]) (k === 'iron' ? TP : T)[k].push(q.applyMatrix4(m)); }
   box(TP, 'iron', 2 * cw - 0.1, 0.05, he - hs - 0.1, 0, -D + 0.25, (hs + he) / 2);
-  for (const d of [-0.22, 0.22]) bar(TP, 'iron', -cw + 0.12, -D + 0.27, -4.6 + d, -cw + 0.12, 0.95, -4.6 + d, 0.045); for (let y = -D + 0.5; y < 0.9; y += 0.3) bar(TP, 'iron', -cw + 0.12, y, -4.82, -cw + 0.12, y, -4.38, 0.03);
+  for (const d of [-0.22, 0.22]) bar(TP, 'iron', xl + d, -D + 0.27, he - 0.12, xl + d, 0.95, he - 0.12, 0.045); for (let y = -D + 0.5; y < 0.1; y += 0.3) bar(TP, 'iron', xl - 0.22, y, he - 0.12, xl + 0.22, y, he - 0.12, 0.03);
+  { const lo = at(xl, -D + 0.28, he - 0.45), hi = at(xl, 0.02, he - 0.45), o = at(xl, 0, he + 0.75); // (down into the hold and up out of it, the climber facing aft as on every ladder)
+    ladders.push({ b, y0: lo.y, y1: hi.y, off: toW(b, o.x, o.z), at: (y) => { const f = Math.min(1, Math.max(0, (y - lo.y) / (hi.y - lo.y))); return toW(b, lo.x + (hi.x - lo.x) * f, lo.z + (hi.z - lo.z) * f); } }); }
+  { const c = at(-1.3, -D + 0.28, -1.2); cache(b, g, c.x, c.z, null, { k: 2, y: c.y, ry: 0.3, isNew: true }); } // a crate left in the hold: worth the climb
   for (const [x, z, ry] of [[0.9, -2.3, 0.2], [1.6, -2.5, -0.3], [1.2, -2.0, 1.4], [0.3, -2.4, 0.9], [1.4, -2.3, 0.1]]) T.sack.push(new THREE.SphereGeometry(0.4, 8, 6).scale(0.95, 0.36, 0.6).rotateY(ry).translate(x, -D + 0.45 + (ry > 1 ? 0.28 : 0), z));
   for (const [x, z, a] of [[-1.2, -3.0, 0.4], [-0.3, -4.9, 1.2]]) TP.paint.push(new THREE.CylinderGeometry(0.29, 0.29, 0.88, 14).rotateZ(Math.PI / 2).rotateY(a).translate(x, -D + 0.56, z));
   { const p = at(0, -D + 0.28, hs), q = at(0, 0, (hs + he) / 2); if (wl > p.y + 0.05) TL.water.push(new THREE.PlaneGeometry(2 * cw - 0.1, (he - hs) * Math.cos(tilt) - 0.1).rotateX(-Math.PI / 2).translate(q.x, wl, q.z)); } // (flooded to the water outside)
@@ -1321,9 +1333,10 @@ function buildBarge(b, P, g) { const L = 28, W = 7.6, D = 2.7, cw = 2.25, hs = -
     for (const d of [-0.29, 0.29]) { box(P, 'planks', 0.56, 0.06, len, p.x + d, c.y, c.z, 0, rx); box(TP, 'planks', 0.56, 0.06, 0.6, d, 0.03, -L / 2 + 0.35); }
     for (let s = 0.25; s < len - 0.15; s += 0.4) { const f = s / len; box(P, 'beam', 1.15, 0.04, 0.06, p.x, gq.y + (p.y - gq.y) * f + 0.05, gq.z + (p.z - gq.z) * f, 0, rx); } }
   surface(b, (lx, lz) => { if (Math.abs(lx - p.x) <= 0.6 && lz >= gq.z && lz <= p.z) return gq.y + 0.03 + (p.y - gq.y) * (lz - gq.z) / (p.z - gq.z);
-    const B = v.set(lx, deckY(lx, lz), lz).applyMatrix4(Mi); if (Math.abs(B.x) > W / 2 - 0.2 || B.z < -L / 2 + 0.06 || B.z > L / 2 - 0.2 || (Math.abs(B.x) < cw + 0.06 && B.z > hs - 0.06 && B.z < he + 0.06)) return null; return deckY(lx, lz); });
+    const B = v.set(lx, deckY(lx, lz), lz).applyMatrix4(Mi); if (Math.abs(B.x) > W / 2 - 0.2 || B.z < -L / 2 + 0.06 || B.z > L / 2 - 0.2) return null; return Math.abs(B.x) < cw + 0.06 && B.z > hs - 0.06 && B.z < he + 0.06 ? deckY(lx, lz) - (D - 0.28) / N.y : deckY(lx, lz); }); // (the hold: its tank top)
   // the hull is solid along its gunwale (a player climbs it from the shallows where it is low), open at the bow for the gangplank
   for (const s of [-1, 1]) { colAt(s * W / 2, -L / 2, s * W / 2, L / 2, 0.28, 0.32); colAt(s * W / 2, -L / 2, s * 0.85, -L / 2, 0.28, 0.32); } colAt(-W / 2, L / 2, W / 2, L / 2, 0.28, 0.32);
+  colAt(-0.9, -L / 2 + 0.8, 0.9, -L / 2 + 0.8, 0.25, -0.1); // (and under the bow's opening, just inside it, shut below the deck: Jared, November 15, 2026, "we also glitched under it")
   b.roofBox = { cz: at(0, 0, (Z0 + Z1) / 2).z, w: 2 * hw, d: Z1 - Z0 }; b.h = at(0, H, (Z0 + Z1) / 2).y - b.y;
   // overboard: a container sunk to its knees in the shallows, leaning, off the port bow, one door open and its cargo spilled; drums, crates and
   // sacks lost round the bow, planks afloat, the second crate in the shallows to starboard; her stern moored by a chain to a stake
@@ -1332,7 +1345,7 @@ function buildBarge(b, P, g) { const L = 28, W = 7.6, D = 2.7, cw = 2.25, hs = -
     const cy = Math.min(...[[-1, -1], [-1, 1], [1, -1], [1, 1], [0, 0]].map(([u, v]) => gAt(b, o.x + Math.cos(yaw) * u * 1.22 + Math.sin(yaw) * v * 3.03, o.z - Math.sin(yaw) * u * 1.22 + Math.cos(yaw) * v * 3.03))) - 0.6;
     const m = new THREE.Matrix4().makeTranslation(o.x, cy, o.z).multiply(new THREE.Matrix4().makeRotationY(yaw)).multiply(new THREE.Matrix4().makeRotationX(0.07)).multiply(new THREE.Matrix4().makeRotationZ(0.13));
     for (const k in C) for (const q of C[k]) (k === 'iron' ? P : TL)[k].push(q.applyMatrix4(m));
-    const ax = Math.sin(yaw), az = Math.cos(yaw); collideRun(b, o.x - ax * 2.4, o.z - az * 2.4, o.x + ax * 2.4, o.z + az * 2.4, 1.15, () => cy + 2.5);
+    const ax = Math.sin(yaw), az = Math.cos(yaw); collideBox(b, o.x, o.z, 6.06, 2.44, yaw, () => cy + 2.5);
     for (const [d, s, k] of [[3.6, 0.4, 'planks'], [4.4, -0.6, 'planks'], [5.3, 0.3, 'sack'], [4.0, 1.1, 'sack'], [6.0, -0.5, 'planks']]) { const x = o.x + ax * d + az * s, z = o.z + az * d - ax * s, y = gAt(b, x, z);
       if (k === 'sack') TL.sack.push(new THREE.SphereGeometry(0.4, 8, 6).scale(0.95, 0.36, 0.6).rotateY(R() * 3).translate(x, y + 0.1, z)); else { box(P, 'planks', 0.7, 0.55, 0.6, x, y + 0.12, z, R() * 3, (R() - 0.5) * 0.4, (R() - 0.5) * 0.4); collideRun(b, x, z, x, z, 0.4, () => y + 0.4); } } }
   for (const [bx, bz, lying, k] of [[-W / 2 - 1.2, -9.6, 1, 'paint'], [-W / 2 - 0.8, -12.6, 0, 'iron'], [W / 2 + 1.2, -12.4, 1, 'paint'], [-1.6, -L / 2 - 2.6, 1, 'iron'], [W / 2 + 1.0, -6.4, 0, 'paint'], [-W / 2 - 5.6, -0.6, 1, 'paint'], [2.2, -L / 2 - 1.8, 0, 'paint']]) {
