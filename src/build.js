@@ -170,15 +170,17 @@ const fixCost = (b) => PIECE[b.key].stone ? { metal: 1 } : { wood: 1 };
 const fixN = () => player.ch.id === 'architect' ? 2 : 1;
 export const fixGain = (b) => b.max / 4 * fixN();
 export const fixCostText = (b) => Object.entries(fixCost(b)).map(([k, v]) => `${v} ${k}`).join(', ');
+// quarters a joined game paid for and asked the host for, not yet answered; forgotten after 5 s (a lost message must not lock the wall)
+const pendOf = (b) => performance.now() - (b.pendT || 0) < 5000 ? b.pend || 0 : 0;
 export function repairTarget(x, z) { let best = null, bd = 2.3;
-  for (const b of built) { if (!b.max || !(b.hp + (b.pend || 0) * b.max / 4 < b.max) || !b.cols.length) continue; /* (pend: quarters a joined game asked for, not yet confirmed) */ const d = Math.min(...b.cols.map(c => Math.hypot(c.x - x, c.z - z) - c.r)) + 0.4; if (d < bd) { bd = d; best = b; } } return best; }
+  for (const b of built) { if (!b.max || !(b.hp + pendOf(b) * b.max / 4 < b.max) || !b.cols.length) continue; const d = Math.min(...b.cols.map(c => Math.hypot(c.x - x, c.z - z) - c.r)) + 0.4; if (d < bd) { bd = d; best = b; } } return best; }
 // (out of wood or metal: H is let go before it tries again, so the log says so once)
 let fixLock = false;
 export function tickRepair(dt, held) { if (!held) fixLock = false; const b = held && !fixLock && !mode && !player.dead && !(player.down > 0) ? repairTarget(player.x, player.z) : null;
   if (!b) { player.fix = null; return; } if (player.fix?.b !== b) player.fix = { b, t: 0, T: player.ch.id === 'architect' ? 0.5 : 1, next: 0 };
   b.barT = Math.max(b.barT || 0, 1); hammer(b, dt); if ((player.fix.t += dt) < player.fix.T - 1e-6) return; player.fix.t = 0;
   const cost = fixCost(b); if (short(cost).length) { log(`Mending the ${pieceName(b)} takes ${fixCostText(b)} each time: you have none.`); player.fix = null; fixLock = true; return; }
-  const n = fixN(); spend(cost); if (joining()) b.pend = (b.pend || 0) + n; else mend(b, n); logEvent('repair', { key: b.key, hp: Math.round(b.hp), ...cost });
+  const n = fixN(); spend(cost); if (joining()) { b.pend = pendOf(b) + n; b.pendT = performance.now(); } else mend(b, n); logEvent('repair', { key: b.key, hp: Math.round(b.hp), ...cost });
   // a joined game pays and asks the host, who owns the health; the host mends it and tells everyone (the mend shows on its `bst`)
   if (joining()) send('host', { t: 'fix', id: b.id, n }); else send('all', { t: 'bst', id: b.id, hp: Math.round(b.hp) }); if (b.hp >= b.max && !joining()) log(`The ${pieceName(b)} is whole again.`); }
 // the work shows: the player faces the piece and swings at it (a hammer's knock, chips of wood or stone off the face), as chopping does
@@ -189,7 +191,7 @@ function mend(b, n = 1) { const was = b.hp; b.hp = Math.min(b.max, b.hp + b.max 
 function showMend(b, up) { b.barT = 6; const s = stageOf(b); if (s !== b.stage) { b.stage = s; setMesh(b); } const at = new THREE.Vector3(b.x, b.y + 1.3, b.z);
   dustPuff(at, 8); sfx('thunk', at, 0.7); sfx('chop', at, 0.5); floatText(new THREE.Vector3(b.x, b.y + PIECE[b.key].top + 0.6, b.z), `+${Math.round(up)} HP`, '#9fe08a'); }
 // (a request for a piece already whole is still answered, so the asking game's count of quarters asked for clears)
-export function onFixReq(m) { if (net.role !== 'host') return; const b = built.find(q => q.id === m.id); if (!b) return; if (b.hp < b.max) mend(b, m.n === 2 ? 2 : 1); send('all', { t: 'bst', id: b.id, hp: Math.round(b.hp) }); }
+export function onFixReq(m, from) { if (net.role !== 'host') return; const b = built.find(q => q.id === m.id); if (!b) return; const n = m.n === 2 ? 2 : 1; if (b.hp < b.max) mend(b, n); send('all', { t: 'bst', id: b.id, hp: Math.round(b.hp), fixed: n, to: from }); }
 
 // co-op messages (coop.js routes them)
 export function onTearReq(m, from) { if (net.role !== 'host') return; const b = built.find(q => q.id === m.id); if (!b || !(b.by === from || !others.has(b.by) && b.by !== net.id)) return;
@@ -197,7 +199,7 @@ export function onTearReq(m, from) { if (net.role !== 'host') return; const b = 
 export function onGateReq(m) { if (net.role !== 'host') return; const b = built.find(q => q.id === m.id && q.key === 'gate'); if (b) toggleGate(b); }
 export function onGone(m) { const b = built.find(q => q.id === m.id); if (!b) return; removeBuilt(b, m.how); if (m.how === 'torn' && m.by === net.id) refund(b); }
 export function onBst(m) { const b = built.find(q => q.id === m.id); if (!b) return;
-  if (m.hp != null && m.hp < b.hp) { b.hp = m.hp; showHit(b, null); } else if (m.hp != null) { const up = m.hp - b.hp; b.hp = m.hp; if (up > 0) showMend(b, up); } if (m.hp != null) b.pend = 0;
+  if (m.hp != null && m.hp < b.hp) { b.hp = m.hp; showHit(b, null); } else if (m.hp != null) { const up = m.hp - b.hp; b.hp = m.hp; if (up > 0) showMend(b, up); } if (m.fixed && m.to === net.id) b.pend = Math.max(0, (b.pend || 0) - m.fixed); // (only the answer to this game's own mend: a bite reported meanwhile used to clear it, and the wall was paid for twice)
   if (m.open != null) setGate(b, !!m.open); if (m.spent && !b.spent) spring(b, null); }
 export const pieceState = (b) => b.key === 'gate' ? (b.open ? 1 : 0) : b.key === 'spike_trap' ? (b.spent ? 1 : 0) : 0;
 

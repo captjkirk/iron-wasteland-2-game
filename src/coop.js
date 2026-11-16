@@ -212,7 +212,7 @@ function onMsg(m, from) {
     // slice 12: tearing down, gates and the pieces' health and state (build.js)
     case 'tear': if (net.role === 'host') onTearReq(m, from); break;
     case 'gate': if (net.role === 'host') onGateReq(m); break;
-    case 'fix': onFixReq(m); break; // slice 32: a joined player mends a wall
+    case 'fix': onFixReq(m, from); break; // slice 32: a joined player mends a wall
     case 'gone': onGone(m); break;
     case 'bst': onBst(m); break;
   }

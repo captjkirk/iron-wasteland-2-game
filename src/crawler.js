@@ -85,20 +85,24 @@ export function buildCrawler({ M, eye, perMeshFlash }) {
     attack() { if (!this.dead) atk = 0.001; }, hit(side = 1) { if (!this.dead) { hit = 1; hitS = side; } }, die() { this.dead = true; die = 0.001; atk = 0; },
     update(dt, { speed = 0, ground = null, look: target = null } = {}) {
       t += dt; gait.ground = ground; gait.settle = this.dead ? 0 : 3;
-      gait.step(dt, this.dead ? 0 : speed, { stride: Math.min(0.5, 0.26 + speed * 0.06) * K, duty: 0.55 }); // short quick strides, as an isopod scuttles (a longer stride outreaches the legs)
-      const ph = gait.ph * Math.PI * 2, mv = gait.moving, sl = gait.slope(-0.4 * K, 0.6 * K), sc = gait.sc;
+      // the body is posed before the legs step, so the step judges each planted foot's reach from where the hips are this
+      // frame (November 16, 2026: posed after, the chained segments' sway carried a rear hip up to 9% past a planted foot's
+      // reach once the step had judged it in reach, and the leg dragged the foot 4 cm, near the walk test's 6 cm limit)
+      root.updateMatrixWorld(true); const sc = root.getWorldScale(_v).x, ph = gait.ph * Math.PI * 2, mv = gait.moving, sl = gait.slope(-0.4 * K, 0.6 * K);
       body.position.set(0, BY + ((sl.front + sl.back) / 2 - sl.mid) / sc * SCALE - Math.abs(Math.sin(ph * 2)) * 0.02 * mv, 0); body.rotation.set(Math.atan2(sl.front - sl.back, 1.0 * sc), 0, 0);
       segs.forEach((s, i) => { s.rotation.set(0, i ? Math.sin(ph - i * 0.7) * 0.07 * mv + Math.sin(t * 1.3 - i) * 0.02 : 0, 0); });
       head.rotation.set(0, 0, 0); mand.forEach((m, k) => m.rotation.set(0, (k ? -1 : 1) * (0.15 + 0.08 * Math.sin(t * 7)), 0));
       feel.forEach((f, k) => f.rotation.set(Math.sin(t * 2.3 + k) * 0.12, Math.sin(t * 1.7 + k * 2) * 0.15, 0));
-      for (const L of legs) L.over = null;
-      if (atk > 0) { atk += dt / 0.75; const a = atk, up = ease(a / 0.35) * (1 - ease((a - 0.45) / 0.3)), snap = ease((a - 0.35) / 0.12) * (1 - ease((a - 0.6) / 0.3));
-        body.rotation.x += up * 0.4 - snap * 0.15; body.position.y += up * 0.1; head.rotation.x = -snap * 0.25; mand.forEach((m, k) => m.rotation.y = (k ? -1 : 1) * (0.15 + up * 0.75 - snap * 0.5));
-        root.updateMatrixWorld(true); for (const L of legs.slice(0, 2)) { const q = _v.set(L.sx * 0.4, 0.35 * up, -0.75).multiplyScalar(K).applyMatrix4(root.matrixWorld); L.over = (L.ov ||= new THREE.Vector3()).copy(L.cur).lerp(q, up); }
-        if (atk >= 1) atk = 0; }
+      let up = 0, d = 0;
+      if (atk > 0) { atk += dt / 0.75; const a = atk, snap = ease((a - 0.35) / 0.12) * (1 - ease((a - 0.6) / 0.3)); up = ease(a / 0.35) * (1 - ease((a - 0.45) / 0.3));
+        body.rotation.x += up * 0.4 - snap * 0.15; body.position.y += up * 0.1; head.rotation.x = -snap * 0.25; mand.forEach((m, k) => m.rotation.y = (k ? -1 : 1) * (0.15 + up * 0.75 - snap * 0.5)); }
       if (hit > 0) { hit = Math.max(0, hit - dt / 0.3); const h = Math.sin(hit * Math.PI); body.rotation.z += hitS * 0.18 * h; body.position.y += 0.05 * h; body.rotation.y += hitS * 0.15 * h; }
-      if (die > 0) { die = Math.min(2, die + dt / 0.9); const d = ease(die / 0.7); body.rotation.z = d * Math.PI * 0.97; body.position.y = BY + Math.sin(Math.min(1, die / 0.7) * Math.PI) * 0.35 - d * 0.06;
-        root.updateMatrixWorld(true); const curl = ease((die - 0.4) / 0.8);
+      if (die > 0) { die = Math.min(2, die + dt / 0.9); d = ease(die / 0.7); body.rotation.z = d * Math.PI * 0.97; body.position.y = BY + Math.sin(Math.min(1, die / 0.7) * Math.PI) * 0.35 - d * 0.06; }
+      gait.step(dt, this.dead ? 0 : speed, { stride: Math.min(0.5, 0.26 + speed * 0.06) * K, duty: 0.55 }); // short quick strides, as an isopod scuttles (a longer stride outreaches the legs)
+      for (const L of legs) L.over = null;
+      if (atk > 0) { root.updateMatrixWorld(true); for (const L of legs.slice(0, 2)) { const q = _v.set(L.sx * 0.4, 0.35 * up, -0.75).multiplyScalar(K).applyMatrix4(root.matrixWorld); L.over = (L.ov ||= new THREE.Vector3()).copy(L.cur).lerp(q, up); }
+        if (atk >= 1) atk = 0; }
+      if (die > 0) { root.updateMatrixWorld(true); const curl = ease((die - 0.4) / 0.8);
         for (const L of legs) { const hp = L.upper.getWorldPosition(_h), q = _v.set(L.sx * 0.18, -0.22, (L.i - 3) * 0.08).multiplyScalar(K);
           q.applyQuaternion(body.getWorldQuaternion(_q)).multiplyScalar(sc).add(hp); L.over = (L.ov ||= new THREE.Vector3()).copy(L.cur).lerp(q, Math.max(d, curl)); } }
       else if (target) { root.updateMatrixWorld(true); lookAt(head, target, 0.8, look, { yaw: 0.5, pitch: 0.3, dt }); }
