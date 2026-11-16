@@ -52,7 +52,8 @@ const STEPS = [
   { id: 'chop', act: 'use', hold: true, say: 'Chop a tree' }, { id: 'swing', act: 'attack', say: 'Swing' }, { id: 'craft', act: 'craft', say: 'Open the craft menu' },
   { id: 'end', say: 'Next: build a craftbench, then a bed to wake in.' }];
 const WAIT = 20, FLASH = 0.5, END = 8; // seconds: a step moves on by itself after WAIT (nobody gets stuck), the tick shows FLASH, the last card stays END
-const KEY = 'iw2.tour', stored = () => { try { return localStorage.getItem(KEY); } catch { return null; } }, store = (v) => { try { v ? localStorage.setItem(KEY, v) : localStorage.removeItem(KEY); } catch { /* storage blocked */ } $('tourrep').checked = !v; }; // (Settings' box follows: the tour ending ticks it off)
+const BOXES = ['tourrep', 'tourgo']; // Settings' box and the start screen's (Jared, November 15, 2026: "Yes, start screen")
+const KEY = 'iw2.tour', stored = () => { try { return localStorage.getItem(KEY); } catch { return null; } }, store = (v) => { try { v ? localStorage.setItem(KEY, v) : localStorage.removeItem(KEY); } catch { /* storage blocked */ } for (const id of BOXES) $(id).checked = !v; }; // (both boxes follow: the tour ending ticks them off)
 let tour = null; // { i, t, flash, log, base, prev }
 // on walking out from the start menu (menu.js): the tour runs once per computer, until it ends or is skipped
 export function armTour() { tour = stored() === 'done' ? null : { i: 0, t: 0, flash: 0, log: [], base: null, prev: null }; draw(); }
@@ -88,5 +89,5 @@ function draw() { card ??= $('tour');
     + `<div class="td" aria-label="Step ${Math.min(tour.i + 1, 6)} of 6">${STEPS.slice(0, 6).map((q, n) => `<i${n < tour.i || (n === tour.i && tour.flash > 0) ? ' class="on"' : ''}></i>`).join('')}</div><small>${kc('pause')} to skip</small>`; // (skipping teaches pause too)
   card.classList.toggle('hidden', hide); card.classList.toggle('tick', !!tour && tour.flash > 0); if (html !== drawn) { drawn = html; card.innerHTML = html; } }
 export const tourOn = () => !!tour;
-// Settings: "Show the tour next game" (for a new player on the same computer)
-export function bindTour() { const c = $('tourrep'); c.checked = stored() !== 'done'; c.onchange = () => store(c.checked ? null : 'done'); $('tour-skip').onclick = skipTour; }
+// Settings' "Show the tour next game" and the start screen's "Show the tutorial": one saved value (for a new player on the same computer)
+export function bindTour() { for (const id of BOXES) { const c = $(id); c.checked = stored() !== 'done'; c.onchange = () => store(c.checked ? null : 'done'); } $('tour-skip').onclick = skipTour; }

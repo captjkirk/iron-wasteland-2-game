@@ -82,7 +82,7 @@
   #log:empty { display: none; }
   #hurt { position: fixed; inset: 0; pointer-events: none; box-shadow: inset 0 0 120px rgba(200,30,20,.0); transition: box-shadow .25s; }
   /* resource chips: a dot of each resource's colour (the word carries the meaning); a chip bumps when it goes up */
-  .res, .rc { --c: #ccc; } .res.wood, .rc.wood { --c: #d8a060; } .res.metal, .rc.metal { --c: #ffb040; } .res.fiber, .rc.fiber { --c: #e8e0a0; } .res.food, .rc.food { --c: #ff7a5a; } .res.cooked, .rc.cooked { --c: #c8603a; } .res.arrows, .rc.arrows { --c: #c8d8b0; }
+  .res, .rc { --c: #ccc; } .res.wood, .rc.wood { --c: #d8a060; } .res.metal, .rc.metal { --c: #ffb040; } .res.fiber, .rc.fiber { --c: #e8e0a0; } .res.food, .rc.food { --c: #ff7a5a; } .res.cooked, .rc.cooked { --c: #c8603a; } .res.finds, .rc.finds { --c: #b8a8ff; } .res.arrows, .rc.arrows { --c: #c8d8b0; }
   .chip > i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--c); margin-right: 7px; vertical-align: 1px; box-shadow: 0 0 6px var(--c); }
   .chip.bump { animation: bump var(--dur) var(--ease); } @keyframes bump { 50% { transform: scale(1.12); } }
   .chip.empty { color: #ffb4a0; border-style: dashed; border-color: #e07a5a; } /* (an empty quiver: dashed, not only redder) */
@@ -253,6 +253,8 @@
   .arrow { width: 48px; height: 48px; border-radius: 50%; font-size: 22px; }
   #go { margin-top: auto; min-height: 64px; width: min(420px, 100%); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
   #go b { font-size: 19px; letter-spacing: .1em; } #go span { font-size: 13px; font-weight: 600; }
+  .tourpick { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 6px 12px; border-radius: var(--radius); font-size: 15px; color: var(--ink); text-shadow: 0 1px 6px #000; cursor: pointer; }
+  .tourpick:hover { background: var(--glass-hi); } .tourpick input { width: 20px; height: 20px; margin: 0; cursor: pointer; } /* (a tick shows on or off, not colour alone) */
   /* Settings and How to play, over the title: the heading stays put and only the body scrolls */
   dialog { max-width: min(780px, 92vw); max-height: calc(100vh - 32px); box-sizing: border-box; color: var(--ink); padding: 0; font-family: inherit; background: rgba(18, 14, 10, .94); }
   dialog[open] { display: flex; flex-direction: column; }
@@ -272,7 +274,7 @@
 <div id="breath" class="hud hidden"><div></div></div>
 <div id="hud-tl" class="hud hidden"><div id="name">—</div><div id="hpbar"><div id="hpfill"></div><span id="hpnum"></span></div><div id="team" class="hidden" style="margin-top:6px;color:var(--dim)"></div></div>
 <div id="hud-tr" class="hud hidden"><div id="biome" class="chip">—</div><div id="cam" class="chip">—</div><div id="fps">—</div></div>
-<div id="hud-b" class="hud hidden"><span class="chip res wood" id="inv-wood"><i></i><span>Wood 0</span></span><span class="chip res metal" id="inv-metal"><i></i><span>Metal 0</span></span><span class="chip res fiber" id="inv-fiber"><i></i><span>Fiber 0</span></span><span class="chip res food" id="inv-food"><i></i><span>Food 0</span></span><span class="chip res cooked" id="inv-cooked"><i></i><span>Cooked 0</span></span><span class="chip res arrows hidden" id="inv-arrows"><i></i><span>Arrows 0</span></span><span class="chip" id="inv-kills"><span>Kills 0</span></span><span class="chip" id="sec">—</span></div>
+<div id="hud-b" class="hud hidden"><span class="chip res wood" id="inv-wood"><i></i><span>Wood 0</span></span><span class="chip res metal" id="inv-metal"><i></i><span>Metal 0</span></span><span class="chip res fiber" id="inv-fiber"><i></i><span>Fiber 0</span></span><span class="chip res food" id="inv-food"><i></i><span>Food 0</span></span><span class="chip res cooked" id="inv-cooked"><i></i><span>Cooked 0</span></span><span class="chip res finds hidden" id="inv-finds"><i></i><span>Cave finds 0</span></span><span class="chip res arrows hidden" id="inv-arrows"><i></i><span>Arrows 0</span></span><span class="chip" id="inv-kills"><span>Kills 0</span></span><span class="chip" id="sec">—</span></div>
 <div id="tour" class="hud hidden" role="status"></div>
 <div id="prompt" class="hud hidden"><span></span><i><b></b></i></div>
 <div id="build" class="hud hidden"></div>
@@ -326,6 +328,7 @@
       <span id="chosen-desc"></span>
     </div>
     <button class="go" id="go" type="button" disabled>WALK OUT</button>
+    <label class="tourpick"><input type="checkbox" id="tourgo"> Show the tutorial</label>
   </section>
   <dialog id="dlg-settings" aria-label="Settings"><h2>SETTINGS</h2><div id="menu-settings" class="dbody"><div id="settings">
     <div class="srow"><span>Quality</span><span id="quality"></span><small id="qnote">Low for older laptops; a change reloads.</small></div>

@@ -7,7 +7,7 @@
 //   bench   true: you must stand within BENCH_R of a craftbench
 //   charId  only that character sees the row
 //   later   listed, not craftable yet; the text says why
-export const RES = ['wood', 'metal', 'fiber', 'food', 'cooked']; // (cooked: food roasted at a campfire, slice 12)
+export const RES = ['wood', 'metal', 'fiber', 'food', 'cooked', 'finds']; // (finds: cave finds, any kind: caves.js's crates) // (cooked: food roasted at a campfire, slice 12)
 export const BENCH_R = 4;
 export const RECIPES = [
   { label: 'Wall',                key: 'wall',               cost: { wood: 3 },                     bench: false, type: 'build',   tip: 'A timber palisade on the grid (200 HP). Walls join at the corners: close a ring and enemies must break in.' },
@@ -23,10 +23,10 @@ export const RECIPES = [
   { label: 'Med Kit (+40 HP)',    key: 'med_kit',            cost: { fiber: 3, food: 2 },           bench: true,  type: 'instant', tip: 'Mends 40 health now.' },
   { label: 'Ammo Pack (+8)',      key: 'ammo_pack',          cost: { metal: 2 },                    bench: false, type: 'instant', charId: 'gunslinger', tip: 'Eight rounds for the revolver\'s reserve (40 at most in all).' },
   { label: 'Arrows (+10)',        key: 'arrows',             cost: { wood: 1, fiber: 2 },           bench: false, type: 'instant', charId: 'ranger', tip: 'Ten arrows for the quiver. Spent arrows can be picked up where they stuck.' },
-  { label: 'Knight Upgrade',      key: 'knight_upgrade',     cost: { metal: 3, fiber: 2 },          bench: true,  type: 'upgrade', charId: 'knight',     tip: 'Each swing throws the shield (it flies back), and blows from the front lose 60% on it.' },
-  { label: 'Architect Upgrade',   key: 'architect_upgrade',  cost: { metal: 3, wood: 2 },           bench: true,  type: 'upgrade', charId: 'architect',  tip: 'A nail gun: each wrench swing also fires a nail.' },
+  { label: 'Knight Upgrade',      key: 'knight_upgrade',     cost: { metal: 2, fiber: 2, finds: 2 },          bench: true,  type: 'upgrade', charId: 'knight',     tip: 'Each swing throws the shield (it flies back), and blows from the front lose 60% on it.' },
+  { label: 'Architect Upgrade',   key: 'architect_upgrade',  cost: { metal: 2, wood: 2, finds: 2 },           bench: true,  type: 'upgrade', charId: 'architect',  tip: 'A nail gun: each wrench swing also fires a nail.' },
   { label: 'Gunslinger Upgrade',  key: 'gunslinger_upgrade', cost: { metal: 2, fiber: 1 },          bench: true,  type: 'upgrade', charId: 'gunslinger', tip: 'A bigger clip: twelve rounds, not eight.' },
   { label: 'Flower Bouquet (+8)', key: 'flower_bouquet',     cost: { wood: 1, fiber: 1 },           bench: false, type: 'instant', charId: 'charmer',    tip: 'Eight flowers for the charm flower (24 at most).' },
   { label: 'Lauren Upgrade',      key: 'charmer_upgrade',    cost: { metal: 2, fiber: 2 },          bench: true,  type: 'upgrade', charId: 'charmer',    tip: 'A charm aura: animals that close in on her are charmed, and a charm flower charms all round where it lands.' },
-  { label: 'Abigail Upgrade',     key: 'ranger_upgrade',     cost: { metal: 3, wood: 2 },           bench: true,  type: 'upgrade', charId: 'ranger',     tip: 'Fire arrows: an arrow that strikes an enemy bursts, hurting everything near it.' },
+  { label: 'Abigail Upgrade',     key: 'ranger_upgrade',     cost: { metal: 2, wood: 2, finds: 2 },           bench: true,  type: 'upgrade', charId: 'ranger',     tip: 'Fire arrows: an arrow that strikes an enemy bursts, hurting everything near it.' },
 ];

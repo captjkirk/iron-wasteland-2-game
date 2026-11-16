@@ -98,6 +98,6 @@ export function menuPad() { const p = readPad(); if (!p) return; const dlg = ope
   // How to play or Settings open: B closes it, A presses the focused button (Close among them), the d-pad moves
   if (dlg) { if (p.use) dlg.close(); else padIn(dlg, p); return; }
   if (p.use) return back();
-  if (p.jump || p.pause) { const f = document.activeElement; if (f?.tagName === 'BUTTON' && $('step-' + step).contains(f) && !f.closest('.card')) { f.click(); if (f.closest('.night:not(.own)')) next(); } else next(); return; }
+  if (p.jump || p.pause) { const f = document.activeElement; if ((f?.tagName === 'BUTTON' || f?.type === 'checkbox') && $('step-' + step).contains(f) && !f.closest('.card')) { f.click(); if (f.closest('.night:not(.own)')) next(); } else next(); return; } // (A ticks the start screen's tutorial switch)
   if (step === 'chars') { if (p.left) selectCard((sel + CHARS.length - 1) % CHARS.length); if (p.right) selectCard((sel + 1) % CHARS.length); }
-  else if (p.up || p.down) moveFocus(p.down ? 1 : -1); }
+  if (p.up || p.down) moveFocus(p.down ? 1 : -1); } // (on the character step too: down reaches WALK OUT and the tutorial switch)

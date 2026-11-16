@@ -186,14 +186,16 @@ function inside(c) { const L = c.L, K = LOOK[c.kind], S = 0.7, [x0, x1, z0, z1] 
   const pool = new THREE.Mesh(new THREE.CircleGeometry(3.2, 24).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: glowTex(false), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
   pool.position.set(ox + 2.6, oy + 0.06, L.mouth.z); c.g.add(pool); c.pool = pool;
   // the plinth in the back hall, where the relic will rest (slice 2), and the crates (the side room's two, the hall's one)
+  if (L.hall) { // (only a relic cave has its hall and plinth: Jared, November 15, 2026, "only the cave with the boss/artifact should have end room/pedistal")
   const hy = floorOf(L, L.hall.x, L.hall.z), pl = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.35, 1.1, 12), pbr('terrain/rock', { color: 0x8a8680, rough: 0.9 }));
-  pl.position.set(L.hall.x, hy + 0.55, L.hall.z); c.g.add(pl); pl.material.color.setHex(0xc8c2b6); pl.material.emissive.setHex(0x1a1810);
+  pl.position.set(L.hall.x, hy + 0.55, L.hall.z); c.g.add(pl); c.plinth = pl; pl.material.color.setHex(0xc8c2b6); pl.material.emissive.setHex(0x1a1810);
   const ring = new THREE.Mesh(new THREE.TorusGeometry(0.88, 0.05, 6, 40).rotateX(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0xffe2a0, emissive: 0xffc860, emissiveIntensity: 1.2 })); ring.position.set(L.hall.x, hy + 1.12, L.hall.z); c.g.add(ring); /* (where the relic will rest) */
   Object.assign(addCollider(L.hall.x, L.hall.z, 1.35, c), { stand: hy + 1.1, top: hy + 1.1 });
   for (const s of [-1, 1]) { const x = L.hall.x - 2.5, z = L.hall.z + s * 3, y = floorOf(L, x, z), lamp = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.3, 0.2), new THREE.MeshStandardMaterial({ color: 0xffd090, emissive: 0xffa040, emissiveIntensity: 2 }));
     const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 1.6, 6), new THREE.MeshStandardMaterial({ color: 0x4a3a2a, roughness: 1 })); post.position.set(x, y + 0.8, z); lamp.position.set(x, y + 1.75, z); c.g.add(post, lamp);
     lamps.push({ c, x, y: y + 1.7, z, key: 'torch', i: 8, dist: 14 }); } // (an old lantern each side of the plinth: the hall is where the family will gather)
-  c.crates = L.crates.map((p, j) => cache(FRAME, c.g, p.x, p.z, null, { y: floorOf(L, p.x, p.z), k: j === L.crates.length - 1 ? 4 : 3, ammo: 6 }) /* (the hall's, the last, the richest) */);
+  }
+  c.crates = L.crates.map((p, j) => cache(FRAME, c.g, p.x, p.z, null, { y: floorOf(L, p.x, p.z), k: j === L.crates.length - 1 ? 4 : 3, cave: c.kind, deep: j / Math.max(1, L.crates.length - 1) }) /* (the last, the deepest, the richest: crateOpen) */);
   if (CLASSIC) for (const k of c.crates) k.isNew = true; // (a new thing's crates on the classic world, as buildings.js's fresh(): housecheck's old crates stay main's)
   grow(c); }
 
@@ -207,14 +209,14 @@ function grow(c) { const L = c.L, R = mulberry32(SEED ^ (c.L.i * 4421 + 17)), [x
   const rockM = pbr(LOOK[c.kind].wall[0], { color: LOOK[c.kind].wall[1], rough: 0.9 }); rockM.emissive.setHex(LOOK[c.kind].glow);
   if (c.kind !== 'ice') inst(new THREE.ConeGeometry(0.22, 1, 7).rotateX(Math.PI), rockM, spots(110, 0.8, 9), (o, p) => { const l = 0.4 + R() * 1.8; o.position.set(p.x, vaultY(L, p.x, p.z) - l / 2 + 0.2, p.z); o.scale.set(0.7 + R() * 0.8, l, 0.7 + R() * 0.8); });
   inst(new THREE.ConeGeometry(0.3, 1, 7), rockM, spots(70, 0.15, 1.3), (o, p) => { const l = 0.3 + R() * 1.6; o.position.set(p.x, p.y + l / 2 - 0.05, p.z); o.scale.set(0.8 + R() * 0.9, l, 0.8 + R() * 0.9); });
-  const keep = [L.hall, ...L.crates, ...L.traps, { x: L.mouth.in[0], z: L.mouth.in[1] }]; let pillars = 0;
+  const keep = [L.end, ...L.crates, ...L.traps, { x: L.mouth.in[0], z: L.mouth.in[1] }]; let pillars = 0;
   for (const part of L.parts.filter(q => Math.max(q.ra, q.rb) >= 7)) for (let n = 0; n < 6 && pillars < 5; n++) { const t = R(), ax = part.a[0] + (part.b[0] - part.a[0]) * t, az = part.a[1] + (part.b[1] - part.a[1]) * t, ang = R() * 6.28, r = 3 + R() * 4, x = ax + Math.cos(ang) * r, z = az + Math.sin(ang) * r, q = caveDepth(L, x, z);
     if (q.d < 2.5 || q.d > 4.5 || q.ceil < 5 || keep.some(p => Math.hypot(p.x - x, p.z - z) < 4)) continue;
     const f = floorOf(L, x, z), h = vaultY(L, x, z) - f + 0.4, b = 0.7 + R() * 0.4, prof = []; for (let s = 0; s <= 10; s++) { const y = s / 10; prof.push(new THREE.Vector2(b * (1 - 0.35 * Math.sin(Math.PI * y) + (R() - 0.5) * 0.12) * (y < 0.08 || y > 0.92 ? 1.3 : 1), y * h)); }
     const pm = new THREE.Mesh(new THREE.LatheGeometry(prof, 12), rockM); pm.position.set(x, f - 0.1, z); pm.castShadow = pm.receiveShadow = true; c.g.add(pm); addCollider(x, z, b + 0.15, c); (c.pillars ||= []).push({ x, z, r: b + 0.15 }); pillars++; }
   // D6 ("will need to account for SOME light in caves"): a shaft of daylight through a crack in the vault: one on the hall's plinth,
   // one in a side room or chamber (they dim to moonlight at night)
-  c.shafts = []; const lit = [L.hall, ...L.parts.filter(q => q.tag === 'side' || q.tag === 'chamber').slice(0, 1).map(q => ({ x: q.b[0], z: q.b[1] }))];
+  c.shafts = []; const lit = [L.end, ...L.parts.filter(q => q.tag === 'side' || q.tag === 'chamber').slice(0, 1).map(q => ({ x: q.b[0], z: q.b[1] }))];
   for (const p of lit) { const f = floorOf(L, p.x, p.z), h = vaultY(L, p.x, p.z) - f; if (h < 3) continue;
     const beam = new THREE.Group(), bm = new THREE.MeshBasicMaterial({ map: shaftTex(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
     for (let k = 0; k < 3; k++) { const card = new THREE.Mesh(new THREE.PlaneGeometry(3.2, h).translate(0, h / 2, 0), bm); card.rotation.y = k * Math.PI / 3; beam.add(card); } beam.material = bm; // (three soft cards crossed: no hard edge from any side)
@@ -273,7 +275,7 @@ function grow(c) { const L = c.L, R = mulberry32(SEED ^ (c.L.i * 4421 + 17)), [x
     for (const p of L.parts.filter(q => q.tag === 'tunnel')) { const dx = p.b[0] - p.a[0], dz = p.b[1] - p.a[1], len = Math.hypot(dx, dz); for (let s = 0; s < len; s += 0.8) ties.push({ x: p.a[0] + dx * s / len, z: p.a[1] + dz * s / len, r: Math.atan2(-dz, dx) }); }
     inst(new THREE.BoxGeometry(0.22, 0.08, 1.4), wood, ties, (o, t) => { o.position.set(t.x, floorOf(L, t.x, t.z) + 0.04, t.z); o.rotation.set(0, t.r, 0); });
     inst(new THREE.BoxGeometry(0.85, 0.07, 0.07), rail, ties.flatMap(t => [-0.5, 0.5].map(k => ({ ...t, k }))), (o, t) => { o.position.set(t.x - Math.sin(t.r) * t.k, floorOf(L, t.x, t.z) + 0.12, t.z - Math.cos(t.r) * t.k); o.rotation.set(0, t.r, 0); });
-    const cx = L.hall.x - 5, cz = L.hall.z - 3, ct = cart(); ct.position.set(cx, floorOf(L, cx, cz), cz); ct.rotation.set(0.04, 0.4, 0.12); c.g.add(ct); addCollider(cx, cz, 1.0, c);
+    const cx = L.end.x - (L.hall ? 5 : 2.5), cz = L.end.z - (L.hall ? 3 : 1.5), ct = cart(); /* (in a relic cave's hall, or the other caves' end room) */ ct.position.set(cx, floorOf(L, cx, cz), cz); ct.rotation.set(0.04, 0.4, 0.12); c.g.add(ct); addCollider(cx, cz, 1.0, c);
     for (const t of c.traps) { const w = wallBy(L, t); Object.assign(t, w); const h = new THREE.Mesh(new THREE.CircleGeometry(0.75, 14), new THREE.MeshBasicMaterial({ color: 0x000000 })); h.position.set(w.x, t.y + 0.55, w.z); h.lookAt(t.x, t.y + 0.55, t.z); c.g.add(h); } } }
 // the nearest point of the wall to a surprise's spot, a hand inside it (where a crawler breaks out, the rats pour from, the eyes open)
 function wallBy(L, t) { let best = null; for (let a = 0; a < 6.28; a += 0.2) for (let r = 0.5; r < 14; r += 0.25) { const x = t.x + Math.cos(a) * r, z = t.z + Math.sin(a) * r; if (caveDepth(L, x, z).d < 0.35) { if (!best || r < best.r) best = { r, x, z }; break; } }
@@ -285,7 +287,7 @@ function wallBy(L, t) { let best = null; for (let a = 0; a < 6.28; a += 0.2) for
 const EYE = { ice: 0x9fe8ff, fungal: 0xc8ff70, mine: 0xffc040, crystal: 0xffe9a0, roots: 0xff6040 };
 let haloT = null, eyeG = null; const halo = (color) => new THREE.PointsMaterial({ color, size: 0.42, map: haloT ||= glowTex(false), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }); // (one glow texture, one eye ball, shared by all)
 function watchers(c) { const L = c.L, R = mulberry32(SEED ^ (L.i * 6151 + 3)), eye = new THREE.MeshBasicMaterial({ color: EYE[c.kind], fog: false }), black = new THREE.MeshBasicMaterial({ color: 0x020202, side: THREE.DoubleSide });
-  c.watch = []; const glow = halo(EYE[c.kind]); eyeG ||= new THREE.SphereGeometry(0.06, 8, 6); const legs = L.parts.filter(p => p.tag !== 'mouth' && p.tag !== 'hall');
+  c.watch = []; const glow = halo(EYE[c.kind]); eyeG ||= new THREE.SphereGeometry(0.06, 8, 6); const legs = L.parts.filter(p => p.tag !== 'mouth' && p.tag !== 'hall' && Math.hypot(p.b[0] - p.a[0], p.b[1] - p.a[1]) > 3); // (a passage, not a round room)
   for (let k = 0; k < 40 && c.watch.length < 6; k++) { const p = legs[Math.floor(R() * legs.length)], f = 0.2 + R() * 0.6, t = { x: p.a[0] + (p.b[0] - p.a[0]) * f, z: p.a[1] + (p.b[1] - p.a[1]) * f };
     if (t.x < L.x0 + 22 || c.watch.some(q => Math.hypot(q.x - t.x, q.z - t.z) < 14)) continue; // (none at the mouth, none two together)
     const wp = wallBy(L, t), dx = t.x - wp.x, dz = t.z - wp.z, l = Math.hypot(dx, dz) || 1, ux = dx / l, uz = dz / l, y = floorOf(L, wp.x, wp.z) + Math.min(0.45 + R() * 1.1, caveDepth(L, wp.x, wp.z).ceil - 0.3); // (under the vault where a low tunnel's wall curves in)

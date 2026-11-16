@@ -16,6 +16,7 @@ import { turretModel, turretMats } from './turret.js';
 import { initFireflies, tickFireflies } from './fireflies.js';
 import { resetExplored } from './explore.js';
 import { startPlaces, tickPlaces, placePrompt, radioNear, places } from './places.js'; // slice 23
+import { FINDS } from './cavemap.js'; // (a cave find's name and colour)
 import { startCaves, tickCaves } from './caves.js'; // #8
 import { beyond } from './cavemap.js';
 import { initEffects, tickEffects, hitBurst, splash, dustPuff, floatText, healthBars, hitMarker, buildLoot, nameTags } from './effects.js';
@@ -578,11 +579,19 @@ const guarded = (cache) => cache.camp && enemies.some(e => e.home === cache.camp
 export function crateOpen(cache, who = null, got = null) {
   if (!got) { if (joining()) { send('host', { t: 'crate', i: caches.indexOf(cache) }); return true; }
     if (guarded(cache)) { const s = cache.camp.name ? `Its guards are still about: clear them off ${cache.camp.name}, then search it.` : 'Raiders still guard this crate.'; if (who) send(who, { t: 'log', s }); else { log(s); logEvent('crate-locked'); } return false; }
-    if (cache.opened) return true; const k = cache.k ?? (cache.camp ? 2 : 1); const rounds = cache.ammo && nearestGun(cache.x, cache.z) ? cache.ammo : 0; for (let n = 0; n < rounds / 3; n++) dropLoot(cache.x, cache.z, 'ammo', 0.8); /* (slice 23: a place's crate holds more, rounds too if a Gunslinger is about, else metal) */ got = { metal: (2 + Math.floor(rng() * 3)) * k + (cache.ammo && !rounds ? Math.ceil(cache.ammo / 3) : 0), food: (1 + Math.floor(rng() * 2)) * k, fiber: (2 + Math.floor(rng() * 2)) * k };
+    if (cache.opened) return true; if (cache.cave) { caveLoot(cache, who); return true; } const k = cache.k ?? (cache.camp ? 2 : 1); const rounds = cache.ammo && nearestGun(cache.x, cache.z) ? cache.ammo : 0; for (let n = 0; n < rounds / 3; n++) dropLoot(cache.x, cache.z, 'ammo', 0.8); /* (slice 23: a place's crate holds more, rounds too if a Gunslinger is about, else metal) */ got = { metal: (2 + Math.floor(rng() * 3)) * k + (cache.ammo && !rounds ? Math.ceil(cache.ammo / 3) : 0), food: (1 + Math.floor(rng() * 2)) * k, fiber: (2 + Math.floor(rng() * 2)) * k };
     cache.open(); send('all', { t: 'crated', i: caches.indexOf(cache) }); if (who) { send(who, { t: 'gotc', got }); return true; } }
   for (const q in got) player.inv[q] += got[q];
   log(`Searched the crate: ${got.metal} metal, ${got.food} food, ${got.fiber} fiber.`); logEvent('crate', { ...got, camp: !!cache?.camp }); sfx('salvage');
   floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `+${got.metal} metal  +${got.fiber} fiber`, '#ffc070'); return true; }
+// a cave crate (Jared, November 15, 2026, 10:05 PM: "all the loot in the caves seems to be ammo... not cool!"): it spills its cave's own
+// find (1 near the mouth, up to 4 in the deepest crate), food to mend with, wood and fiber for a torch, a little metal; a mine's crate a few
+// rounds too, if a Gunslinger is about. All of it falls out to be picked up, so you see what you found; on the host's game, as every pickup
+function caveLoot(cache, who) { const deep = cache.deep ?? 0, n = { ['find_' + cache.cave]: 1 + Math.round(deep * 2) + (deep >= 1 ? 1 : 0), food: 1 + (deep > 0.5 ? 1 : 0), wood: 1, fiber: 1, metal: 1 + Math.floor(rng() * 2) };
+  if (cache.cave === 'mine' && nearestGun(cache.x, cache.z)) n.ammo = 1;
+  for (const [kind, c] of Object.entries(n)) for (let q = 0; q < c; q++) dropLoot(cache.x, cache.z, kind, 0.8);
+  cache.open(); send('all', { t: 'crated', i: caches.indexOf(cache) }); const s = `The crate spills ${n['find_' + cache.cave]} ${FINDS[cache.cave][0]}${n['find_' + cache.cave] > 1 ? 's' : ''}, food, wood, fiber and metal${n.ammo ? ', and a few rounds' : ''}.`;
+  if (who) send(who, { t: 'log', s }); else log(s); logEvent('crate', { cave: cache.cave, deep: +deep.toFixed(2), ...n }); sfx('salvage'); }
 // three hits smash a crate (a full one spills its loot first)
 export function smashCrate(cache, at, dir, who = null) { if (cache.broken) return; if (at) { hitBurst(at, dir, 'wood', 14); sfx('hit', null, 0.6); }
   if (joining()) { send('host', { t: 'smash', i: caches.indexOf(cache) }); return; } if (guarded(cache)) return; // the crew's crate holds while they live
@@ -1046,7 +1055,9 @@ const spitAt = new Map(); // #66: player -> game time before which no pale spide
 // (slice 12, the owner: food picked up goes into the pack, eaten later with G; rounds are the Gunslinger's, +3 a box)
 // rounds go only to a Gunslinger on his feet (the nearest), or lie there
 function nearestGun(x, z) { let best = null, bd = 1e9; for (const q of everyone()) { if (gone(q) || (q === player ? player.ch.id : CHARS[q.c]?.id) !== 'gunslinger' || (q === player && ammo.clip + ammo.reserve >= MAX_ROUNDS)) continue; const d = Math.hypot(q.x - x, q.z - z); if (d < bd) { bd = d; best = q; } } return best; }
-export function gotPickup(kind) { if (kind === 'ammo') { const n = addRounds(3); sfx('pickup'); floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `+${n} rounds`, '#ffe08a'); return; }
+export function gotPickup(kind) { if (kind.startsWith('find_')) { const [name, c] = FINDS[kind.slice(5)] || ['find', 0xffffff]; player.inv.finds = (player.inv.finds || 0) + 1; sfx('pickup'); logEvent('got', { kind });
+    floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `+1 ${name}`, '#' + c.toString(16).padStart(6, '0')); return; } // (a cave find: any kind counts toward the upgrades that want them)
+  if (kind === 'ammo') { const n = addRounds(3); sfx('pickup'); floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `+${n} rounds`, '#ffe08a'); return; }
   player.inv[kind] = (player.inv[kind] || 0) + 1; sfx('pickup'); logEvent('got', { kind }); // (slice 21: pickups were not logged, so "couldn't pick it up" had no trail)
   floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `+1 ${kind}`, { food: '#ff9a7a', metal: '#ffc070', wood: '#e8b878' }[kind] || '#efe6b0'); }
 let snapCam = true; export function snapCamera() { snapCam = true; }
@@ -1084,6 +1095,7 @@ export function hud(fps, dt = 0) { perfHint(fps, dt); lastFps = fps; if (paused)
   document.getElementById('biome').textContent = `${BIOME[biomeAt(player.x, player.z)].label} · Day ${day.n} · ${phase()}`; // (slice 13: the time of day)
   // the resources (slice 11), each chip bumping when it goes up; Abigail's arrows beside them
   for (const k of ['wood', 'metal', 'fiber', 'food', 'cooked']) chip(k, k[0].toUpperCase() + k.slice(1), player.inv[k] || 0);
+  chip('finds', 'Cave finds', player.inv.finds || 0); document.getElementById('inv-finds').classList.toggle('hidden', !player.inv.finds); // (shown once you have one)
   // what this character shoots and can run out of: Abigail's arrows, the Gunslinger's rounds (clip | reserve), Lauren's flowers (slice 12)
   const cid = player.ch.id, ammoEl = document.getElementById('inv-arrows'), shows = cid === 'ranger' || cid === 'gunslinger' || cid === 'charmer'; ammoEl.classList.toggle('hidden', !shows);
   if (cid === 'ranger') { chip('arrows', 'Arrows', quiver.n, `/${quiver.max}`); ammoEl.classList.toggle('empty', quiver.n === 0); }

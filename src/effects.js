@@ -2,6 +2,7 @@
 // (DOM, projected each frame), a crosshair hit marker, and the loot pickups' models (built in code; rusted metal uses
 // the Poly Haven corrugated-iron texture already in assets/props).
 import * as THREE from 'three';
+import { FINDS } from './cavemap.js'; // (a cave find's colour)
 
 let scene, camera;
 const MAX = 600;
@@ -117,7 +118,7 @@ function lootGeo(kind) { if (LGEO[kind]) return LGEO[kind];
   return LGEO[kind]; }
 const BEAM = { metal: 0xffb040, food: 0xff7050, fiber: 0xe8e0a0, wood: 0xe0a860, ammo: 0xffe08a };
 export function buildLoot(kind) {
-  const m = lootMats(), g = kind === 'ammo' ? [] : lootGeo(kind), root = new THREE.Group(), item = new THREE.Group(); root.add(item);
+  const m = lootMats(), g = kind === 'ammo' || kind.startsWith('find_') ? [] : lootGeo(kind), root = new THREE.Group(), item = new THREE.Group(); root.add(item);
   const add = (geo, mat, p = [0, 0, 0], r = [0, 0, 0], s = [1, 1, 1]) => { const o = new THREE.Mesh(geo, mat); o.position.set(...p); o.rotation.set(...r); o.scale.set(...s); o.castShadow = true; item.add(o); return o; };
   if (kind === 'metal') { add(g[0], m.rust, [0, 0, -0.02], [0.3, 0, 0]); add(g[1], m.steel, [0.12, -0.08, 0.06], [0.4, 0, 0.9]); }
   if (kind === 'food') { add(g[0], m.crust, [0, 0, 0], [0, 0, 0], [1, 0.8, 1.35]); add(g[1], m.bone, [0, 0.03, 0.22], [Math.PI / 2 - 0.2, 0, 0]); add(g[2], m.bone, [0.015, 0.06, 0.33]); add(g[2], m.bone, [-0.015, 0.05, 0.33]); }
@@ -127,6 +128,9 @@ export function buildLoot(kind) {
   // rounds (slice 12): a small card box of brass cartridges, a few spilled beside it
   if (kind === 'ammo') { const brass = m.brass ||= new THREE.MeshStandardMaterial({ color: 0xc8a050, metalness: 1, roughness: 0.3 }), card = m.card ||= new THREE.MeshStandardMaterial({ color: 0x6a4a2a, roughness: 0.9 });
     add(new THREE.BoxGeometry(0.16, 0.08, 0.1), card); for (let k = 0; k < 3; k++) add(new THREE.CylinderGeometry(0.012, 0.012, 0.06, 8), brass, [-0.04 + k * 0.04, 0.07, 0]); add(new THREE.CylinderGeometry(0.012, 0.012, 0.06, 8), brass, [0.12, -0.03, 0.05], [0, 0, Math.PI / 2]); }
+  // a cave find (caves' crates): three small shards of its cave's colour, glowing a little in the dark
+  if (kind.startsWith('find_')) { const c = FINDS[kind.slice(5)]?.[1] ?? 0xffffff, mat = m[kind] ||= new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.7, roughness: 0.25 }), sh = m.shard ||= new THREE.OctahedronGeometry(0.06, 0).scale(1, 1.8, 1);
+    for (const [x, z, r] of [[0, 0, 0], [0.07, 0.04, 0.5], [-0.06, 0.05, -0.4]]) add(sh, mat, [x, 0.02, z], [r, 0, r * 0.6]); }
   item.scale.setScalar(2.2);
   // a faint light column and ground ring so drops are found in grass
   const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.2, 2.6, 10, 1, true), new THREE.MeshBasicMaterial({ color: BEAM[kind], transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
