@@ -75,7 +75,10 @@ export const ENEMY = {
   rat:         { hp:30,  speed:105, dmg:6,  atk:1200, aggro:110, scale:0.55, body:0x6a5040, belly:0x8a6a55, loot:['metal'] },
   bear:        { hp:160, speed:50,  dmg:22, atk:2400, aggro:290, scale:1.6,  body:0x5a3a24, belly:0x6e4a30, loot:['food','fiber','fiber'], danger:true },
   ice_crawler: { hp:45,  speed:130, dmg:10,  atk:1400, aggro:160, scale:0.9,  body:0x9cc4dc, belly:0xd8eef8, loot:['metal'] },
-  bog_lurker:  { hp:65,  speed:55,  dmg:17, atk:2000, aggro:80,  scale:1.1,  body:0x3e5232, belly:0x5f7048, loot:['fiber','food'] },
+  // Jared, November 15, 2026: "lurkers need a ranged attack option.... poison spit?": past 6 m it rears, hisses and spits a slow
+  // glob (as the pale spider's web, its spit rules and SPIT_GAP shared); a hit poisons (8 health over 4 s at Normal, under one
+  // bite; scaled by the difficulty as bites are), it never holds the feet; up close it still bites
+  bog_lurker:  { hp:65,  speed:55,  dmg:17, atk:2000, aggro:80,  scale:1.1,  body:0x3e5232, belly:0x5f7048, loot:['fiber','food'], spit:{ near:6, far:14, tele:1, speed:9, every:8, poison:{ dps:2, secs:4 } } },
   dust_hound:  { hp:28,  speed:118, dmg:8,  atk:1500, aggro:200, scale:0.8,  body:0xa8845a, belly:0xc8a478, loot:['food','metal'] },
   // slice 22 (#51, Jared, 2026-11-14: "there's no spiders either yet"): IW1's ruins spider (hp 40, speed 70, dmg 8; a web every
   // 8 s; drops fiber), its bite 1.4x as slice 21 did the others; the nest (the dens rule of #9) stands still and sends spiders out

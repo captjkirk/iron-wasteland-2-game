@@ -62,6 +62,7 @@ export function tickEffects(dt) {
 // ── Floating damage numbers and enemy health bars (DOM over the canvas) ──
 const layer = document.createElement('div'); layer.id = 'fx'; layer.style.cssText = 'position:fixed;inset:0;pointer-events:none;overflow:hidden'; document.body.appendChild(layer); // (hidden under the free camera: it projects from the game's camera)
 const floaters = [], v3 = new THREE.Vector3();
+export const eye = () => camera.position; // (where the player sees from, whatever the camera mode)
 function screen(p) { v3.copy(p).project(camera); return v3.z < 1 && Math.abs(v3.x) < 1.1 && Math.abs(v3.y) < 1.1 ? [(v3.x + 1) / 2 * innerWidth, (1 - v3.y) / 2 * innerHeight] : null; }
 export function floatText(p, text, color = '#ffe8b0', big = false) {
   const d = document.createElement('div'); d.textContent = text;
@@ -79,14 +80,14 @@ for (let i = 0; i < 10; i++) { const d = document.createElement('div'); d.style.
 export function healthBars(list) { for (let i = 0; i < bars.length; i++) { const b = bars[i], it = list[i], s = it && screen(it.p);
   if (!s) { b.d.style.display = 'none'; continue; } b.d.style.display = ''; b.d.style.left = s[0] + 'px'; b.d.style.top = s[1] + 'px'; b.f.style.width = (it.frac * 100).toFixed(0) + '%'; } }
 
-// co-op (slice 10): the other players' names over their heads, with a health bar. list: [{ p, text, color, frac }]
+// co-op (slice 10): the other players' names over their heads, with a health bar. list: [{ p, text, color, frac, a (opacity, 1 if left out) }]
 const tags = [];
 export function nameTags(list) { while (tags.length < list.length) { const d = document.createElement('div'), t = document.createElement('div'), b = document.createElement('div'), f = document.createElement('div');
     d.style.cssText = 'position:absolute;transform:translate(-50%,-100%);text-align:center;display:none'; t.style.cssText = 'font:700 13px ui-monospace,Menlo,Consolas,monospace;text-shadow:0 1px 2px #000,0 0 6px rgba(0,0,0,.7);white-space:nowrap';
     b.style.cssText = 'width:48px;height:5px;margin:3px auto 0;background:rgba(20,14,10,.75);border:1px solid rgba(240,220,180,.45);border-radius:3px;overflow:hidden'; f.style.cssText = 'height:100%;background:linear-gradient(#8fe07a,#3e9a32)';
     b.appendChild(f); d.append(t, b); layer.appendChild(d); tags.push({ d, t, b, f }); }
   tags.forEach((g, i) => { const it = list[i], s = it && screen(it.p); if (!s) { g.d.style.display = 'none'; return; }
-    g.d.style.display = ''; g.d.style.left = s[0] + 'px'; g.d.style.top = s[1] + 'px'; if (g.t.textContent !== it.text) g.t.textContent = it.text; g.t.style.color = it.color;
+    g.d.style.display = ''; g.d.style.opacity = it.a ?? 1; g.d.style.left = s[0] + 'px'; g.d.style.top = s[1] + 'px'; if (g.t.textContent !== it.text) g.t.textContent = it.text; g.t.style.color = it.color;
     g.b.style.display = it.bar || it.frac > 0 ? '' : 'none'; g.f.style.width = (it.frac * 100).toFixed(0) + '%'; g.f.style.background = it.fill || 'linear-gradient(#8fe07a,#3e9a32)'; }); }
 
 let markT = 0; const cross = document.getElementById('cross');

@@ -1,6 +1,7 @@
 // Terrain: 64 m chunks with three levels of detail (2, 4 and 8 m), smooth normals from the heightfield, and a
 // MeshStandardMaterial extended to blend ten Poly Haven texture layers by the per-vertex weights from world.js.
 // Rock is sampled triplanar so cliffs do not stretch; every layer is sampled twice at different scales to hide tiling.
+import { EDGE } from './edgefog.js';
 import * as THREE from 'three';
 import { HALF, CELL, SEG, N, LAYERS, Q, WATER_Y } from './config.js';
 import { H, NORMAL, SPLAT_A, SPLAT_B, SPLAT_C } from './world.js';
@@ -122,9 +123,11 @@ function edgeGeometry() {
     // its foot: the lowest edge ground within 16 m along the edge, 3 m down, so between two of these 16 m columns the line never
     // stands above the real edge (a gap there showed sky under it, the review)
     let low = H[k]; for (let t = -R; t <= R; t++) { if (Math.abs(qx) === HALF) low = Math.min(low, H[Math.max(0, Math.min(SEG, j + t)) * N + i]); if (Math.abs(qz) === HALF) low = Math.min(low, H[j * N + Math.max(0, Math.min(SEG, i + t))]); }
-    pos[v * 3] = x; pos[v * 3 + 2] = z; pos[v * 3 + 1] = low - 3 + 1.7 * Math.min(d, 70) + Math.max(0, d - 70) * 0.45 + ridged(x * 0.004 + 4, z * 0.004 - 2, 4) * 150 * smooth(16, 220, d);
+    pos[v * 3] = x; pos[v * 3 + 2] = z; const dm = Math.max(0, d - 60); pos[v * 3 + 1] = EDGE === 'fog' ? low - 3 // (in the mist: the land runs on level, hidden)
+      : EDGE === 'mist' ? low - 3 + 0.6 * (1.7 * Math.min(dm, 70) + Math.max(0, dm - 70) * 0.45 + ridged(x * 0.004 + 4, z * 0.004 - 2, 4) * 150 * smooth(16, 220, dm)) // (the same mountains 60 m further out and lower everywhere, the review)
+      : low - 3 + 1.7 * Math.min(d, 70) + Math.max(0, d - 70) * 0.45 + ridged(x * 0.004 + 4, z * 0.004 - 2, 4) * 150 * smooth(16, 220, d);
     // the edge's paint, turning to bare rock up the wall
-    const f = smooth(0, 60, d); for (const [to, from] of [[sa, SPLAT_A], [sb, SPLAT_B], [sc, SPLAT_C]]) for (let c = 0; c < 4; c++) to[v * 4 + c] = from === SPLAT_B && c === 3 ? from[k * 4 + c] : Math.round(from[k * 4 + c] * (1 - f));
+    const f = EDGE === 'mountains' ? smooth(0, 60, d) : smooth(40, 120, d); for (const [to, from] of [[sa, SPLAT_A], [sb, SPLAT_B], [sc, SPLAT_C]]) for (let c = 0; c < 4; c++) to[v * 4 + c] = from === SPLAT_B && c === 3 ? from[k * 4 + c] : Math.round(from[k * 4 + c] * (1 - f));
     sa[v * 4 + 3] = Math.min(255, sa[v * 4 + 3] + Math.round(f * 255)); }
   for (let b = 0; b < M - 1; b++) for (let a = 0; a < M - 1; a++) { const v = b * M + a, x0 = -HALF - E + a * S, z0 = -HALF - E + b * S;
     if (x0 >= -HALF && x0 + S <= HALF && z0 >= -HALF && z0 + S <= HALF) continue; idx.push(v, v + M, v + 1, v + M + 1, v + 1, v + M); }

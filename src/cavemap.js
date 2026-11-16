@@ -43,6 +43,7 @@ function inner(p, x, z) { const dx = p.b[0] - p.a[0], dz = p.b[1] - p.a[1], L2 =
 export const STYLES = ['maze', 'grand', 'long', 'mixed'];
 const GRAIN = { maze: { cw: 12, ch: 12, r: 2.3, h: 3.8, rooms: 0.12, loops: 3, run: 0.45 }, grand: { cw: 15, ch: 15, r: 2.9, h: 4.8, rooms: 0.35, loops: 2, run: 0.55 },
   long: { cw: 17, ch: 11.5, r: 2.4, h: 4.0, rooms: 0.1, loops: 2, run: 0.7 }, mixed: { cw: 13, ch: 13, r: 2.6, h: 4.2, rooms: 0.22, loops: 3, run: 0.5 } };
+const segD = (x, z, p) => { const dx = p.b[0] - p.a[0], dz = p.b[1] - p.a[1], l2 = dx * dx + dz * dz, t = l2 ? Math.max(0, Math.min(1, ((x - p.a[0]) * dx + (z - p.a[1]) * dz) / l2)) : 0; return Math.hypot(x - p.a[0] - dx * t, z - p.a[1] - dz * t); }; // (a point's distance to a part's centre line)
 export function layout(i, k, relic = false) { const R = mulberry32(SEED ^ (0xca7e5 + i * 7919)), x0 = X0 + (i % 5) * SLOT, zc = CAVE_Z - Math.floor(i / 5) * ROW, parts = [], style = STYLES[Math.floor(R() * 4)], G = GRAIN[style];
   const part = (a, b, ra, rb, ha, hb, tag) => { const p = { a, b, ra, rb: rb ?? ra, ha, hb: hb ?? ha, tag }; parts.push(p); return p; };
   const clampZ = (z, r) => Math.max(zc - 42 + r, Math.min(zc + 42 - r, z));
@@ -57,18 +58,19 @@ export function layout(i, k, relic = false) { const R = mulberry32(SEED ^ (0xca7
   // east side, by the row nearest the hall's middle; the other caves end in their deepest cell. Carved again (up to 150 times, keeping the
   // best) until it is a maze to get lost in: 7 forks or more, 5 blind ends, a way in 1.6 times the straight line with 4 forks on it
   const start = id(0, Math.floor(nz / 2)), len = (u, v) => Math.hypot(node[u][0] - node[v][0], node[u][1] - node[v][1]), hz = relic ? clampZ(zc + (R() - 0.5) * 8, 27) : 0;
+  const rg = relic ? id(nx - 1, Math.max(0, Math.min(nz - 1, Math.round((hz - zc) / G.ch + (nz - 1) / 2)))) : -1; if (relic) node[rg][0] = Math.max(...node.filter((_, u) => Math.floor(u / nz) === nx - 1).map(p => p[0])) + 1; // (the cell into the hall is the one nearest it; moved before the maze is carved and scored, so the way in it scores is the way the cave has: gap-194)
   const carve = () => { const adj = node.map(() => new Set()), seen = new Set([start]), live = [start], join = (u, v) => { adj[u].add(v); adj[v].add(u); };
     while (live.length) { const j = R() < G.run ? live.length - 1 : Math.floor(R() * live.length), u = live[j], open = nbrs(u).filter(v => !seen.has(v)); if (!open.length) { live.splice(j, 1); continue; } const v = open[Math.floor(R() * open.length)]; seen.add(v); join(u, v); live.push(v); }
     for (let n = 0, t = 0; n < G.loops && t < 200; t++) { const u = Math.floor(R() * node.length), o = nbrs(u).filter(v => !adj[u].has(v)); if (!o.length || u === start) continue; join(u, o[Math.floor(R() * o.length)]); n++; }
     // how far each cell is from the mouth along the passages, and the way back from it
     const dist = node.map(() => Infinity), prev = node.map(() => -1), done = new Set(); dist[start] = 0;
     for (;;) { let u = -1; for (let j = 0; j < node.length; j++) if (!done.has(j) && dist[j] < Infinity && (u < 0 || dist[j] < dist[u])) u = j; if (u < 0) break; done.add(u); for (const v of adj[u]) if (dist[u] + len(u, v) < dist[v]) { dist[v] = dist[u] + len(u, v); prev[v] = u; } }
-    const goal = relic ? id(nx - 1, Math.max(0, Math.min(nz - 1, Math.round((hz - zc) / G.ch + (nz - 1) / 2)))) : node.reduce((b, _, j) => dist[j] > dist[b] ? j : b, start);
+    const goal = relic ? rg : node.reduce((b, _, j) => dist[j] > dist[b] ? j : b, start);
     const deg = (u) => adj[u].size + (u === start ? 1 : 0), forks = node.filter((_, u) => deg(u) >= 3).length, blind = node.filter((_, u) => deg(u) === 1 && u !== goal).length;
     let choices = 0; for (let j = prev[goal]; j >= 0 && j !== start; j = prev[j]) if (deg(j) >= 3) choices++; const ratio = (dist[goal] + Math.hypot(node[start][0] - mouth[0], node[start][1] - mouth[1])) / Math.max(1, Math.hypot(node[goal][0] - mouth[0], node[goal][1] - mouth[1])); /* (measured as the worlds check measures it) */
     const score = Math.min(forks / 7, blind / 5, choices / 4, ratio / 1.6); return { adj, dist, prev, goal, score }; };
   let M = carve(); for (let t = 0; t < 150 && M.score < 1; t++) { const m = carve(); if (m.score > M.score) M = m; }
-  const { adj, dist, prev, goal } = M; let hall = null; if (relic) node[goal][0] = Math.max(...node.filter((_, u) => Math.floor(u / nz) === nx - 1).map(p => p[0])) + 1; /* (the cell into the hall is the one nearest it) */ const loops = []; if (relic) hall = [node[goal][0] + G.cw * 0.5 + 22, hz];
+  const { adj, dist, prev, goal } = M; let hall = null; const loops = []; if (relic) hall = [node[goal][0] + G.cw * 0.5 + 22, hz];
   const way = []; for (let j = goal; j >= 0; j = prev[j]) way.unshift(j); const onWay = new Set(way.slice(1).map((v, n) => [way[n], v].sort().join()));
   // the passages: the way in is a tunnel (the mine lays its rails along it), the rest are necks
   // (a relic cave's way in is wide and tall the whole way, 6.4 m by 5.5 m and more, so its boss can come out after you: D10, "they would
@@ -78,7 +80,7 @@ export function layout(i, k, relic = false) { const R = mulberry32(SEED ^ (0xca7
   for (const [u, set] of adj.entries()) for (const v of set) if (u < v) { const w = onWay.has([u, v].sort().join()), ra = G.r * (0.9 + R() * 0.2), rb = G.r * (0.9 + R() * 0.2), ha = G.h + R() * 0.8, hb = G.h + R() * 0.8;
     part(node[u], node[v], w ? wide(ra) : ra, w ? wide(rb) : rb, w ? tall(ha) : ha, w ? tall(hb) : hb, w ? 'tunnel' : 'neck'); }
   // round rooms at some forks and blind ends (kept off the next passage: a room never opens a way the maze does not have)
-  const roomed = new Set(), room = (u, r, h, tag) => { roomed.add(u); const [x, z] = node[u]; part([x, z], [x, z], Math.min(r, G.cw - 2 * jx - G.r - 1.8, 41 - Math.abs(z - zc)), undefined, h, undefined, tag); };
+  const roomed = new Set(), room = (u, r, h, tag) => { roomed.add(u); const [x, z] = node[u], clear = Math.min(...parts.filter(p => p.a !== node[u] && p.b !== node[u]).map(p => segD(x, z, p) - Math.max(p.ra, p.rb) - 1.8)); /* (rock of 1.8 m and more to every passage and room it does not open on: salt-stag-50's long cave, rows 11.5 m apart, had a 5 m room 8 m from a relic way 3.2 m wide) */ part([x, z], [x, z], Math.max(G.r, Math.min(r, clear, 41 - Math.abs(z - zc))), undefined, h, undefined, tag); };
   if (!relic) room(goal, 5.5, 6.2, 'end');
   for (const u of node.keys()) if (u !== start && u !== goal && adj[u].size && R() < G.rooms && !nbrs(u).some(v => roomed.has(v))) room(u, G.r * 2.1, G.h * 1.5, adj[u].size === 1 ? 'side' : 'chamber');
   if (relic) { const [hx, hz] = hall; part(node[goal], hall, 3.2, 16, 4.6, 13, 'hall'); part(hall, [hx + 8, hz], 16, 14, 13, 11, 'hall');

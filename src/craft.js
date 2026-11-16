@@ -117,14 +117,21 @@ const panel = document.getElementById('craft'), list = document.getElementById('
 let open = false, sel = 0, rows = [], lastSig = '';
 export const craftOpen = () => open;
 export function toggleCraft(on = !open) { if (on === open) return; open = on; panel.classList.toggle('hidden', !open); logEvent(open ? 'craft-open' : 'craft-close');
-  if (open) { rows = RECIPES.filter(r => !r.charId || r.charId === player.ch.id).sort((a, b) => !!a.later - !!b.later); /* what you can make first, in IW1's order; what comes later below */ sel = Math.max(0, rows.findIndex(r => !r.later)); lastSig = ''; renderMenu(true); if (document.pointerLockElement) document.exitPointerLock(); } }
+  if (open) { rows = RECIPES.filter(r => !r.charId || r.charId === player.ch.id).sort((a, b) => !!a.later - !!b.later); /* what you can make first, in IW1's order; what comes later below */ sel = Math.max(0, rows.findIndex(r => !r.later)); lastSig = ''; renderMenu(true); fitTip(); renderMenu(true); /* (the tips measured with the list drawn, then this row's tip again) */ if (document.pointerLockElement) document.exitPointerLock(); } }
 const status = (r) => r.later ? ['soon', 'Soon'] : r.type === 'upgrade' && upgraded(r.charId) ? ['have', 'Owned'] : r.bench && !benchNear(player.x, player.z) ? ['no', 'Needs bench'] : short(r.cost).length ? ['no', 'Short'] : ['ok', r.type === 'build' ? 'Build' : 'Craft'];
 export function renderMenu(force) { if (!open) return; const sig = JSON.stringify([player.inv, sel, benchNear(player.x, player.z), quiver.n, ammo]); if (!force && sig === lastSig) return; lastSig = sig;
   resEl.innerHTML = RES.map(k => `<span class="rc ${k}"><i></i>${k[0].toUpperCase() + k.slice(1)} <b>${player.inv[k] || 0}</b></span>`).join('') + (player.ch.id === 'ranger' ? `<span class="rc arrows"><i></i>Arrows <b>${quiver.n}/${quiver.max}</b></span>` : player.ch.id === 'gunslinger' ? `<span class="rc arrows"><i></i>Rounds <b>${ammo.clip} | ${ammo.reserve}</b></span>` : player.ch.id === 'charmer' ? `<span class="rc arrows"><i></i>Flowers <b>${ammo.flowers}</b></span>` : '');
   list.innerHTML = rows.map((r, i) => { const [cls, txt] = status(r);
     const cost = RES.filter(k => r.cost[k]).map(k => (player.inv[k] || 0) >= r.cost[k] ? `<i class="have">${r.cost[k]} ${k}</i>` : `<i class="miss" title="you have ${player.inv[k] || 0}">✗ ${r.cost[k]} ${k}</i>`).join('');
     return `<div class="cr ${cls}${i === sel ? ' sel' : ''}" data-i="${i}"><kbd>${i < 10 ? (i + 1) % 10 : ''}</kbd><span class="nm">${r.label}${r.bench ? ' <small>bench</small>' : ''}</span><span class="cost">${cost}</span><em>${txt}</em></div>`; }).join('');
-  const r = rows[sel]; tipEl.innerHTML = r ? `<b>${r.label}</b> · ${costText(r.cost)}${r.bench ? ' · at a craftbench' : ''}<br>${r.later ? r.later : r.tip}` : ''; }
+  tipEl.innerHTML = tipHtml(rows[sel]); }
+const tipHtml = (r) => r ? `<b>${r.label}</b> · ${costText(r.cost)}${r.bench ? ' · at a craftbench' : ''}<br>${r.later ? r.later : r.tip}` : '';
+// Jared, 2026-11-15: "with the craft menu open, moving the mouse over the options makes the whole menu move". Hovering picks a
+// row and shows its tip; tips differ in length, and the panel (centred on the screen) grew or shrank and slid under the
+// pointer. So the tip keeps the height of the longest one while the menu is open, measured as it opens and on a resize
+function fitTip() { tipEl.style.minHeight = ''; const s = getComputedStyle(tipEl), pad = parseFloat(s.paddingTop) + parseFloat(s.paddingBottom) + parseFloat(s.borderTopWidth) + parseFloat(s.borderBottomWidth);
+  let h = 0; for (const r of rows) { tipEl.innerHTML = tipHtml(r); h = Math.max(h, tipEl.offsetHeight - pad); } tipEl.style.minHeight = Math.ceil(h) + 'px'; }
+addEventListener('resize', () => { if (open) { fitTip(); renderMenu(true); } });
 list.addEventListener('click', e => { const el = e.target.closest('.cr'); if (!el) return; sel = +el.dataset.i; craft(rows[sel]); renderMenu(true); });
 list.addEventListener('mousemove', e => { const el = e.target.closest('.cr'); if (el && +el.dataset.i !== sel) { sel = +el.dataset.i; renderMenu(true); } });
 // keys while the menu is open: true when the key was the menu's

@@ -1,4 +1,5 @@
 // Boot: renderer, world, environment, game loop, and the test hooks the headless check uses.
+import { tickEdgeFog, buildEdgeMist } from './edgefog.js'; // (first: it changes the shaders' fog step before any is built)
 import * as THREE from 'three';
 import { CAMP, CHARS, BIOME, Q, QUALITY, QUALITY_KEY, setQuality, WATER_Y, HALF, SEED_TEXT, params, cleanSeed, JOINER } from './config.js';
 import { places } from './places.js';
@@ -34,8 +35,9 @@ import { ammo, clipSize } from './supplies.js';
 import { felled, fell, harvestTarget, saplingStats } from './harvest.js';
 import { tickTorch, torchLights, torchBar } from './torch.js';
 import { quiver, stuckArrows } from './arrows.js';
-import { warmCreatures, pickups, initGame, hurtPlayer, gotPickup, selected, liveShots, spreadAt, upgraded, aimGround, togglePause, startGame, setCam, update, placeCamera, hud, menuPad, isRunning, worldWaits, getCamMode, player, enemies, spawnEnemy, attack, teleport, creatureCollide, look, hitEnemy, press, secondary, turrets, dropLoot, spawnPack , gameOver } from './game.js';
+import { warmCreatures, pickups, initGame, hurtPlayer, gotPickup, selected, liveShots, spreadAt, upgraded, aimGround, togglePause, startGame, setCam, update, placeCamera, hud, menuPad, isRunning, worldWaits, getCamMode, player, enemies, spawnEnemy, spawnAround, attack, teleport, creatureCollide, look, hitEnemy, press, secondary, turrets, dropLoot, spawnPack, gameOver } from './game.js';
 import * as spiders from './spiders.js';
+import { buildRelics, relics, altar, stats as relicStats, state as relicState, applyRelics } from './relics.js'; // #53
 import { buildCaves, caveScene, caveDark, caveLights, caveHere, caveFade, caves, caveAt, caveCam } from './caves.js'; // #8
 import { caveDepth, beyond } from './cavemap.js';
 
@@ -76,9 +78,9 @@ status.textContent = 'Loading terrain textures…';
 // code: when the last code file arrived (Zach's Mac spent 26 to 28 s before boot, an M1 2.4 s: this says whether that is
 // fetching the code or running it, slice 13a)
 const stages = { code: Math.round(Math.max(0, ...performance.getEntriesByType('resource').filter(e => /\.m?js(\?|$)/.test(e.name)).map(e => e.responseEnd))), boot: Math.round(performance.now()) }, stage = (k) => { stages[k] = Math.round(performance.now()); };
-await buildTerrain(scene, renderer); stage('terrain');
+await buildTerrain(scene, renderer); buildEdgeMist(scene); stage('terrain');
 await buildProps(scene, renderer, (t) => status.textContent = t); stage('props');
-buildGrass(scene); buildBog(scene, env.normals); buildDeepWater(scene, env.normals); buildWeather(scene); await buildCamp(scene); await buildBuildings(scene); buildCaves(scene); stage('world');
+buildGrass(scene); buildBog(scene, env.normals); buildDeepWater(scene, env.normals); buildWeather(scene); await buildCamp(scene); await buildBuildings(scene); buildCaves(scene); buildRelics(scene); stage('world');
 await charsLoading; stage('chars');
 initGame({ scene, camera, renderer, env }); initPortraits(scene); stage('init');
 await warmCreatures(); stage('warm'); // (issue #44: every creature's shaders compiled now, not on its first sight in play)
@@ -139,7 +141,7 @@ function frame(now) {
   wind.value = clock; if (!caveHere()) { updateScatter(camera.position); updateGrass(camera.position); } // (#8: none of it grows in a cave)
   tickBuildings(camera.position, player.x, player.z, player.y, isRunning() && getCamMode() === 'first' && !freeCam);
   if (isRunning()) tickTracks(scene, clock, everyone(), enemies, camera.position); // (slice 43: prints on the ground)
-  env.tick(dt); tickCamp(dt, clock); if (edgeLand) edgeLand.visible = !beyond(camera.position.z); renderer.render(scene, camera); snapFrame(renderer.domElement); rendered++;
+  env.tick(dt); tickCamp(dt, clock); if (edgeLand) edgeLand.visible = !beyond(camera.position.z); tickEdgeFog((day.n + day.t) * DAY_S, beyond(camera.position.z), scene.fog); renderer.render(scene, camera); snapFrame(renderer.domElement); rendered++;
 }
 requestAnimationFrame(frame);
 // slice 21 (#60; Jared's logs of 2026-11-14: his game was hidden 12 times while he answered Claude, and each time the world stood
@@ -152,7 +154,7 @@ const fit = () => { camera.aspect = innerWidth / innerHeight; camera.updateProje
 addEventListener('resize', fit); fit(); // (and once now: a window resized while the world was building drew in a corner until the next resize, Jared, 2026-11-15)
 
 // Test hooks for the headless check (scripts/shots.js): not used by play.
-window.__iw = { caveLights, torchBar, gameOver, caves, caveAt, caveHere, caveFade, caveDepth, caveLook: () => ({ sky: env.sky.visible, sun: env.sun.intensity, fogFar: scene.fog.far, fogDark: Math.max(scene.fog.color.r, scene.fog.color.g, scene.fog.color.b) < 0.1, /* (a cave's haze: dark, tinted) */ ibl: scene.environmentIntensity, far: camera.far }), /* #8 */ tracks: { stats: trackStats, groundOf, mesh: tracksMesh, fill: fillTracks }, /* slice 43 */ selected, larder, /* places round 2 */ portraits: portraitStats, get rules() { return rules; }, /* the start menu (menu.js) */ fireflies: fireflyStats, explored: exploredStats, others, net, built, deliver, /* the gate of slice 12 */ logEvent, playlogState, tickWatch, checkCrates, checkMsg, solidAt, pickups, HALF, /* slice 13d */
+window.__iw = { relics: { list: relics, altar, state: relicState, apply: applyRelics, get hunts() { return relicStats.hunts; } }, /* #53 */ caveLights, torchBar, gameOver, caves, caveAt, caveHere, caveFade, caveDepth, caveLook: () => ({ sky: env.sky.visible, sun: env.sun.intensity, fogFar: scene.fog.far, fogDark: Math.max(scene.fog.color.r, scene.fog.color.g, scene.fog.color.b) < 0.1, /* (a cave's haze: dark, tinted) */ ibl: scene.environmentIntensity, far: camera.far }), /* #8 */ tracks: { stats: trackStats, groundOf, mesh: tracksMesh, fill: fillTracks }, /* slice 43 */ selected, larder, /* places round 2 */ portraits: portraitStats, get rules() { return rules; }, /* the start menu (menu.js) */ fireflies: fireflyStats, explored: exploredStats, others, net, built, deliver, /* the gate of slice 12 */ logEvent, playlogState, tickWatch, checkCrates, checkMsg, solidAt, pickups, HALF, /* slice 13d */
   // a build recipe opens build mode; for the checks, craft() of one places it at once where the ghost stands (slice 12)
   craft: (key) => { const r = RECIPES.find(q => q.key === key); if (r.type !== 'build') return craft(r); if (!craft(r)) return false; const ok = placeNow(); endBuild(); return ok; },
   lightSpots: () => [...torchLights(), ...lightSpots()], fireCount, hasFlame, saplingStats, setDay, /* slice 26 */ startBuild: (key) => startBuild(RECIPES.find(q => q.key === key)), placeNow, endBuild, building, rotateBuild, damageBuilt, toggleGate, tearTarget, repairTarget, pieceBars, refundOf, clearBuilt, wallAhead, PIECE, putPiece, liveShots, ammo, clipSize, gotPickup, spreadAt, upgraded, aimGround, /* slice 12 */ toggleCraft, craftOpen, placeSpot, sleep, bedNear, bedRespawn, felled, fell, harvestTarget, quiver, stuckArrows, // slice 11
@@ -162,7 +164,7 @@ window.__iw = { caveLights, torchBar, gameOver, caves, caveAt, caveHere, caveFad
     props: Object.fromEntries(Object.entries(placed).map(([k, v]) => [k, v.length])), calls: renderer.info.render.calls, tris: renderer.info.render.triangles }; },
   places, /* slice 23 */ spiders, spawnPack, /* slice 22 */
   seed: SEED_TEXT, SHAPE, LEAN, reachable, /* slice 13c */ placed, PASSES, CAMP, canyonAt, day, nightK, DAY_S, /* slice 13 */ press, nearColliders, colR, slopeAt, buildings, caches, raiderCamps, ladders, standAt, deepShadow,
-  seed: SEED_TEXT, SHAPE, LEAN, reachable, /* slice 13c */ placed, PASSES, CAMP, campTent, /* #60 */ canyonAt, day, nightK, DAY_S, /* slice 13 */ press, nearColliders, colR, slopeAt, buildings, caches, raiderCamps, ladders, standAt, deepShadow,
+  spawnAround, /* round 4 */ seed: SEED_TEXT, SHAPE, LEAN, reachable, /* slice 13c */ placed, PASSES, CAMP, campTent, /* #60 */ canyonAt, day, nightK, DAY_S, /* slice 13 */ press, nearColliders, colR, slopeAt, buildings, caches, raiderCamps, ladders, standAt, deepShadow,
   findCanyon() { let best = null, bd = 1e9; // the nearest stretch of canyon floor
     for (let z = -440; z < 440; z += 4) for (let x = -440; x < 440; x += 4) { if (canyonAt(x, z) < 0.92 || groundY(x, z) < WATER_Y + 1) continue; const d = Math.hypot(x, z); if (d < bd) { bd = d; best = { x, z }; } } return best; },
   findForest() { let best = null, bd = 1e9; // a walkable spot inside a grass-biome forest, nearest the spawn

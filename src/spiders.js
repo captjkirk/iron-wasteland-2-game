@@ -23,6 +23,7 @@ import { sfx } from './audio.js';
 import { dustPuff } from './effects.js';
 import { spiderGlow } from './spider.js';
 import { floatText } from './effects.js';
+import { dose } from './poison.js';
 
 export { biomeAt }; // (for the checks)
 const clock = () => (day.n + day.t) * DAY_S;
@@ -31,8 +32,10 @@ const HUNT = new Set(['chase', 'windup', 'recover']);
 const isSpider = (t) => !!ENEMY[t]?.spider; // (every kind of spider; the nest is not one)
 const KIND = { ruins: 'spider', fungal: 'spider_pale' }; // what a nest sends out and what drops at night, by biome
 // each spider's own size, from its id (so a joined game sees the same): a range per kind, and now and then a big wolf spider
-const SIZE = { wolf: [0.8, 1.15], pale: [0.85, 1.1], widow: [0.75, 1.0], brute: [0.95, 1.25] };
-function sizeOf(id, kind) { const [a, b] = SIZE[kind] || [1, 1], h = hash(id, 3.7, 1.3); return kind === 'wolf' && hash(id, 9.1) < 0.06 ? 1.45 : a + (b - a) * h; }
+// (Jared, November 16, 2026: "I like the current size spiders as well, just want more size variation": most of the common three
+// keep the sizes they had; about a third come small instead, down to about half size; the brute and the big wolf spider as they were)
+const SIZE = { wolf: [0.8, 1.15], pale: [0.85, 1.1], widow: [0.75, 1.0], brute: [0.95, 1.25] }, SMALL = { wolf: [0.5, 0.72], pale: [0.55, 0.75], widow: [0.5, 0.68] };
+function sizeOf(id, kind) { const [a, b] = (SMALL[kind] && hash(id, 5.3, 2.1) < 0.33 ? SMALL : SIZE)[kind] || [1, 1], h = hash(id, 3.7, 1.3); return kind === 'wolf' && hash(id, 9.1) < 0.06 ? 1.45 : a + (b - a) * h; }
 let scene = null;
 
 // ── Webs ──
@@ -111,10 +114,11 @@ const threads = new Map(); // spider -> its thread mesh
 // ── Web globs (#66): the pale spider's spit. Every game flies each glob (the host's game launches it and tells the others),
 // and each tests it against its own player only, so a dodge counts where it was made. held: this game's player's feet ──
 export const globs = [], held = { t: 0, slow: 0 };
-const GRAV = 3; let GLOB = null;
-export function spit(o, v) { GLOB ||= new THREE.MeshStandardMaterial({ color: 0xeeeae0, roughness: 0.5, transparent: true, opacity: 0.9 });
-  const m = new THREE.Mesh(new THREE.IcosahedronGeometry(0.22, 1), GLOB); m.position.set(...o); scene.add(m);
-  globs.push({ m, v: new THREE.Vector3(...v), t: 0 }); sfx('web', { x: o[0], z: o[2] }, 1.2); }
+const GRAV = 3; let GLOB = null, OOZE = null;
+export function spit(o, v, k = 'spider_pale') { GLOB ||= new THREE.MeshStandardMaterial({ color: 0xeeeae0, roughness: 0.5, transparent: true, opacity: 0.9 });
+  const ooze = !!ENEMY[k]?.spit?.poison; OOZE ||= new THREE.MeshStandardMaterial({ color: 0x3a4a22, roughness: 0.3, transparent: true, opacity: 0.85 }); /* (a bog lurker's: bigger and lumpy, not only another colour) */
+  const m = new THREE.Mesh(new THREE.IcosahedronGeometry(ooze ? 0.3 : 0.22, ooze ? 0 : 1), ooze ? OOZE : GLOB); m.position.set(...o); scene.add(m);
+  globs.push({ m, v: new THREE.Vector3(...v), t: 0, k }); sfx('web', { x: o[0], z: o[2] }, 1.2); }
 // walking pace while held (none) or slowed (half)
 export const holdK = () => held.t > 0 ? 0 : held.slow > 0 ? 0.5 : 1;
 const inBody = (p, q) => Math.hypot(p.x - q.x, p.z - q.z) < 0.6 && p.y > (q.y ?? groundY(q.x, q.z)) - 0.1 && p.y < (q.y ?? groundY(q.x, q.z)) + 1.9;
@@ -127,9 +131,11 @@ function tickGlobs(dt, me, easy, log, players) {
     // a rock or a wall; over water it sinks without a web
     const stop = players.some(q => q !== me && inBody(p, q)) || p.y < WATER_Y || nearColliders(p.x, p.z).some(c => c.r && p.y < groundY(p.x, p.z) + 3 && Math.hypot(c.x - p.x, c.z - p.z) < colR(c, p.x, p.z));
     if (!hit && !ground && !stop && g.t < 3) continue;
-    if (hit) { const sp = ENEMY.spider_pale.spit; if (!(held.t > 0 || held.slow > 0)) { held.t = easy ? 0 : sp.hold; held.slow = sp.slow + (easy ? sp.hold : 0); }
+    const sp = ENEMY[g.k]?.spit || ENEMY.spider_pale.spit;
+    if (hit && sp.poison) { dose(sp.poison); sfx('hurt', me, 0.8); floatText(new THREE.Vector3(me.x - Math.sin(me.yaw) * 2.5, me.y + 1.5, me.z - Math.cos(me.yaw) * 2.5), 'Poison spit!', '#d8e8b0', true); log?.('A bog lurker\'s spit burns: you are poisoned.'); }
+    else if (hit) { if (!(held.t > 0 || held.slow > 0)) { held.t = easy ? 0 : sp.hold; held.slow = sp.slow + (easy ? sp.hold : 0); }
       sfx('web', me, 1.3); floatText(new THREE.Vector3(me.x - Math.sin(me.yaw) * 2.5, me.y + 1.5, me.z - Math.cos(me.yaw) * 2.5), easy ? /* (ahead of the eyes: seen in first person too) */ 'Webbed! Slowed' : 'Stuck in a web!', '#f4f0e6', true); log?.(easy ? 'A web glob sticks to you: you wade on.' : 'A web glob pins your feet for a moment!'); }
-    else if (ground && !stop) addWeb(p.x, p.z, { r: 1.3, life: 15 }); // a miss: a sticky patch where it lands
+    else if (ground && !stop && !sp.poison) addWeb(p.x, p.z, { r: 1.3, life: 15 }); // a miss: a sticky patch where it lands
     g.m.removeFromParent(); g.m.geometry.dispose(); globs.splice(i, 1); } }
 export function clearGlobs() { for (const g of globs) { g.m.removeFromParent(); g.m.geometry.dispose(); } globs.length = 0; held.t = held.slow = 0; }
 
@@ -148,7 +154,7 @@ export function tickSpiders(dt, { scene: sc, enemies, players, host, spawn, log,
       e.spawnT = night ? 7 : 12; const m = e.mesh.userData.mouth.getWorldPosition(new THREE.Vector3());
       const s = spawn(m.x, m.z, KIND[e.home?.b] || 'spider'); s.nest = e; s.home = e; s.pack = e.pack; s.yaw = e.mesh.userData.mouthYaw; if (near < 35) s.state = 'chase'; sfx('spider', s, 0.8); continue; }
     if (!isSpider(e.type)) continue;
-    if (e.sized !== e.id) { const st = ENEMY[e.type], k = sizeOf(e.id, st.spider); e.mesh.scale.setScalar(st.scale * k); if (host && e.sized == null) e.hp = e.maxHp = Math.round(st.hp * k); e.sized = e.id; } // (a bigger one is tougher)
+    if (e.sized !== e.id) { const st = ENEMY[e.type], k = sizeOf(e.id, st.spider); e.mesh.scale.setScalar(st.scale * k); e.sz = k; if (host && e.sized == null) e.hp = e.maxHp = Math.round(st.hp * k); e.sized = e.id; } // (a bigger one is tougher, and bites harder: game.js)
     // its web, every 8 s while it hunts (by the shared clock: the same slots on every game)
     if (!e.dead && HUNT.has(e.state)) { const slot = Math.floor((C + e.id % 8) / 8); if (e.webSlot != null && slot !== e.webSlot) addWeb(e.x, e.z, { key: `${e.id}:${slot}` }); e.webSlot = slot; } else e.webSlot = null;
     // on its thread: still at the top, a fast drop, a hang at head height, then it lets go (the host decides when)

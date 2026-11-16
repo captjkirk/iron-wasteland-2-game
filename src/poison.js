@@ -9,7 +9,9 @@ import { ENEMY } from './config.js';
 import { level } from './coop.js';
 
 const doses = []; let acc = 0, label = null, edge = null;
-export function poison(by) { const z = ENEMY[by]?.poison; if (z) doses.push({ dps: z.dps * level().bite, t: z.secs }); }
+export function poison(by) { const z = ENEMY[by]?.poison; if (z) dose(z); }
+export function dose(z) { doses.push({ dps: z.dps * level().bite, t: z.secs }); } // (a bog lurker's spit too)
+export const poisoned = () => doses.length > 0;
 export function clearPoison() { doses.length = 0; acc = 0; show(0); }
 // one frame of it: the whole health it takes this frame (the caller hurts the player by that)
 export function tickPoison(dt) { let left = 0;

@@ -91,6 +91,9 @@ const TREE_TYPES = ['pine', 'oak', 'aspen', 'snowpine', 'deadtree', 'swamptree']
 const add = (type, it) => { (placed[type] = placed[type] || []).push(it); return it; };
 const dry = (x, z, y, bio) => bio === 'swamp' ? y > WATER_Y + 0.1 : (y > WATER_Y + 0.6 && !isWet(x, z));
 
+// the lowest ground under a footprint r wide round (x, z): a tall prop on a slope sits there, not on the ground at its middle
+// (round 4: hoodoos and the three-stem giant mushroom hung over the downhill side in the classic world's pictures). Positions stay
+const lowest = (x, z, r) => { let y = groundY(x, z); for (let a = 0; a < 12; a++) y = Math.min(y, groundY(x + Math.cos(a * 0.5236) * r, z + Math.sin(a * 0.5236) * r)); return y; };
 // the world's props, decided once from the seed
 function place() {
   const spawnClear = (x, z, r) => Math.hypot(x, z) < r || Math.hypot(x - CAMP.x, z - CAMP.z) < r + 7; // the start and the camp stay open
@@ -112,7 +115,7 @@ function place() {
     else if (bio === 'desert') { if (roll < 0.006) type = 'deadtree'; }
     else if (bio === 'ruins') { if (roll < 0.02 + forest * 0.04) type = pick < 0.55 ? 'deadtree' : 'oak'; }
     // giant mushrooms stay inside the Hollow, off its edges
-    else if (bio === 'fungal') { if (roll < 0.05 + forest * 0.1 && [[14, 0], [-14, 0], [0, 14], [0, -14]].every(([a, b]) => biomeAt(px + a, pz + b) === 'fungal')) { add('shroom', { x: px, y: y - 0.2, z: pz, s: (0.75 + sv * 0.6) * 7, ry: rand() * 6.283, v: Math.floor(rand() * 3) }); continue; } if (roll > 0.985) type = 'deadtree'; }
+    else if (bio === 'fungal') { if (roll < 0.05 + forest * 0.1 && [[14, 0], [-14, 0], [0, 14], [0, -14]].every(([a, b]) => biomeAt(px + a, pz + b) === 'fungal')) { { const s = (0.75 + sv * 0.6) * 7, ry = rand() * 6.283, v = Math.floor(rand() * 3); add('shroom', { x: px, y: lowest(px, pz, s * [0.12, 0.16, 0.42][v]) - 0.2, z: pz, s, ry, v }); } continue; } if (roll > 0.985) type = 'deadtree'; } // (the mushroom: ry drawn before v, the draws keep their order)
     if (!type) continue;
     const sp = SPECIES[type], h = sp.h[0] + (sp.h[1] - sp.h[0]) * sv * (1 - alpine * 0.4);
     add(type, { x: px, y: y - 0.15, z: pz, s: h, ry: rand() * 6.283, v: Math.floor(rand() * 3) });
@@ -169,7 +172,7 @@ function place() {
       if (Math.abs(groundY(px + ax, pz + az) - groundY(px - ax, pz - az)) > 3) continue;
       add('arch', { x: px, y: Math.min(groundY(px + ax, pz + az), groundY(px - ax, pz - az), y) + 0.3, z: pz, s: (0.9 + rand() * 0.25) * AS[vv], ry, v: vv, k: kind }); }
     else if (roll < aS + pS) { const n = 1 + Math.floor(rand() * 3); for (let k = 0; k < n; k++) { const qx = px + (rand() - 0.5) * 16 * Math.min(1, k), qz = pz + (rand() - 0.5) * 16 * Math.min(1, k);
-      add(kind === 'icerock' ? 'icespire' : 'spire', { x: qx, y: groundY(qx, qz) + 0.4, z: qz, s: 0.75 + rand() * 0.45, ry: rand() * 6.283, v: Math.min(2, Math.floor(rand() * 3 * (k ? 0.7 : 1))) }); } }
+      { const s = 0.75 + rand() * 0.45, ry = rand() * 6.283, v = Math.min(2, Math.floor(rand() * 3 * (k ? 0.7 : 1))); add(kind === 'icerock' ? 'icespire' : 'spire', { x: qx, y: lowest(qx, qz, [3.2, 4.2, 5.4][v] * s) + 0.4, z: qz, s, ry, v }); } } }
   }
   };
   const late = (x, z) => lateGround.some(([cx, cz, rr]) => Math.hypot(x - cx, z - cz) < rr);

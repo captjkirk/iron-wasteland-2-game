@@ -61,9 +61,9 @@ export function buildLurker({ eye, perMeshFlash, M }) {
   const gait = new Legs(root, [L('shL', 'elL', 'wrL', -1), L('shR', 'elR', 'wrR', 1), L('hpL', 'knL', 'anL', -1), L('hpR', 'knR', 'anR', 1)], { stride: 0.75 * K, duty: 0.6, settle: 2 });
   [0, 0.5, 0.5, 0].forEach((o, i) => gait.legs[i].off = o); gait.legs.forEach(l => l.pitchK = 0.3);
   const rest = Object.fromEntries(Object.entries(b).map(([k, o]) => [k, o.position.clone()]));
-  let t = Math.random() * 9, atk = 0, hit = 0, hitS = 1, die = 0; const look = {}, tmp = new THREE.Vector3();
+  let t = Math.random() * 9, atk = 0, hit = 0, hitS = 1, die = 0, rear = 0, rearOn = false; const look = {}, tmp = new THREE.Vector3();
   const anim = { dead: false, submerged: 0,
-    attack() { if (!this.dead) atk = 0.001; }, hit(side = 1) { if (!this.dead) { hit = 1; hitS = side; } }, die() { this.dead = true; die = 0.001; atk = 0; },
+    attack() { if (!this.dead) atk = 0.001; }, rear(on) { rearOn = !!on && !this.dead; }, get rearing() { return rearOn; }, hit(side = 1) { if (!this.dead) { hit = 1; hitS = side; } }, die() { this.dead = true; die = 0.001; atk = 0; },
     update(dt, { speed = 0, ground = null, look: target = null } = {}) {
       t += dt; gait.ground = ground; gait.settle = this.dead ? 0 : 2;
       gait.step(dt, this.dead ? 0 : speed, { stride: Math.min(0.72, 0.4 + speed * 0.12) * K, duty: 0.6 }); // (a longer stride outreaches the short legs)
@@ -75,6 +75,8 @@ export function buildLurker({ eye, perMeshFlash, M }) {
       ['tail1', 'tail2', 'tail3', 'tail4'].forEach((n, i) => b[n].rotation.y = Math.sin(ph - 1 - i * 0.9) * (0.22 + i * 0.06) * mv + Math.sin(t * 0.8 - i * 0.7) * 0.08 * (1 - mv));
       b.jaw.rotation.x = -Math.max(0, Math.sin(t * 0.9)) * 0.04; b.chest.scale.setScalar(1 + Math.sin(t * 1.7) * 0.012); // a slow throat pulse
       for (const l of gait.legs) l.over = null;
+      rear += ((rearOn && !this.dead ? 1 : 0) - rear) * Math.min(1, dt * 7); // about to spit (Jared, November 15, 2026): it rears its head, gapes and swells its throat
+      if (rear > 0.01) { b.chest.rotation.x += rear * 0.35; b.head.rotation.x += rear * 0.2; b.jaw.rotation.x = -0.6 * rear; b.chest.scale.setScalar(1 + rear * 0.18); }
       if (atk > 0) { atk += dt / 0.9; const a = atk, rise = ease(a / 0.4) * (1 - ease((a - 0.55) / 0.3)), snap = ease((a - 0.4) / 0.1) * (1 - ease((a - 0.65) / 0.3));
         b.chest.rotation.x = rise * 0.3 - snap * 0.2; b.chest.position.z -= snap * 0.12; b.head.rotation.x = rise * 0.15; b.jaw.rotation.x = -0.75 * Math.max(0, rise - snap * 0.9); if (atk >= 1) atk = 0; }
       if (hit > 0) { hit = Math.max(0, hit - dt / 0.35); const h = Math.sin(hit * Math.PI); b.spine.rotation.y += hitS * 0.3 * h; b.chest.rotation.z -= hitS * 0.12 * h; b.head.rotation.x += 0.2 * h; b.jaw.rotation.x -= 0.3 * h; }

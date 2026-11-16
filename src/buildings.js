@@ -1287,7 +1287,8 @@ function buildBarge(b, P, g) { const L = 28, W = 7.6, D = 2.7, cw = 2.25, hs = -
   for (const d of [-0.22, 0.22]) bar(TP, 'iron', xl + d, -D + 0.27, he - 0.12, xl + d, 0.95, he - 0.12, 0.045); for (let y = -D + 0.5; y < 0.1; y += 0.3) bar(TP, 'iron', xl - 0.22, y, he - 0.12, xl + 0.22, y, he - 0.12, 0.03);
   { const lo = at(xl, -D + 0.28, he - 0.45), hi = at(xl, 0.02, he - 0.45), o = at(xl, 0, he + 0.75); // (down into the hold and up out of it, the climber facing aft as on every ladder)
     ladders.push({ b, y0: lo.y, y1: hi.y, off: toW(b, o.x, o.z), at: (y) => { const f = Math.min(1, Math.max(0, (y - lo.y) / (hi.y - lo.y))); return toW(b, lo.x + (hi.x - lo.x) * f, lo.z + (hi.z - lo.z) * f); } }); }
-  { const c = at(-1.3, -D + 0.28, -1.2); cache(b, g, c.x, c.z, null, { k: 2, y: c.y, ry: 0.3, isNew: true }); } // a crate left in the hold: worth the climb
+  { const c = at(-1.3, -D + 0.28, -1.2), [cx, cz] = toW(b, c.x, c.z); cache(b, g, c.x, c.z, null, { k: 2, y: Math.max(c.y, groundY(cx, cz)), ry: 0.3, isNew: true }); } // a crate left in the hold: worth the climb
+  // (on the land where it fills the sunken hull above her floor: silent-marsh-90's sat 0.6 m into it, round 4's crate watch)
   for (const [x, z, ry] of [[0.9, -2.3, 0.2], [1.6, -2.5, -0.3], [1.2, -2.0, 1.4], [0.3, -2.4, 0.9], [1.4, -2.3, 0.1]]) T.sack.push(new THREE.SphereGeometry(0.4, 8, 6).scale(0.95, 0.36, 0.6).rotateY(ry).translate(x, -D + 0.45 + (ry > 1 ? 0.28 : 0), z));
   for (const [x, z, a] of [[-1.2, -3.0, 0.4], [-0.3, -4.9, 1.2]]) TP.paint.push(new THREE.CylinderGeometry(0.29, 0.29, 0.88, 14).rotateZ(Math.PI / 2).rotateY(a).translate(x, -D + 0.56, z));
   { const p = at(0, -D + 0.28, hs), q = at(0, 0, (hs + he) / 2); if (wl > p.y + 0.05) TL.water.push(new THREE.PlaneGeometry(2 * cw - 0.1, (he - hs) * Math.cos(tilt) - 0.1).rotateX(-Math.PI / 2).translate(q.x, wl, q.z)); } // (flooded to the water outside)

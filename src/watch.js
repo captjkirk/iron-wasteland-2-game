@@ -7,7 +7,7 @@
 import { caveAt } from './cavemap.js';
 import { HALF, WORLD, SEED, WATER_Y, ENEMY, BIOME_NAMES } from './config.js';
 import { groundY, biomeAt, slopeAt } from './world.js';
-import { nearColliders, colR, placed, standAt } from './props.js';
+import { nearColliders, colR, placed, standAt, topAt } from './props.js';
 import { caches, buildings } from './buildings.js';
 import { logEvent } from './playlog.js';
 import { player, enemies, pickups } from './game.js';
@@ -24,8 +24,8 @@ function solidName(c) { if (c.cache) return 'crate'; const r = c.ref; if (!r) re
 // the solid (x, z) is inside with its feet at y: further in than `depth` past its edge, below its top, not standing on it
 export function solidAt(x, z, y, depth = 0.3, not = null) {
   for (const c of nearColliders(x, z)) { if (!c.r || c === not || c.gate?.open) continue;
-    if ((c.stand != null && y >= c.stand - 0.1) || (c.top != null && y >= c.top - 0.05)) continue;
-    if (Math.hypot(x - c.x, z - c.z) < colR(c, x, z) - depth) return c; }
+    if ((c.stand != null && y >= c.stand - 0.1) || (c.top != null && y >= c.top - 0.05) || (c.bot != null && y + 1.7 < c.bot) || (c.bands && y >= topAt(c, x, z) - 0.1)) continue; // (bot: an upper floor's wall or furniture, over the head, as collide() skips it: round 4)
+    if (Math.hypot(x - c.x, z - c.z) < (c.bands ? colR(c, x, z, y + 0.02) : colR(c, x, z)) - depth) return c; } // (a measured rock: its own surface and width at that height, as collide() and standAt() use them; silent-marsh-90's ice rocks, round 4)
   return null; }
 const outside = (x, z) => (Math.abs(x) > HALF - 1 || Math.abs(z) > HALF - 1) && !caveAt(x, z); // (#8: a cave's inside lies past the north edge)
 const broken = (...v) => v.some(q => !Number.isFinite(q));
@@ -45,7 +45,7 @@ export function watchStart() { acc = 0; crated = false; was.clear(); spell.clear
 function lasting(key, bad, type, data) { if (!bad) { was.delete(key); spell.delete(key); return; }
   if (was.get(key) === bad && !spell.has(key)) { spell.add(key); note(type, data()); } was.set(key, bad); }
 
-function body(who, id, x, z, y, extra = {}, own = null) { /* (own: its own solid, a spider nest's mound: not a problem to be in) */ const k = who + ':' + id;
+function body(who, id, x, z, y, extra = {}, own = null) { const k = who + ':' + id;
   if (broken(x, z, y)) return lasting(k + ':nan', 'nan', 'bad-pos', () => ({ who, x, z, y, ...extra }));
   lasting(k + ':out', outside(x, z) && 'out', 'out-of-world', () => ({ who, x: r1(x), z: r1(z), ...extra }));
   if (outside(x, z)) return;
@@ -57,16 +57,18 @@ function body(who, id, x, z, y, extra = {}, own = null) { /* (own: its own solid
 function crateWhy(q) { const own = nearColliders(q.x, q.z).find(c => c.cache === q);
   if (outside(q.x, q.z)) return 'out of the world'; const g = groundY(q.x, q.z);
   if (q.y < g - 0.4) return `buried ${r1(g - q.y)} m`;
-  if (q.y > g + 1 && standAt(q.x, q.z, q.y + 0.05) < q.y - 0.3) return `floating ${r1(q.y - g)} m up`;
+  if (q.y > g + 1 && standAt(q.x, q.z, q.y + 0.2) < q.y - 0.3) return `floating ${r1(q.y - g)} m up`; // (+0.2: the mushroom ring's crate sits 0.15 m into its cap, round 4)
   const c = solidAt(q.x, q.z, q.y + 0.2, 0, own); if (c) return 'inside ' + solidName(c);
-  for (let a = 0; a < 8; a++) { const x = q.x + Math.cos(a * 0.785) * 1.3, z = q.z + Math.sin(a * 0.785) * 1.3;
-    if (!outside(x, z) && slopeAt(x, z) < 1.2 && !solidAt(x, z, groundY(x, z), -0.35, own)) return null; }
+  // a spot on the crate's own floor (a house's boards, not the dirt under them) from 1 m to 2.2 m off, inside the 2.4 m reach
+  // (a house crate sits a metre from two walls: round 4 found every 1.3 m spot round it against a wall or a table)
+  for (const k of [1, 1.6, 2.2]) for (let a = 0; a < 8; a++) { const x = q.x + Math.cos(a * 0.785) * k, z = q.z + Math.sin(a * 0.785) * k, gy = groundY(x, z), f = Math.max(gy, standAt(x, z, q.y + 0.45));
+    if (!outside(x, z) && Math.abs(f - q.y) < 0.6 && (f > gy || slopeAt(x, z) < 1.2) && !solidAt(x, z, f, -0.35, own)) return null; }
   return 'walled in'; }
 export function checkCrates() { let n = 0; caches.forEach((q, i) => { if (q.broken) return; const why = crateWhy(q); if (why) { n++; note('crate-unreachable', { i, x: r1(q.x), z: r1(q.z), biome: biomeAt(q.x, q.z), why, camp: !!q.camp }); } }); return n; }
 
 // a hunting (or fleeing) creature that has gone nowhere for 5 s while its quarry is more than 5 m off; a shooter at range
 // stands still on purpose
-function stuckCreature(e, dt) { const live = (e.state === 'chase' || e.state === 'flee') && ENEMY[e.type]?.speed > 0; // (a spider nest never moves: the play logs of 2026-11-15)
+function stuckCreature(e, dt) { const live = (e.state === 'chase' || e.state === 'flee') && ENEMY[e.type]?.speed !== 0; // (a nest never moves: never stuck, gilded-hollow-29)
   let h = held.get(e); if (!live) { held.delete(e); return; } if (!h || h.state !== e.state) held.set(e, h = { x: e.x, z: e.z, t: 0, state: e.state, said: false });
   h.t += dt; if (Math.hypot(e.x - h.x, e.z - h.z) > 1) { if (Math.hypot(e.x - h.x, e.z - h.z) > 3) h.said = false; h.x = e.x; h.z = e.z; h.t = 0; return; }
   if (h.t < 5 || h.said) return; let d = 1e9; for (const p of everyone()) d = Math.min(d, Math.hypot(p.x - e.x, p.z - e.z));
@@ -80,7 +82,7 @@ export function tickWatch(dt) { acc += dt; if (acc < 0.5) return; const step = a
   if (!crated) { crated = true; checkCrates(); }
   for (const e of enemies) { if (e.dead || e.gone || e.state === 'lurk' || e.state === 'emerge') continue; /* (buried in the mud on purpose) */ let near = false; for (const p of everyone()) if (Math.hypot(p.x - e.x, p.z - e.z) < 70) { near = true; break; }
     if (!near) { held.delete(e); continue; } // asleep: out of everyone's waking range
-    body(e.type, e.id, e.x, e.z, e.mesh.position.y + 0.05, { state: e.state }, e.mesh.userData.col); stuckCreature(e, step); }
+    body(e.type, e.id, e.x, e.z, e.mesh.position.y + 0.05, { state: e.state }, e.mesh.userData.col); stuckCreature(e, step); } // (a nest is solid itself: not inside its own solid, silent-marsh-90)
   for (const k of pickups) { if (!k.landed || watchedLoot.has(k)) continue; watchedLoot.add(k); const { x, z } = k.mesh.position;
     const why = outside(x, z) ? 'out of the world' : (c => c && 'inside ' + solidName(c))(solidAt(x, z, groundY(x, z) + 0.1, 0.1));
     if (why) note('loot-unreachable', { kind: k.kind, x: r1(x), z: r1(z), biome: biomeAt(x, z), why }); }

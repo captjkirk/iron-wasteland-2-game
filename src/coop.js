@@ -4,13 +4,15 @@
 // Each game sends its player 15 times a second; the host sends every enemy 12 times a second.
 import * as THREE from 'three';
 import { CHARS, ENEMY, SEED_TEXT, params, JOINER, KEEP, randomSeed } from './config.js';
+import { EDGE } from './edgefog.js';
 import { groundY } from './world.js';
 import { radioOn, radioLater, places } from './places.js';
+import { state as relicState, applyRelics, takeRelic } from './relics.js'; // #53
 import { caches, takeFood } from './buildings.js';
-import { placed } from './props.js';
+import { placed, nearColliders, colR } from './props.js';
 import { markDirty } from './scatter.js';
 import { buildCharacter, eatPose } from './characters.js';
-import { nameTags } from './effects.js';
+import { nameTags, eye } from './effects.js';
 import { sfx } from './audio.js';
 import { net, netReady, send as post, flush, onMessage } from './net.js';
 import { logEvent } from './playlog.js';
@@ -128,20 +130,22 @@ function onMsg(m, from) {
       if (!running()) { post(from, { t: 'wait', seed: nextSeed || SEED_TEXT }); break; } // (the world it will build next: a joiner builds it meanwhile)
       post(from, { t: 'welcome', crates: caches.flatMap((c, i) => c.broken ? [[i, 2]] : c.opened ? [[i, 1]] : []), salv: salvaged, food: eaten, pickups: pickups.map(k => [k.id, k.kind, +k.mesh.position.x.toFixed(2), +k.mesh.position.z.toFixed(2)]),
         tur: turrets.map(q => [+q.x.toFixed(2), +q.z.toFixed(2), +q.head.rotation.y.toFixed(2), +q.life.toFixed(1)]), // turrets already out, so a late joiner sees them
-        fell: felled, built: builtMsg(), d: [day.t, day.n, day.speed, day.g], seed: SEED_TEXT, rules: { ...rules }, radio: places.some(q => q.on) ? 1 : 0 }); /* (slice 23: the radio tower's radio, on) */ break; // (slice 13: the time of day) // slice 11: trees felled, bushes picked, and what players built
+        fell: felled, built: builtMsg(), d: [day.t, day.n, day.speed, day.g], seed: SEED_TEXT, edge: EDGE, rules: { ...rules }, radio: places.some(q => q.on) ? 1 : 0, relics: relicState() }); /* (slice 23: the radio tower's radio, on) */ break; // (slice 13: the time of day) // slice 11: trees felled, bushes picked, and what players built
     case 'seed?': if (net.role === 'host') post(from, { t: 'seed', s: nextSeed || SEED_TEXT }); break; // a joiner, before it builds anything (config.js)
     case 'wait': if (joinT && m.seed && m.seed !== SEED_TEXT) { reseed(m.seed); break; } if (!waitLogged) { waitLogged = true; logEvent('join-wait'); } document.getElementById('loading').textContent = 'The host is still on the start menu: walk out there first.'; break;
     case 'welcome': if (!joinT || running()) break; if (m.radio) radioLater();
       // another world than this page built (the host rolled a new one after this page loaded): build the host's, then join
       // as asked (slice 13c; a joining page normally gets the host's seed before it builds anything, config.js)
       if (m.seed && m.seed !== SEED_TEXT) { reseed(m.seed); break; }
+      // the host's edge (?edge=, picked on its page; the mist is set up as the page loads): load again with it
+      if ((m.edge || 'mountains') !== EDGE) { params.set('edge', m.edge || 'mountains'); location.search = params.toString(); break; }
       if (params.has('reseed')) { params.delete('reseed'); history.replaceState(null, '', '?' + params.toString() + location.hash); } // (in: the next world change is followed too)
       joinT = 0; net.host = from; logEvent('join-welcome', { ms: Math.round(performance.now() - joinAt), hellos });
       for (const [i, s] of m.crates) { const c = caches[i]; if (!c) continue; s === 2 ? c.smash() : c.open(); }
       for (const [k, i] of m.salv) applySalvage(k, i); for (const i of m.food || []) if (takeFood(i)) eaten.push(i);
       if (m.d) setDay(...m.d); applyFelled(m.fell || []); for (const b of m.built || []) addBuilt(...b); // (the host's clock first: a new game count restarts this page's own stumps, not the host's)
       takeRules(m.rules); showRules(); // (slice 33: the host's rules, before the start event logs them)
-      startGame(wantCh); joinT = 0; for (const [id, kind, x, z] of m.pickups) addPickup(id, kind, x, z, true);
+      startGame(wantCh); joinT = 0; applyRelics(m.relics); /* (#53: where the host's relics are) */ for (const [id, kind, x, z] of m.pickups) addPickup(id, kind, x, z, true);
       for (const [x, z, f, life] of m.tur || []) { deployTurret(x, z, f, true); turrets.at(-1).life = life; } break;
     case 'p': { let o = others.get(from); // a player's state
       if (!o) { if (!running() && net.role === 'join') break; o = { id: from, c: m.c, x: m.x, y: m.y, z: m.z, f: m.f, mesh: buildCharacter(CHARS[m.c]), down: 0, out: 0 }; o.name = CHARS[m.c].player;
@@ -165,13 +169,15 @@ function onMsg(m, from) {
     case 'rules': if (from === net.host && joining()) { takeRules(m); showRules(); logEvent('rules', { mode: modeKey(), lvl: rules.lvl }); log(`The host changed the game: ${modeName()}.`); } break;
     case 'log': log(m.s); break;
     case 'say': if (running()) sfx(m.n, { x: m.x, z: m.z }, m.k || 1); break; // a wolf's call, from where it stands (the follow-ups to #66)
-    case 'glob': if (running()) spit(m.o, m.v); break; // #66: a pale spider's web glob, flown on this game too (it holds only this game's player)
+    case 'glob': if (running()) spit(m.o, m.v, m.k); break; // #66: a pale spider's web glob, flown on this game too (it holds only this game's player)
     case 'radio': radioOn(m.n || 'A friend'); break; // slice 23: a friend got the radio tower's radio going
     case 'gotc': crateOpen(null, null, m.got); break; // the host opened a crate for this player: its loot
     case 'got': gotPickup(m.kind); break;
     case 'kill': player.kills++; log(m.s); break;
     case 'salv': applySalvage(m.k, m.i); salvaged.push([m.k, m.i]); break;
     case 'food': if (takeFood(m.i)) eaten.push(m.i); break; // places round 2: a piece of food another player took
+    case 'relics': if (net.role === 'join') applyRelics(m.s); break; // #53: the host's word on where each relic is
+    case 'relic-take': if (net.role === 'host') takeRelic(m.i, from); break; // #53: a joined player asks to take one
     case 'crated': { const c = caches[m.i]; if (c && !c.opened) c.open(); break; }
     case 'smashed': { const c = caches[m.i]; if (c && !c.broken) c.smash(); break; }
     case 'loot': if (joining() && running()) addPickup(m.id, m.kind, m.x, m.z, false, m.v); break;
@@ -250,6 +256,14 @@ function playback(q, from) { const b = q.buf, c0 = clocks.get(from); if (!b?.len
 document.addEventListener('visibilitychange', () => { logEvent(document.hidden ? 'hidden' : 'shown'); player.away = document.hidden && !!net.role; if (net.role && running()) { send('all', { t: 'away', on: document.hidden ? 1 : 0 }); flush(); } });
 export const deliver = (m, from) => onMsg(m, from); // (for the checks: a message as if it came over the network)
 
+// Jared, 2026-11-15: "nametags for other players are currently always visible- maybe update to make them only visible when
+// 'nearby'?". A friend's tag shows within TAG_NEAR m, fades out over the last TAG_FADE m, and hides while a wall or hill is
+// between the camera and it. A co-op friend who is down keeps theirs at any range, since it is how you find them to revive
+export const TAG_NEAR = 30, TAG_FADE = 6;
+const hit = (x, y, z) => y < groundY(x, z) - 0.05 || nearColliders(x, z).some(c => c.r && !c.gate && Math.hypot(c.x - x, c.z - z) < colR(c, x, z, y) && y < (c.top ?? 99) && !(y < c.bot));
+function sightBlocked(x, y, z, p) { const n = Math.ceil(Math.hypot(p.x - x, p.z - z) / 0.25); // a sample every 1/4 m (a wall is 0.6 m thick)
+  for (let i = 1; i < n; i++) { const t = i / n; if (hit(x + (p.x - x) * t, y + (p.y - y) * t, z + (p.z - z) * t)) return true; } return false; }
+
 // ── Every frame: other players move smoothly to where they were a moment ago; this game sends its own ──
 let sendT = 0, worldT = 0, chkT = 0;
 export function tickCoop(dt) {
@@ -263,7 +277,10 @@ export function tickCoop(dt) {
     tickGhostDeep(o.id, o.out ? null : o.dq, dt); // the serpent hunting them, if one is (slice 13)
     // the tag sits just over the head, or just over the body while they are down, with the revive's progress as its bar
     // (slice 33: in free-for-all a rival's tag is in the rivals' red, with their score, and nobody revives them)
-    const dn = o.down > 0; if (!o.out) tags.push({ p: new THREE.Vector3(o.x, o.y + (dn ? 0.75 : 2.02), o.z), text: rules.ffa ? `${o.name} · ${dn ? 'KNOCKED OUT' : '★ ' + score(o) + (o.sfEnd > performance.now() ? ' · safe' : '')}` : dn ? `${o.name} · DOWN ${Math.ceil(o.down)} s${o.rt ? ' · reviving' : ' · hold E to revive'}` : o.name + (o.sl ? ' · asleep' : ''),
+    const dn = o.down > 0, tp = new THREE.Vector3(o.x, o.y + (dn ? 0.75 : 2.02), o.z), d = Math.hypot(o.x - player.x, o.z - player.z), always = dn && !rules.ffa;
+    if ((o.sightT = (o.sightT || 0) - dt) <= 0) { o.sightT = 0.25; o.hid = !always && d < TAG_NEAR && sightBlocked(eye().x, eye().y, eye().z, tp); } // (4 times a second)
+    const want = always ? 1 : o.hid ? 0 : Math.min(1, Math.max(0, (TAG_NEAR - d) / TAG_FADE)); o.tagA = (o.tagA ?? 0) + (want - (o.tagA ?? 0)) * Math.min(1, dt * 6);
+    if (!o.out && o.tagA > 0.02) tags.push({ p: tp, a: o.tagA, text: rules.ffa ? `${o.name} · ${dn ? 'KNOCKED OUT' : '★ ' + score(o) + (o.sfEnd > performance.now() ? ' · safe' : '')}` : dn ? `${o.name} · DOWN ${Math.ceil(o.down)} s${o.rt ? ' · reviving' : ' · hold E to revive'}` : o.name + (o.sl ? ' · asleep' : ''),
       color: rules.ffa ? (dn ? '#c86a5a' : RIVAL) : dn ? '#ff8a6a' : '#' + CHARS[o.c].color.toString(16).padStart(6, '0'), frac: dn ? (o.rt || 0) / 100 : Math.max(0, o.hp / o.mx), bar: true, fill: dn ? 'linear-gradient(#ffd27a,#e08a2a)' : null }); }
   nameTags(tags);
   if (!net.role || !running()) return;
