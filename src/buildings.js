@@ -862,7 +862,7 @@ function buildPlane(b, P, g) { planeMats(b); const rnd = mulberry32(Math.round(b
   for (const sx of [-1, 1]) for (let x = 1.2; x < 6.3; x += 0.8) { const z = 14.3 + x * 0.55 + (3.4 - x * 0.34) / 2, p = at(MT, sx * x, (fprof(15.2).top + fprof(15.2).bot) / 2 + x * 0.1, z); // (a stabiliser rolled down to head height)
     if (p.y - ga(p.x, p.z) < 2.0) post(p.x, p.z, 0.55, p.y + 0.15, p.y - 0.3); }
   // the third-person cut-away covers the middle's cabin; the crate is near the back, seen from the rear break
-  b.roofBox = { cz: (Z0 + Z1) / 2, w: 3.3, d: Z1 - Z0 }; // (inside the walls only: one on the wing's root by the body is not inside) b.h = top - b.y - 0.1;
+  b.roofBox = { cz: (Z0 + Z1) / 2, w: 3.3, d: Z1 - Z0 }; b.h = top - b.y - 0.1; // (inside the walls only: one on the wing's root by the body is not inside)
   cache(b, g, 0.75, 4.7, b.place, { k: 3, ammo: 9, y: floorAt(0.75, 4.7) }); }
 // ── Interiors (slice 23 polish, #52; Jared, 2026-11-14: "everything else just sort of looks like somebody drew it from memory") ──
 // The rooms are furnished with scanned CC0 props from Poly Haven (CREDITS.md), at their real size: loaded once by buildBuildings,

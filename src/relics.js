@@ -13,10 +13,16 @@ import { CAMP, SAFE_R, SEED_TEXT } from './config.js';
 
 // the relic of each kind of cave: its name and its glow
 const LOOK = { ice: ['the Ice Heart', 0x9ad8ff], fungal: ['the Glow Heart', 0x7dffb0], mine: ['the Ember Heart', 0xffa050], crystal: ['the Glass Heart', 0xd09aff], roots: ['the Root Heart', 0xd8f070] };
+// and its shape, so no relic and no socket is told apart by colour alone (Jared is colourblind; colour never carries meaning by itself):
+// the Ice Heart a long shard, the Glow Heart a mushroom's cap, the Ember Heart a block of ore, the Glass Heart a six-sided crystal, the
+// Root Heart a knot; each socket on the altar shows its relic's shape, small, over its cup
+const SHAPE = { ice: (s) => new THREE.OctahedronGeometry(s, 0).scale(1, 1.6, 1), fungal: (s) => new THREE.SphereGeometry(s * 1.1, 14, 7, 0, Math.PI * 2, 0, Math.PI / 2), mine: (s) => new THREE.BoxGeometry(s * 1.3, s * 1.3, s * 1.3),
+  crystal: (s) => new THREE.CylinderGeometry(s * 0.6, s * 0.6, s * 2.2, 6), roots: (s) => new THREE.TorusKnotGeometry(s * 0.6, s * 0.2, 40, 6) };
+const shapeOf = (k, s) => (SHAPE[k] || SHAPE.ice)(s);
 // TAKE: seconds Interact is held to take one; NEAR: how close to it; ALTAR_R: how close to the altar's middle sets it down;
 // HUNT: seconds between the packs sent at a carrier out in the open, by difficulty (the first comes after half the shorter wait)
 const TAKE = 1.5, NEAR = 2.2, ALTAR_R = 3.2, HUNT = { easy: null, normal: [40, 60], hard: [18, 28] }, AT = ['plinth', 'held', 'ground', 'altar'];
-export const relics = [], altar = { x: CAMP.x - 4.8, z: CAMP.z - 3.4, y: 0, sockets: [] };
+export const relics = [], altar = { x: CAMP.x - 4.8, z: CAMP.z - 3.4, y: 0, sockets: [], marks: [] };
 let G = null, scene = null, holdT = 0, won = false, plate = null, plateT = 0, t = 0;
 export const stats = { hunts: 0 }; // (for the checks)
 
@@ -24,7 +30,7 @@ export const stats = { hunts: 0 }; // (for the checks)
 export function buildRelics(sc) { scene = sc; relics.length = 0;
   const glow = haloTex();
   for (const c of caves.filter(q => q.relic)) { const [name, color] = LOOK[c.kind] || ['the relic', 0xffe2a0], m = new THREE.Group();
-    const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.3, 0).scale(1, 1.6, 1), new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.6, roughness: 0.2, metalness: 0.1 }));
+    const gem = new THREE.Mesh(shapeOf(c.kind, 0.3), new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.6, roughness: 0.2, metalness: 0.1 }));
     const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })); halo.scale.setScalar(2.2);
     m.add(gem, halo); m.userData.gem = gem; relics.push({ i: relics.length, c, name, color, m, at: 'plinth', by: null, x: 0, y: 0, z: 0, huntT: null }); }
   altar.y = groundY(altar.x, altar.z); const g = new THREE.Group(); g.name = 'altar'; g.position.set(altar.x, altar.y, altar.z); scene.add(g);
@@ -33,7 +39,8 @@ export function buildRelics(sc) { scene = sc; relics.length = 0;
   altar.sockets = relics.map((r, k) => { const a = k / Math.max(5, relics.length) * Math.PI * 2, x = Math.cos(a) * 1.05, z = Math.sin(a) * 1.05;
     const post = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.17, 0.9, 7), stone); post.position.set(x, 0.72, z); g.add(post);
     const cup = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.035, 5, 16).rotateX(Math.PI / 2), new THREE.MeshStandardMaterial({ color: r.color, emissive: r.color, emissiveIntensity: 0.35 })); cup.position.set(x, 1.19, z); g.add(cup);
-    return { x: altar.x + x, y: altar.y + 1.55, z: altar.z + z }; });
+    const mark = new THREE.Mesh(shapeOf(r.c.kind, 0.1), new THREE.MeshStandardMaterial({ color: 0xe8e2d4, roughness: 0.6 })); mark.position.set(x, 1.36, z); g.add(mark); // (pale stone: its shape, not its colour, says whose)
+    altar.marks[k] = mark; return { x: altar.x + x, y: altar.y + 1.55, z: altar.z + z }; });
   addCollider(altar.x, altar.z, 1.6, null);
   for (const r of relics) home(r); }
 
@@ -42,7 +49,7 @@ export function startRelics(g) { G = g; holdT = 0; won = false; plateT = 0; if (
 
 // where each relic is: on its plinth, over its carrier, on the ground, or in its socket on the altar
 function home(r) { if (r.at === 'plinth') { const L = r.c.L; Object.assign(r, { x: L.hall.x, z: L.hall.z, y: floorOf(L, L.hall.x, L.hall.z) + 1.75 }); }
-  if (r.at === 'altar') Object.assign(r, altar.sockets[r.i]);
+  if (r.at === 'altar') Object.assign(r, altar.sockets[r.i]); if (altar.marks[r.i]) altar.marks[r.i].visible = r.at !== 'altar'; // (the relic itself shows there once set)
   const parent = r.at === 'plinth' ? r.c.g : r.at === 'ground' && caveAt(r.x, r.z) ? caveAt(r.x, r.z).g : scene; // (in a cave: shown and hidden with it)
   if (parent && r.m.parent !== parent) parent.add(r.m); r.m.position.set(r.x, r.y, r.z); }
 const me = () => G.net.id;

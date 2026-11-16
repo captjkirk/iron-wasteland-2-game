@@ -4,6 +4,8 @@ Every third-party asset or library used by Iron Wasteland 2: what it is, where i
 | What | Source | License |
 |---|---|---|
 | Three.js 0.170.0 (core, Sky, Water, BufferGeometryUtils addons) | https://cdn.jsdelivr.net/npm/three@0.170.0/ | MIT |
+| Night sky (ticket 90): Rogland Clear Night, its sky only (its land lifted out, north turned to the left edge; 4k and 2k WebP, assets/sky/) and its 400 brightest stars (src/skystars.js) | https://polyhaven.com/a/rogland_clear_night | CC0 |
+| Moon (ticket 90): its near side at full moon, baked to a 256 px disc (assets/sky/moon.webp) from the LRO colour map lroc_color_poles_1k.jpg of NASA's CGI Moon Kit (NASA's Scientific Visualization Studio; LRO data, NASA/GSFC/Arizona State University) | https://svs.gsfc.nasa.gov/4720 | Public domain (NASA; credit requested, not required) |
 | Terrain layer "grass": Rocky Terrain 02, diffuse 1k + normal (GL) | https://polyhaven.com/a/rocky_terrain_02 | CC0 |
 | Terrain layer "forest": Forest Leaves 04, diffuse 1k + normal (GL) | https://polyhaven.com/a/forest_leaves_04 | CC0 |
 | Terrain layer "dirt": Dry Ground Rocks, diffuse 1k + normal (GL) | https://polyhaven.com/a/dry_ground_rocks | CC0 |

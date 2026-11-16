@@ -6,12 +6,16 @@ import { Water } from 'three/addons/objects/Water.js';
 import { WORLD, WATER_Y, Q, HALF, CELL, SEG, N } from './config.js';
 import { H, river } from './world.js';
 import { vnoise, smooth, clamp01 } from './noise.js';
-import { sunElev, sunAz, moonElev, moonAz, nightK } from './daynight.js';
+import { sunElev, sunAz, moonElev, moonAz, nightK, DAY_S } from './daynight.js';
+import { SKY_STARS } from './skystars.js';
+import { EDGE } from './edgefog.js';
 // what the far trees (baked billboards, unlit) are multiplied by: the light of the hour (trees.js)
 export const skyLight = { value: new THREE.Color(1, 1, 1) };
 
 const SUN_ELEV = 34, SUN_AZ = 205; // degrees: a mid-afternoon sun from the south-west
-export const SUN_DIR = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - SUN_ELEV), THREE.MathUtils.degToRad(SUN_AZ));
+// (a bearing from north, clockwise, with north -z and east +x: three's angle from +z is 180 degrees less the bearing; ticket 90:
+// the sun used the bearing as that angle, so it rose in the east, crossed the NORTH and set in the west)
+export const SUN_DIR = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - SUN_ELEV), THREE.MathUtils.degToRad(180 - SUN_AZ));
 export const FOG_COLOR = new THREE.Color(0xa9bccc);
 
 export function buildEnvironment(scene, renderer, camera) {
@@ -66,10 +70,29 @@ export function buildEnvironment(scene, renderer, camera) {
     sun.target.position.copy(f); sun.position.copy(f).addScaledVector(L, 400); sky.position.copy(camera.position); night.position.copy(camera.position);
     clouds.position.set(camera.position.x, Math.max(camera.position.y, 0) + 140, camera.position.z);
   }
-  // the night sky: stars (they come out as the light goes) and the moon with a soft halo, both following the camera
-  const night = new THREE.Group(), R = Q.drawDist * 0.9, sp = [], sc = []; night.renderOrder = -0.8; scene.add(night);
-  for (let k = 0; k < 2200; k++) { const u = Math.random(), v = Math.random() * 0.96 + 0.04, th = u * Math.PI * 2, y = v, r = Math.sqrt(1 - y * y); sp.push(Math.cos(th) * r * R, y * R, Math.sin(th) * r * R);
-    const b = 0.35 + Math.random() ** 3 * 0.9, w = Math.random(); sc.push(b * (w < 0.2 ? 0.8 : 1), b * 0.92, b * (w > 0.8 ? 0.75 : 1)); }
+  // the night sky, following the camera: the moon with a soft halo, and a real photo of a dark sky (ticket 90, Jared 2026-11-16:
+  // Poly Haven's "Rogland Clear Night", CC0, with its own land lifted out and north at its left edge, baked once into assets/sky/ by
+  // ~/dev/iw2-sky-work/bake.js; 2k on Low). It is a southern sky (no pole star) and, a photo from the ground, it holds still all night
+  const night = new THREE.Group(), R = Q.drawDist * 0.9; night.renderOrder = -0.8; scene.add(night);
+  const photoMap = new THREE.TextureLoader().load(`assets/sky/night-sky-${Q.label === 'Low' ? '2k' : '4k'}.webp`); photoMap.colorSpace = THREE.SRGBColorSpace; photoMap.wrapS = THREE.RepeatWrapping;
+  const photo = new THREE.Mesh(new THREE.SphereGeometry(R * 1.005, 48, 12, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.ShaderMaterial({ transparent: true, depthWrite: false, fog: false, toneMapped: false, side: THREE.BackSide,
+    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor, // (its light adds to the dusk sky, and covers it only in full night: uC)
+    uniforms: { uMap: { value: photoMap }, uA: { value: 0 }, uC: { value: 0 } },
+    vertexShader: `varying vec3 vDir; void main() { vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `uniform sampler2D uMap; uniform float uA, uC; varying vec3 vDir;
+      void main() { vec3 d = normalize(vDir); float alt = asin(clamp(d.y, 0.0, 1.0));
+        vec2 g = vec2(fract(atan(d.x, -d.z) / 6.2831853), alt / 1.5707963), g2 = vec2(fract(g.x + 0.5), g.y); // (bearing from north -z, clockwise; height)
+        vec2 dx = dFdx(g), dy = dFdy(g), dx2 = dFdx(g2), dy2 = dFdy(g2); if (abs(dx2.x) + abs(dy2.x) < abs(dx.x) + abs(dy.x)) { dx = dx2; dy = dy2; } // (at the seam, the copy whose step does not jump)
+        float c = max(cos(alt), 0.02); dx.x *= c; dy.x *= c; // (near straight up the image's rows shrink to a point: blur by the real width of a pixel, not the image's)
+        float a = uA * smoothstep(0.0, ${EDGE === 'mountains' ? '0.035' : '0.45'}, alt); gl_FragColor = vec4(textureGrad(uMap, g, dx, dy).rgb * 0.8, 1.0); // (0.8: the brightness Jared picked on the round-two sheet; with the edge in mist (edgefog.js) the photo fades out over the lowest 26 degrees, so the night's mist-coloured sky shows there as before and the misted hills melt into it, not cut a hard line against the photo)
+        #include <colorspace_fragment>
+        gl_FragColor = vec4(gl_FragColor.rgb * a, a * uC);
+      }` }));
+  photo.name = 'nightPhoto'; photo.frustumCulled = false; photo.renderOrder = -0.88; night.add(photo);
+  // its brightest stars again, sharp at any screen density (a photo's stars blur), twinkling only low in the sky, where the air is thickest
+  const sp = [], sc = [], ss = [], D = Math.PI / 180;
+  for (const [az, alt, f, r, g, b] of SKY_STARS) { const k = Math.min(1, (f - 1200) / 1900); sp.push(Math.sin(az * D) * Math.cos(alt * D) * R * 0.99, Math.sin(alt * D) * R * 0.99, -Math.cos(az * D) * Math.cos(alt * D) * R * 0.99);
+    sc.push(...[r, g, b].map(v => v * (0.3 + 0.7 * k))); ss.push(1.3 + 1.4 * k); }
   // behind them a dome, deep blue overhead and a little lighter at the horizon (the day sky's own night is a muddy grey)
   const domeG = new THREE.SphereGeometry(R * 1.02, 24, 12), dp = domeG.attributes.position, dc = [];
   for (let i = 0; i < dp.count; i++) { const y = Math.max(0, dp.getY(i) / (R * 1.02)); dc.push(0.045 - 0.035 * y, 0.06 - 0.045 * y, 0.11 - 0.07 * y); } domeG.setAttribute('color', new THREE.Float32BufferAttribute(dc, 3));
@@ -77,18 +100,35 @@ export function buildEnvironment(scene, renderer, camera) {
   // a haze over the whole sky, in the fog's colour, for a dust storm or heavy snow (weather.js)
   const hazeM = new THREE.Mesh(new THREE.SphereGeometry(R * 1.01, 24, 12), new THREE.MeshBasicMaterial({ side: THREE.BackSide, transparent: true, opacity: 0, depthWrite: false, fog: false }));
   hazeM.frustumCulled = false; hazeM.renderOrder = -0.85; hazeM.visible = false; night.add(hazeM);
-  const haze = (col, a) => { hazeM.visible = a > 0.01; hazeM.material.opacity = a; hazeM.material.color.copy(col); };
-  const starG = new THREE.BufferGeometry(); starG.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3)); starG.setAttribute('color', new THREE.Float32BufferAttribute(sc, 3));
-  const stars = new THREE.Points(starG, new THREE.PointsMaterial({ size: 1.7, sizeAttenuation: false, vertexColors: true, transparent: true, opacity: 0, depthWrite: false, fog: false }));
-  stars.frustumCulled = false; night.add(stars);
-  const moon = new THREE.Mesh(new THREE.CircleGeometry(R * 0.035, 40), new THREE.MeshBasicMaterial({ color: 0xe8ecf4, fog: false, transparent: true, depthWrite: false }));
-  const halo = new THREE.Mesh(new THREE.RingGeometry(R * 0.036, R * 0.16, 40, 3), new THREE.MeshBasicMaterial({ color: 0x8aa0d0, fog: false, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.25 }));
-  { const p = halo.geometry.attributes.position, a = []; for (let i = 0; i < p.count; i++) { const k = (Math.hypot(p.getX(i), p.getY(i)) - R * 0.036) / (R * 0.124); a.push(1, 1, 1, Math.pow(1 - k, 3)); }
-    halo.geometry.setAttribute('color', new THREE.Float32BufferAttribute(a, 4)); halo.material.vertexColors = true; }
+  let hazeA = 0; const haze = (col, a) => { hazeA = a; hazeM.visible = a > 0.01; hazeM.material.opacity = a; hazeM.material.color.copy(col); };
+  const starG = new THREE.BufferGeometry(); starG.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3)); starG.setAttribute('aCol', new THREE.Float32BufferAttribute(sc, 3)); starG.setAttribute('aSize', new THREE.Float32BufferAttribute(ss, 1));
+  const stars = new THREE.Points(starG, new THREE.ShaderMaterial({ transparent: true, depthWrite: false, fog: false, toneMapped: false, blending: THREE.AdditiveBlending,
+    uniforms: { uA: { value: 0 }, uTime: { value: 0 }, uPR: { value: renderer.getPixelRatio() } },
+    vertexShader: `attribute vec3 aCol; attribute float aSize; uniform float uTime, uPR; varying vec3 vC;
+      void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_PointSize = aSize * uPR;
+        float low = 1.0 - smoothstep(0.0, 0.3, normalize(position).y); vC = aCol * (1.0 + 0.45 * low * sin(uTime * (6.0 + 9.0 * fract(position.x * 0.37)) + position.z)); }`,
+    fragmentShader: `uniform float uA; varying vec3 vC; void main() { float r = length(gl_PointCoord - 0.5) * 2.0; gl_FragColor = vec4(vC, uA * (1.0 - smoothstep(0.35, 1.0, r))); }` }));
+  stars.name = 'nightStars'; stars.frustumCulled = false; stars.renderOrder = -0.8; night.add(stars);
+  // now and then a shooting star, a short streak of its own over the photo: each 20 s of the game's clock has about half a chance
+  // of one (the clock is shared, so players in one game see the same ones)
+  const shoot = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, fog: false, toneMapped: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+  shoot.geometry.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(12), 3)); shoot.geometry.setAttribute('color', new THREE.Float32BufferAttribute([1, 1, 1, 1, 1, 1, 0.6, 0.7, 1, 0.6, 0.7, 1], 3)); shoot.geometry.setIndex([0, 1, 2, 2, 1, 3]);
+  shoot.name = 'shootingStar'; shoot.frustumCulled = false; shoot.renderOrder = -0.79; shoot.visible = false; night.add(shoot);
+  const hash = (n) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }, sky3 = (v, az, alt) => v.set(Math.sin(az * D) * Math.cos(alt * D), Math.sin(alt * D), -Math.cos(az * D) * Math.cos(alt * D)).multiplyScalar(R * 0.985);
+  const sh = new THREE.Vector3(), st = new THREE.Vector3(), sw = new THREE.Vector3();
+  function shootingStar(sec, k) { const slot = Math.floor(sec / 20), at = sec - slot * 20 - hash(slot + 0.5) * 18, p = at / 0.9; // (0.9 s across)
+    shoot.visible = k > 0.01 && hash(slot) < 0.5 && p > 0 && p < 1; if (!shoot.visible) return false;
+    const az = hash(slot + 0.25) * 360, alt = 30 + hash(slot + 0.75) * 40, turn = hash(slot + 0.125) < 0.5 ? -1 : 1, q = (x) => [az + turn * 14 * x, alt - 9 * x];
+    sky3(sh, ...q(p)); sky3(st, ...q(Math.max(0, p - 0.4))); sw.subVectors(sh, st).cross(sh).setLength(R * 0.0011);
+    const a = shoot.geometry.attributes.position; a.setXYZ(0, sh.x + sw.x, sh.y + sw.y, sh.z + sw.z); a.setXYZ(1, sh.x - sw.x, sh.y - sw.y, sh.z - sw.z); a.setXYZ(2, st.x + sw.x, st.y + sw.y, st.z + sw.z); a.setXYZ(3, st.x - sw.x, st.y - sw.y, st.z - sw.z); a.needsUpdate = true;
+    const c = shoot.geometry.attributes.color, b = Math.sin(Math.PI * p) * k; for (let i = 0; i < 4; i++) c.setXYZ(i, ...(i < 2 ? [b, b, b] : [0, 0, 0])); c.needsUpdate = true; return true; } // (the tail fades to nothing)
+  // the moon is a photo: its near side, baked offline from NASA's LRO colour map (public domain, CREDITS.md), soft at the rim
+  const moonMap = new THREE.TextureLoader().load('assets/sky/moon.webp'); moonMap.colorSpace = THREE.SRGBColorSpace;
+  const moon = new THREE.Mesh(new THREE.CircleGeometry(R * 0.035, 40), new THREE.MeshBasicMaterial({ map: moonMap, color: 0xf2f4f8, fog: false, transparent: true, depthWrite: false })); moon.name = 'moon';
+  const halo = new THREE.Mesh(new THREE.RingGeometry(R * 0.0347, R * 0.16, 40, 3), new THREE.MeshBasicMaterial({ color: 0x8aa0d0, fog: false, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.25 }));
+  { const p = halo.geometry.attributes.position, a = []; for (let i = 0; i < p.count; i++) { const k = (Math.hypot(p.getX(i), p.getY(i)) - R * 0.0347) / (R * 0.1253); a.push(1, 1, 1, Math.pow(1 - k, 3)); }
+    halo.geometry.setAttribute('color', new THREE.Float32BufferAttribute(a, 4)); halo.material.vertexColors = true; } // (the glow starts where the photo's rim ends, 0.9925 of the disc: a gap showed as a dark ring, an overlap as a white one)
   for (const m of [moon, halo]) { m.frustumCulled = false; night.add(m); }
-  // the shapes of its seas, darker patches on the face
-  for (const [x, y, r] of [[-0.3, 0.25, 0.32], [0.25, 0.1, 0.24], [0.05, -0.35, 0.2], [-0.2, -0.1, 0.16]]) { const d = new THREE.Mesh(new THREE.CircleGeometry(R * 0.035 * r, 24), new THREE.MeshBasicMaterial({ color: 0xb8bfcc, fog: false, transparent: true, depthWrite: false }));
-    d.position.set(x * R * 0.035, y * R * 0.035, 0.01); d.frustumCulled = false; moon.add(d); }
 
   let water; FLOW_U.flowMap.value = flowMap();
   if (Q.water === 'mirror') {
@@ -135,13 +175,13 @@ export function buildEnvironment(scene, renderer, camera) {
   }
   water.name = 'water'; water.userData.flowT = FLOW_U.flowT; /* (the water check reads the flow's clock) */ water.rotation.x = -Math.PI / 2; water.position.y = WATER_Y; water.receiveShadow = true; scene.add(water);
   // (the wind's ripples drift slowly now, 0.2 not 0.5, so on the river the current, not the wind, is what moves)
-  function tick(dt) { cloudMat.uniforms.uTime.value += dt; FLOW_U.flowT.value += dt; if (water.material.uniforms?.time) water.material.uniforms.time.value += dt * 0.2;
+  function tick(dt) { cloudMat.uniforms.uTime.value += dt; stars.material.uniforms.uTime.value += dt; FLOW_U.flowT.value += dt; if (water.material.uniforms?.time) water.material.uniforms.time.value += dt * 0.2;
     else water.material.normalMap.offset.x += dt * 0.004; }
 
   // ── the hour: t is how far through the day (daynight.js) ──
   const fogTint = new THREE.Color(1, 1, 1), c = new THREE.Color(), SUNC = { noon: new THREE.Color(0xfff0dc), low: new THREE.Color(0xff8a4a) }, MOONC = new THREE.Color(0x9ab0ff),
     sunV = new THREE.Vector3(), moonV = new THREE.Vector3(), NIGHT_FOG = new THREE.Color(0.045, 0.06, 0.1), DUSK_FOG = new THREE.Color(1.05, 0.72, 0.58);
-  const dir = (v, elev, az) => v.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - elev), az);
+  const dir = (v, elev, az) => v.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - elev), Math.PI - az); // (see SUN_DIR)
   function setTime(t) { const se = sunElev(t), nk = nightK(t), low = 1 - THREE.MathUtils.smoothstep(se, 2, 22); // low: near the horizon
     dir(sunV, se, sunAz(t)); dir(moonV, Math.max(6, moonElev(t)), moonAz(t)); u.sunPosition.value.copy(sunV); cloudMat.uniforms.uSun.value.copy(sunV);
     // the one shadow-casting light: the sun until it sets, then the moon (fading through between, so it never jumps lit)
@@ -156,9 +196,11 @@ export function buildEnvironment(scene, renderer, camera) {
     skyLight.value.setRGB(1, 1, 1).lerp(c.setRGB(1.0, 0.78, 0.62), low * (1 - nk) * 0.6).lerp(c.setRGB(0.1, 0.13, 0.22), nk);
     cloudMat.uniforms.uTint.value.setRGB(1, 1, 1).lerp(c.setRGB(1.2, 0.75, 0.55), low * (1 - nk)).lerp(c.setRGB(0.09, 0.1, 0.14), nk); cloudMat.uniforms.uA.value = 0.8 - 0.35 * nk;
     if (water.material.uniforms?.sunDirection) { water.material.uniforms.sunDirection.value.copy(L); water.material.uniforms.sunColor.value.copy(sun.color).multiplyScalar(se > -3 ? sunUp : 0.4 * moonUp); }
-    stars.material.opacity = THREE.MathUtils.smoothstep(nk, 0.4, 0.95); dome.material.opacity = 0.96 * THREE.MathUtils.smoothstep(nk, 0.2, 0.9); dome.visible = nk > 0.2; moon.position.copy(moonV).multiplyScalar(R * 0.92); moon.lookAt(night.position); halo.position.copy(moon.position); halo.quaternion.copy(moon.quaternion);
-    moon.material.opacity = halo.material.opacity = THREE.MathUtils.smoothstep(nk, 0.2, 0.8) * (moonElev(t) > -2 ? 1 : 0); halo.material.opacity *= 0.3;
-    for (const d of moon.children) d.material.opacity = moon.material.opacity; }
+    // the photo comes out with the dark; its brightest stars first; under a high moon the faint sky fades a little, and in a dust
+    // storm, heavy snow or fog it goes into the haze (weather.js sets it)
+    const clear = (1 - 0.25 * THREE.MathUtils.smoothstep(moonElev(t), 10, 50)) * (1 - hazeA); photo.material.uniforms.uA.value = THREE.MathUtils.smoothstep(nk, 0.4, 0.95) * clear; photo.material.uniforms.uC.value = THREE.MathUtils.smoothstep(nk, 0.9, 1);
+    stars.material.uniforms.uA.value = THREE.MathUtils.smoothstep(nk, 0.25, 0.75) * (1 - hazeA); shootingStar(t * DAY_S, THREE.MathUtils.smoothstep(nk, 0.6, 0.95) * (1 - hazeA)); dome.material.opacity = 0.96 * THREE.MathUtils.smoothstep(nk, 0.2, 0.9); dome.visible = nk > 0.2; moon.position.copy(moonV).multiplyScalar(R * 0.92); moon.lookAt(night.position); halo.position.copy(moon.position); halo.quaternion.copy(moon.quaternion);
+    moon.material.opacity = halo.material.opacity = THREE.MathUtils.smoothstep(nk, 0.2, 0.8) * (moonElev(t) > -2 ? 1 : 0); halo.material.opacity *= 0.3; }
 
   // ── firelight: a few warm point lights, always in the scene (adding or removing a light recompiles every material), given to
   // the flames that matter most on screen: the nearest in view first (one behind the camera counts as ten times as far), a

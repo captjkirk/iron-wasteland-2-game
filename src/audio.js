@@ -49,7 +49,7 @@ function growl(dest, t, dur, pitch, rough = 1) { const o = ctx.createOscillator(
 
 const VOICE = {
   wolf: (d, t) => growl(d, t, 0.6, 90), dust_hound: (d, t) => { growl(d, t, 0.35, 140); tone(d, t + 0.1, 0.15, { type: 'triangle', f0: 700, f1: 500, peak: 0.12 }); },
-  bear: (d, t) => growl(d, t, 0.85 + Math.random() * 0.3, 55 * (0.88 + Math.random() * 0.24), 1.4), // (each roar its own pitch and length: several bears at once) rat: (d, t) => { for (let i = 0; i < 3; i++) tone(d, t + i * 0.07, 0.05, { f0: 2800 + Math.random() * 800, f1: 3600, peak: 0.12 }); },
+  bear: (d, t) => growl(d, t, 0.85 + Math.random() * 0.3, 55 * (0.88 + Math.random() * 0.24), 1.4), rat: (d, t) => { for (let i = 0; i < 3; i++) tone(d, t + i * 0.07, 0.05, { f0: 2800 + Math.random() * 800, f1: 3600, peak: 0.12 }); }, // (each roar its own pitch and length: several bears at once)
   ice_crawler: (d, t) => { for (let i = 0; i < 6; i++) noise(d, t + i * 0.035, 0.03, { type: 'highpass', f0: 3000, q: 1, peak: 0.35 }); noise(d, t, 0.4, { f0: 5000, f1: 2500, q: 2, peak: 0.12, a: 0.05 }); },
   // slice 22: a giant spider's dry chitter (fangs clicking) over a breathy hiss; its nest tears with a wet rip
   spider: (d, t) => { for (let i = 0; i < 9; i++) noise(d, t + i * 0.028 + Math.random() * 0.01, 0.02, { type: 'bandpass', f0: 1800 + Math.random() * 900, q: 6, peak: 0.45 }); noise(d, t + 0.05, 0.55, { type: 'highpass', f0: 3800, f1: 2600, q: 0.7, peak: 0.22, a: 0.08 }); },

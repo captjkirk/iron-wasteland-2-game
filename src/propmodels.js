@@ -61,7 +61,7 @@ export function rockParts(kind, seed) {
 export function pebbleParts(v) { // the boulders' own rock, darkened by vertex colour (wet stone): a plain colour read as ice in the sun
   const bits = [];
   for (let k = 0; k < 22; k++) { const a = h3(v, k, 5) * 6.283, r = h3(k, v, 6) ** 0.8 * 1.1, sc = 0.04 + h3(k, k, v + 7) ** 3 * 0.3; // (crowded in the middle, a few big ones)
-    const g = rockGeo(v * 20 + k, 0, null); // (20 faces a stone: a patch is under 500 triangles) g.scale(sc, sc * 0.6, sc); g.rotateY(h3(k, 3, v) * 6.283); g.translate(Math.cos(a) * r, -sc * 0.15, Math.sin(a) * r); // (sunk into the ground)
+    const g = rockGeo(v * 20 + k, 0, null); g.scale(sc, sc * 0.6, sc); g.rotateY(h3(k, 3, v) * 6.283); g.translate(Math.cos(a) * r, -sc * 0.15, Math.sin(a) * r); // (20 faces a stone: a patch is under 500 triangles) (sunk into the ground)
     const c = new THREE.Color().setScalar(0.42 + h3(k, v, 9) * 0.3), col = g.attributes.color; for (let i = 0; i < col.count; i++) col.setXYZ(i, c.r, c.g, c.b); bits.push(g); }
   return { parts: [{ geo: mergeGeometries(bits), mat: rockMat(['rock', 'sandrock', 'icerock'][v]), cast: false, name: 'pebbles' }] }; }
 // driftwood and fallen trunks, lying along the local x axis on the ground, sun-bleached bark: v 0 a short branch, 1 a forked
