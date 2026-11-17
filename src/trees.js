@@ -2,7 +2,7 @@
 // (instance scale = height in metres), drawn with our own PBR materials, plus an 8-view impostor atlas per species
 // for the far billboards. Bark textures are ez-tree's (Poly Haven and TextureCan, both CC0); leaf cards are ez-tree's.
 import * as THREE from 'three';
-import { Tree } from '@dgreenheck/ez-tree';
+import { Tree, TreePreset } from '@dgreenheck/ez-tree';
 import { Q } from './config.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { skyLight } from './environment.js';
@@ -150,7 +150,9 @@ export const SPECIES = {
 
 function grow(sp, v) {
   const t = new Tree();
-  t.loadPreset(sp.preset[v % sp.preset.length]);
+  // (the preset's options only: ez-tree's loadPreset also grows the full-size preset tree, which was thrown away straight
+  // after; this is its own copy step without that growing, so every shape comes out the same)
+  t.options.copy(structuredClone(TreePreset[sp.preset[v % sp.preset.length]]));
   const o = t.options;
   o.seed = 1000 + v * 7919 + sp.h[0] * 13;
   lighten(o, sp.k);
