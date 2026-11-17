@@ -6,6 +6,7 @@ import { CAMP } from './config.js';
 import { groundY } from './world.js';
 import { addCollider } from './props.js';
 import { rockMat, loadMesh, pbr as phPbr, canvasTex } from './propmodels.js';
+import { mergeStill } from './mergestill.js';
 import { nightK } from './daynight.js';
 import { skyLight } from './environment.js';
 import { W as WIND, windAt, windShader } from './wind.js';
@@ -98,6 +99,7 @@ export function buildFire(parent, x, z, withLight) {
     holder.add(l);
     at(holder, 0, 0);
   }
+  mergeStill(g); // (lane E: the ring's stones draw as one, the logs as one per wood)
   const fire = (g.userData.fire = addFlame(g, groundY(x, z) - fy, 1));
   fire.light = withLight ? new THREE.PointLight(0xff8a3a, 18, 26, 1.25) : null;
   if (fire.light) {
@@ -366,7 +368,7 @@ export function buildTent(raider) {
   tent.traverse((m) => {
     if (m.material === canvas) m.userData.thin = true;
   }); // a thin two-sided sheet shadows itself black: it casts but does not receive
-  return tent;
+  return mergeStill(tent); // (lane E: twelve pieces drawn as four, one per material)
 }
 
 export async function buildCamp(scene) {

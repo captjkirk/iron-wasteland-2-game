@@ -13,6 +13,7 @@ import { campTent } from './camp.js';
 import { rockMat } from './propmodels.js';
 import { mulberry32 } from './noise.js';
 import { CAMP, SAFE_R, SEED_TEXT, WATER_Y } from './config.js';
+import { mergeStill } from './mergestill.js';
 
 // the relic of each kind of cave: its name and its glow
 const LOOK = {
@@ -182,6 +183,7 @@ export function buildRelics(sc) {
     const w = new THREE.Vector3(x, top + 0.45, z).applyAxisAngle(new THREE.Vector3(0, 1, 0), A.a);
     return { x: altar.x + w.x, y: altar.y + w.y, z: altar.z + w.z };
   });
+  mergeStill(g); // (lane E: the steps, flagstones, posts, moss and cracks draw as one per material; cups and marks stay apart)
   addCollider(altar.x, altar.z, 3.1, null);
   for (const r of relics) home(r);
 }

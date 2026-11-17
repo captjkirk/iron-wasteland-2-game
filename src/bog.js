@@ -2,7 +2,7 @@
 // swamp's pools are, so the Bog reads as black peat water and green scum instead of the bright mirror of the lakes.
 // Its edge fades with the swamp's biome weight. Also exports the Bog's mist (fog closes in and turns olive there).
 import * as THREE from 'three';
-import { HALF, CELL, SEG, N, WATER_Y } from './config.js';
+import { HALF, CELL, SEG, N, WATER_Y, Q } from './config.js';
 import { H, biomeW } from './world.js';
 import { vnoise, fbm } from './noise.js';
 
@@ -115,7 +115,40 @@ export function buildBog(scene, waterNormals) {
   mesh.renderOrder = 1;
   mesh.name = 'bog water';
   scene.add(mesh);
+  if (Q.water === 'mirror') mesh.add(skinMask(pos, col, idx));
   return mesh;
+}
+
+// The mirror water under the solid skin, hidden from the reflection's "is any water in view?" test (environment.js): where
+// all four corners of a square of skin are fully solid (alpha 1: the material's opacity is 1, the peat texture has no
+// alpha, and the colour's alpha is the biome weight), nothing of the water below shows, yet the water still drew there and
+// so kept the whole scene's second draw for its reflection going in every view of the Bog (about 900 of 2,000 draws at the
+// worst Bog view on Medium). This writes depth only, 1 cm above the water, before the water draws, so the water under it
+// draws no pixel and counts none. 1 cm, not the skin's 4: the deep-water veil (water.js, 2 cm) draws over the skin
+// after it and must still pass. A child of the skin, so it is never drawn without it. HIDDEN RULE: correct only while the
+// skin is fully opaque there; if the skin is ever made see-through or glossy to show the mirror, remove this.
+// scripts/bogskincheck.js fails if the skin stops being opaque while this mask is in place.
+function skinMask(pos, col, idx) {
+  const mp = new Float32Array(pos);
+  for (let k = 1; k < mp.length; k += 3) mp[k] = WATER_Y + 0.01;
+  const solid = (v) => col[v * 4 + 3] === 1,
+    mi = [];
+  for (let k = 0; k < idx.length; k += 6) {
+    const a = idx[k],
+      c = idx[k + 1],
+      b = idx[k + 2],
+      d = idx[k + 5];
+    if (solid(a) && solid(b) && solid(c) && solid(d)) mi.push(a, c, b, b, c, d);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(mp, 3));
+  g.setIndex(mi);
+  g.computeBoundingSphere();
+  const mask = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ colorWrite: false }));
+  mask.renderOrder = 0.5; // (after the land, which already hides it under hills; before the water at 1)
+  mask.name = 'bog water mask';
+  mask.matrixAutoUpdate = false;
+  return mask;
 }
 
 // Fog per place: the Bog's mist closes in and turns olive-grey; elsewhere the clear-air fog of environment.js.

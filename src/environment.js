@@ -432,7 +432,9 @@ export function buildEnvironment(scene, renderer, camera) {
   // lies under all the land and is nearly always in the camera's view, so on dry ground or with a hill in the way it cost a
   // whole extra draw for nothing. A query round the water's own draw counts its pixels; the water draws after the rest of
   // the solid world so that hidden water counts none. When water comes back into view the first frame or two show the
-  // reflection last drawn.
+  // reflection last drawn. The Bog's solid peat skin also hides the water under it from this count (bog.js, skinMask: a
+  // depth-only copy drawn before the water), so a view whose only water is Bog water skips the reflection too: under that
+  // skin the reflection never showed. That holds only while the skin is fully opaque; scripts/bogskincheck.js guards it.
   if (Q.water === 'mirror') {
     const mirror = water.onBeforeRender;
     let query = null,

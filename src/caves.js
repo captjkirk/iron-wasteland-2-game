@@ -5,6 +5,7 @@
 // the crystal cave's dark before they charge, bog lurkers rise from the root hollow's pools). Easy brings fewer of them.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeStill } from './mergestill.js';
 import { caves, caveAt, caveDepth, floorOf } from './cavemap.js';
 import { groundY } from './world.js';
 import { fbm, mulberry32 } from './noise.js';
@@ -386,6 +387,7 @@ function mouth(c) {
     }
     c.mg.add(new THREE.Mesh(mergeGeometries(geos), bark(c.kind === 'roots' ? 0x5a4632 : 0x6c6250)), leafMesh(leaves));
   }
+  mergeStill(c.mg); // (lane E: the hill, shoulders, lintel and rubble share one rock and draw as one, as do the timbers)
 }
 const once = (f) => {
   let m = null;
@@ -660,7 +662,7 @@ function cart() {
       w.position.set(x * 1.18, 0.22, z * 1.3);
       g.add(w);
     }
-  return g;
+  return mergeStill(g);
 }
 // the shared materials (made once)
 const ICE = once(

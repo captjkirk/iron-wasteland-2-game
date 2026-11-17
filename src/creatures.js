@@ -234,7 +234,11 @@ function buildBeast(type) {
   for (const s of skinned) {
     if (!s.visible) continue;
     s.castShadow = true;
-    s.frustumCulled = false;
+    // skipped when off screen (lane E, November 16, 2026: every near beast and each of its fur shells was drawn in the main
+    // and mirror passes even behind the camera): the culling sphere is the rest pose's box doubled, so no stride, lunge or
+    // fall reaches past it and a beast in view is never skipped. The shells share it (they hang off the same parent).
+    s.boundingSphere = s.boundingBox.getBoundingSphere(new THREE.Sphere());
+    s.boundingSphere.radius *= 2;
     const name = s.material.name,
       f = set[name];
     if (!f) {
@@ -258,7 +262,7 @@ function buildBeast(type) {
     f.shells.forEach((m, i) => {
       const sm = new THREE.SkinnedMesh(s.geometry, m);
       sm.bind(s.skeleton, s.bindMatrix);
-      sm.frustumCulled = false;
+      sm.boundingSphere = s.boundingSphere.clone().applyMatrix4(s.matrix); // (the shell sits at its parent's origin, the base mesh at s.matrix)
       sm.castShadow = false;
       m.userData.u.uLen.value = b.fur * perM;
       s.parent.add(sm);
