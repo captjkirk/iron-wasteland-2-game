@@ -2016,7 +2016,10 @@ export function fallNow() {
 // #86 (Jared, 2026-11-15, after a Brawl where the host knocked the joined player out twice as they came back at the camp): a
 // player back from a knockout in free-for-all cannot be hurt by a rival for this long, or until they attack; creatures still bite
 const RESPAWN_SAFE_S = 4,
-  REVIVE_SAFE_S = 3; // (Jared, November 16, 2026: "Yes, 3 seconds"; a rat bit Zachary 0.9 s after his revive)
+  REVIVE_SAFE_S = 3, // (Jared, November 16, 2026: "Yes, 3 seconds"; a rat bit Zachary 0.9 s after his revive)
+  // co-op with nobody left standing to revive anyone: every countdown ends after this short beat (Jared, November 16, 2026:
+  // "everyone has fallen, having to wait for the timer to tick down is just a bit humiliating")
+  ALL_DOWN_S = 2;
 function fallHurt(h, gy) {
   const d = Math.round((h - FALL_SAFE) * FALL_HP);
   if (d <= 0 || player.dead) return; // (a body already down takes no more)
@@ -2183,6 +2186,10 @@ export function update(dt, t) {
   // co-op: down for 15 s; a friend standing close with E held for 2.5 s gets you up at a third of your health, else you are out
   player.graceT = Math.max(0, (player.graceT || 0) - dt);
   if (player.down > 0) {
+    if (!player.ko && player.down > ALL_DOWN_S && ![...others.values()].some((o) => !(o.down > 0) && !o.out)) {
+      player.down = ALL_DOWN_S;
+      log('Everyone is down: nobody is left to revive you.');
+    }
     player.down -= dt;
     const helper = rules.ffa
       ? null
