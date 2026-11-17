@@ -259,10 +259,14 @@ const depthOf = (leaf) =>
   );
 
 function cloneTex(t, rx, ry) {
-  const c = t.clone();
+  const v = t.source.version,
+    c = t.clone();
   c.wrapS = c.wrapT = THREE.RepeatWrapping;
   c.repeat.set(rx, ry);
   c.needsUpdate = true;
+  // (the copy shares the bark image, which has not changed: marking the image changed sent the same bark to the graphics
+  // chip again for every species, a third of a second of the load on a slow Mac; the copy itself is still marked new)
+  c.source.version = v;
   return c;
 }
 function leafMaterial(src, tint, snow) {

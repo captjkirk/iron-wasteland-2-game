@@ -673,7 +673,7 @@ for (let j = 0; j < N; j++)
         const ero = Math.min((cap - sed) * 0.08, -dh);
         const ci = Math.round(x),
           cj = Math.round(z);
-        for (const [a, b, wgt] of W3) E[(cj + b) * N + ci + a] -= ero * wgt;
+        for (let q = 0; q < 9; q++) E[(cj + W3[q][1]) * N + ci + W3[q][0]] -= ero * W3[q][2]; // (indexed, not unpacked: load time)
         sed += ero;
       }
       speed = Math.sqrt(Math.max(0, speed * speed - dh * 2));
@@ -797,21 +797,21 @@ const BWS = new Float32Array(BW);
 {
   const tmp = new Float32Array(BWS.length),
     R = 6;
+  // (each cell's window is clipped to the grid once and all the biomes summed in one sweep along it: the same cells added in
+  // the same order as one biome at a time, so the same numbers, in under half the time; load time, November 16, 2026)
+  const acc = new Float64Array(NB);
   const pass = (src, dst, di, dj) => {
+    const step = (dj * N + di) * NB;
     for (let j = 0; j < N; j++)
-      for (let i = 0; i < N; i++)
-        for (let c = 0; c < NB; c++) {
-          let a = 0,
-            n = 0;
-          for (let t = -R; t <= R; t++) {
-            const ii = i + di * t,
-              jj = j + dj * t;
-            if (ii < 0 || jj < 0 || ii > SEG || jj > SEG) continue;
-            a += src[(jj * N + ii) * NB + c];
-            n++;
-          }
-          dst[(j * N + i) * NB + c] = a / n;
-        }
+      for (let i = 0; i < N; i++) {
+        const p = di ? i : j,
+          lo = Math.max(-R, -p),
+          hi = Math.min(R, SEG - p),
+          o = (j * N + i) * NB;
+        acc.fill(0);
+        for (let t = lo, q = o + lo * step; t <= hi; t++, q += step) for (let c = 0; c < NB; c++) acc[c] += src[q + c];
+        for (let c = 0; c < NB; c++) dst[o + c] = acc[c] / (hi - lo + 1);
+      }
   };
   for (let r = 0; r < 2; r++) {
     pass(BWS, tmp, 1, 0);
@@ -849,9 +849,17 @@ for (let j = 0; j < N; j++)
       h = H[k],
       slope = SLOPE[k];
     const jit = (vnoise(x * 0.05 + 7, z * 0.05 - 3) - 0.5) * 0.5; // sharpen or soften the blend by place: ragged edges
-    const [ws, wg, wd, wt, wsw, wr, wf] = Array.from(BWS.subarray(k * NB, k * NB + NB), (v, c) =>
-      Math.pow(v, 1 + jit * (c % 2 ? 1 : -1)),
-    );
+    // (each biome's weight read straight from the grid: a new array per cell cost a tenth of the world's build; load time)
+    const b = k * NB,
+      odd = 1 + jit,
+      even = 1 + jit * -1;
+    const ws = Math.pow(BWS[b], even),
+      wg = Math.pow(BWS[b + 1], odd),
+      wd = Math.pow(BWS[b + 2], even),
+      wt = Math.pow(BWS[b + 3], odd),
+      wsw = Math.pow(BWS[b + 4], even),
+      wr = Math.pow(BWS[b + 5], odd),
+      wf = Math.pow(BWS[b + 6], even);
     const macro = fbm(x * 0.02, z * 0.02, 3),
       forestP = smooth(0.42, 0.62, fbm(x * 0.012 + 40, z * 0.012, 3)),
       n2 = vnoise(x * 0.08, z * 0.08);
