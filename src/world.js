@@ -310,8 +310,28 @@ if (!CLASSIC) {
   };
   for (const [b, r, inner, outer] of PAD_SPECS) {
     const e = Math.ceil((r + 10) / G) * G; // (a second, looser look if the first finds no ground)
-    let c = look(b, r, outer, e, outer + 22, outer);
-    if (!c.length) c = look(b, r, outer, Math.ceil(r / 2 / G) * G, outer, outer * 0.6);
+    // (the town's pad, in each look: also the worlds check's own test, from one of the check's four 8 m points round it, Ruins there
+    // and 42 m each way on the biome grid; then a third look for it as near as 60 m to a river; only if none finds such ground, the looser look
+    // as it was. ember-stag-45's pad had Ruins 16 m each way, the looser look's test, and Fungal 42 m from the check's point: all its
+    // Ruins deep enough lay within 78 m of the river or in a pass's way out)
+    const on8 = (v) => -HALF + 70 + Math.floor((v + HALF - 70) / 8) * 8, // (the check's 8 m points round (x, z): its level 30 m ring fits the pad's 50)
+      deep = (X, Z) =>
+        [
+          [0, 0],
+          [42, 0],
+          [-42, 0],
+          [0, 42],
+          [0, -42],
+        ].every(([a, q]) => bio(X + a, Z + q) === b),
+      town = (c) =>
+        inner !== 50 ? c : c.filter(({ x, z }) => [0, 8].some((u) => [0, 8].some((v) => deep(on8(x) + u, on8(z) + v))));
+    let c = town(look(b, r, outer, e, outer + 22, outer));
+    if (!c.length) {
+      const loose = look(b, r, outer, Math.ceil(r / 2 / G) * G, outer, outer * 0.6);
+      c = town(loose);
+      if (!c.length && inner === 50) c = town(look(b, r, outer, Math.ceil(r / 2 / G) * G, 60, outer * 0.6));
+      if (!c.length) c = loose;
+    }
     let t = null;
     for (const q of c.slice(0, 40)) {
       q.h = bareH(q.x, q.z, r);
@@ -321,7 +341,17 @@ if (!CLASSIC) {
       }
     }
     if (!t && c[0]) t = { ...c[0], h: bareH(c[0].x, c[0].z, r) };
-    if (t) PADS.push({ x: t.x, z: t.z, b, inner, outer, h: Math.min(40, Math.max(WATER_Y + 3, t.h)) });
+    // (no higher than the lakes' banks let it stay whole: a pad on high ground 194 m from the river lake had its far side shaved
+    // 6 to 8 m below its level, so gap-612 had no level ground for the ruined town)
+    if (t)
+      PADS.push({
+        x: t.x,
+        z: t.z,
+        b,
+        inner,
+        outer,
+        h: Math.min(40, Math.max(WATER_Y + 3, t.h), underBanks(t.x, t.z, inner, lakes)),
+      });
   }
 }
 const padK = (x, z) => {
@@ -383,31 +413,25 @@ for (let k = 0, tries = 0; k < SHAPE.ponds && tries < 60; tries++) {
 const CR = mulberry32(SEED ^ 0xc7a7e2),
   craterBare = (x, z) => heightAt(x, z, biomeWeights(x, z).w, true).h;
 if (!CLASSIC)
-  for (const loose of [0, 1]) {
+  for (const look of [0, 1, 2]) {
     if (lakes.some((l) => l.crater)) break;
-    const ok = [],
+    const loose = Math.min(look, 1), // (a third look, smaller craters on the second's ground: sweep-62's only dry ground lay beside a pass or a pad, too near for a 20 to 26 m crater's full rim)
+      ok = [],
       n = CR() < 0.5 ? 2 : 1,
-      rx = 24 + CR() * 6 - loose * 4; // (every spot on a 16 m grid that suits, then one or two of them at random; a second, looser look in a world with none)
+      rx = 24 + CR() * 6 - look * 4; // (every spot on a 16 m grid that suits, then one or two of them at random; a second, looser look in a world with none)
+    // (clear of the river, every lake, pad and pass's way out by R, the crater's radius for its lowest rim: a higher rim is wider,
+    // so once its rim is known it is checked again at its real width against the passes. gap-408's 25 m rim reached 94 m, onto its Ruins pass)
+    const clear = (x, z, R, Rp = R) =>
+      riverDist(x, z) >= R * 2.4 + 20 &&
+      !lakes.some((l) => Math.hypot(l.x - x, l.z - z) < Math.max(l.rx, l.rz) * 1.2 + R * 2.6 + 20) &&
+      !PADS.some((p) => Math.hypot(p.x - x, p.z - z) < R * (2.2 - loose * 0.6) + p.outer) &&
+      !PASSES.some((q) => {
+        const along = x * Math.cos(q.a) + z * Math.sin(q.a);
+        return along > 100 && along < 380 && Math.abs(z * Math.cos(q.a) - x * Math.sin(q.a)) < Rp * 2.3 + 20;
+      });
     for (let z = -HALF + 110; z <= HALF - 110; z += 16)
       for (let x = -HALF + 110; x <= HALF - 110; x += 16) {
-        if (
-          Math.hypot(x, z) < 270 - loose * 40 ||
-          biomeWeights(x, z).best === 'swamp' ||
-          riverDist(x, z) < rx * 2.4 + 20
-        )
-          continue;
-        if (
-          lakes.some((l) => Math.hypot(l.x - x, l.z - z) < Math.max(l.rx, l.rz) * 1.2 + rx * 2.6 + 20) ||
-          PADS.some((p) => Math.hypot(p.x - x, p.z - z) < rx * (2.2 - loose * 0.6) + p.outer)
-        )
-          continue;
-        if (
-          PASSES.some((q) => {
-            const along = x * Math.cos(q.a) + z * Math.sin(q.a);
-            return along > 100 && along < 380 && Math.abs(z * Math.cos(q.a) - x * Math.sin(q.a)) < rx * 2.3 + 20;
-          })
-        )
-          continue;
+        if (Math.hypot(x, z) < 270 - loose * 40 || biomeWeights(x, z).best === 'swamp' || !clear(x, z, rx)) continue;
         ok.push({ x, z });
       }
     for (let t = 0; t < 400 && ok.length && lakes.filter((l) => l.crater).length < n; t++) {
@@ -422,8 +446,10 @@ if (!CLASSIC)
       hs.sort((a, q) => a - q);
       const mid = hs[12];
       if (hs[0] < WATER_Y + 0.6 || mid > WATER_Y + 18 + loose * 8 || hs[22] > mid + 12 + loose * 6) continue; // dry ground, not mountains: the rim stands 1.5 m over the ground's middle height, at least 6 m over the water
-      const crest = Math.max(6, mid - WATER_Y + 1.5);
-      lakes.push({ x, z, rx, rz: rx, a: 0, crater: true, crest, rw: (0.5 * crest) / 6 });
+      const crest = Math.max(6, mid - WATER_Y + 1.5),
+        rw = (0.5 * crest) / 6;
+      if (!clear(x, z, rx, (rx * (1.8 + rw)) / 2.3)) continue; // (the passes only: the 400-seed sweep's lakes and pads were clear at the lowest rim's width)
+      lakes.push({ x, z, rx, rz: rx, a: 0, crater: true, crest, rw });
     }
   } // (a higher rim is wider, so no wall is steeper)
 // The classic world's one crater, on the open Fungal Hollow ground Jared allowed (November 15, 2026, Decision 2 of
@@ -546,6 +572,10 @@ function heightAt(x, z, w, bare = false) {
   }
   if (w.fungal) h += (Math.pow(fbm(x * 0.035 + 7, z * 0.035, 2), 2.2) * 6 - 0.8) * w.fungal * (1 - m); // spongy hummocks
   if (w.swamp) h -= (fbm(x * 0.03 + 2, z * 0.03 + 4, 3) - 0.3) * 3.4 * w.swamp; // pools
+  // a random world's ring stands on dry ground: where low land or the Bog's water reaches its outer foot, a bench 1.7 m over the
+  // water there, so a way out of the water toward the camp meets dry ground before the ring's wall (gap-730: the river lake's Bog
+  // ran up to the ring, whose wall rose out of the water at 1.0 to 1.8, steeper than a player climbs)
+  if (!CLASSIC) h = Math.max(h, WATER_Y + 1.7 * smooth(266, 246, rr) * smooth(200, 225, rr));
   // the building pads: the ground settles toward each one's level, keeping a little of its own roll
   let tk = 0;
   if (!bare && PADS.length)

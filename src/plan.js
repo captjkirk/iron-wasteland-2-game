@@ -806,8 +806,11 @@ function planCaves() {
             spot(site(true, 'far', false, 60), 200, 14, 3) ||
             spot(site(false, true, false, 60), 200, 14, 3) ||
             spot(site(true, 'far', false, 40), 200, 14, 3) ||
-            spot(site(false, true, false, 40), 200, 14, 3)));
-      if (!s) continue; // (the last six: so a land keeps its two caves, never for a third; a hole still 60 m off the busy spots, so seen from none of them (a hole shows only within 40 m), the second of them as near as 60 m to the land's other cave: thorn-wolf-28's mine sink stood 49 m from the busy spots, and its Mines had no hidden ground that far off but within 110 m of its first cave; ember-fang-39's Mines had level ground for a hole only between the 6 m search's points, so then it looks every 3 m; and last, a slope as hidden as any (seen from none of them), then either as near as 40 m to the land's other cave: four worlds of the 400-seed sweep, November 17, 2026, had their land's only room there. The insides lie apart, past the north edge, so two mouths that near share nothing below)
+            spot(site(false, true, false, 40), 200, 14, 3) ||
+            spot(site(true, 'far', false, 40), 160, 14, 3) ||
+            spot(site(false, true, false, 40), 160, 14, 3)));
+      if (!s) continue; // (the last eight: so a land keeps its two caves, never for a third; a hole still 60 m off the busy spots, so seen from none of them (a hole shows only within 40 m), the second of them as near as 60 m to the land's other cave: thorn-wolf-28's mine sink stood 49 m from the busy spots, and its Mines had no hidden ground that far off but within 110 m of its first cave; ember-fang-39's Mines had level ground for a hole only between the 6 m search's points, so then it looks every 3 m; and last, a slope as hidden as any (seen from none of them), then either as near as 40 m to the land's other cave: four worlds of the 400-seed sweep, November 17, 2026, had their land's only room there. The insides lie apart, past the north edge, so two mouths that near share nothing below. Very last, the same from 160 m out, the ring's
+      // outer slopes, not 200: sweep-295's crater, kept off a pass by its full rim, took its Mines' last ground, land-gap-seeds, November 17, 2026)
       const fx = -Math.cos(pick.a),
         fz = -Math.sin(pick.a),
         door = { x: s.x - fx * 2.5, z: s.z - fz * 2.5 };
