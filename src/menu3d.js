@@ -48,6 +48,11 @@ export function initPortraits(mainScene) {
   ready = canvases.length === figs.length;
 }
 
+// menu load: the portraits' shaders built at load, linked while the title shows (after PRESS ENTER: 0.3 s less at 4x)
+export function warmPortraits(renderer) {
+  renderer.compile(pscene, pcam);
+}
+
 // Called each menu frame before the main render. `sel` is the selected card.
 export function drawPortraits(renderer, dt, sel) {
   if (!ready) return;

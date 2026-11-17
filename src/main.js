@@ -57,7 +57,7 @@ import { buildGrass, updateGrass, grassStats } from './grass.js';
 import { tickWind, W as wind } from './wind.js';
 import { loadCharacters } from './characters.js';
 import { loadCreatures, eyeShine } from './creatures.js';
-import { initPortraits, drawPortraits, portraitStats } from './menu3d.js';
+import { initPortraits, drawPortraits, portraitStats, warmPortraits } from './menu3d.js';
 import { menuStep, leaveSeedBox } from './menu.js';
 import { hintsTick, bindTour, armTour } from './tour.js'; // #16
 import { net, netReady } from './net.js';
@@ -248,6 +248,7 @@ initPortraits(scene);
 stage('init');
 await warmCreatures();
 stage('warm'); // (issue #44: every creature's shaders compiled now, not on its first sight in play)
+warmPortraits(renderer); // (menu load: after the load's own draw, so that draw and its images are as before)
 // the offline cache (sw.js) keeps everything this load fetched, the CDN's Three.js too (slice 13a)
 navigator.serviceWorker?.ready.then((r) =>
   r.active?.postMessage(performance.getEntriesByType('resource').map((e) => e.name)),
