@@ -6,9 +6,8 @@
 // Slice 12: a build recipe now opens build mode (build.js: the grid, the ghost, rotation, paying on placement, teardown),
 // addBuilt makes walls, gates and traps through build.js, and the upgrade recipes are bought here (each game's own).
 import * as THREE from 'three';
-import { WATER_Y } from './config.js';
 import { RECIPES, RES, BENCH_R } from './recipes.js';
-import { groundY, slopeAt } from './world.js';
+import { groundY } from './world.js';
 import { addCollider } from './props.js';
 import { PIECE, makePiece, startBuild, spotFree, slotOf, pieceState, costFor, swapOut } from './build.js';
 import { buildFire, addFlame } from './camp.js';
@@ -18,7 +17,7 @@ import { dustPuff, floatText } from './effects.js';
 import { sfx } from './audio.js';
 import { logEvent } from './playlog.js';
 import { player, log, scene3, teleport, enemies, getCamMode, upgraded, upgradeFx } from './game.js';
-import { send, joining, net, others, gone } from './coop.js';
+import { send, net, others, gone } from './coop.js';
 import { day, nightK, isNight, SUNSET } from './daynight.js';
 import { quiver } from './arrows.js';
 import { ammo, addRounds, addFlowers, MAX_ROUNDS, MAX_FLOWERS } from './supplies.js';

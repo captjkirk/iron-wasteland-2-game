@@ -83,12 +83,3 @@ export function drawPortraits(renderer, dt, sel) {
   renderer.setViewport(0, 0, size.x, size.y);
   renderer.setClearColor(prevColor, prevAlpha);
 }
-export function endPortraits() {
-  ready = false;
-} // geometry is shared with the player's model, so nothing is disposed
-export function resumePortraits() {
-  if (pscene) {
-    ready = canvases.length === figs.length;
-    tick = 0;
-  }
-}

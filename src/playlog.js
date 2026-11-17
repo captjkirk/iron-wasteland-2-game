@@ -128,6 +128,9 @@ if (upload && waiting.length)
   });
 
 const now = () => +((Date.now() - t0) / 1000).toFixed(1);
+export const logClock = now; // (a joined game is told the host's, so the two logs share one time)
+let renderScale = 1;
+export const setRenderScale = (s) => (renderScale = +s.toFixed(2)); // (main.js: the canvas drawn smaller on a slow computer)
 // ponytail: the event list is capped; a 15-minute play stays far under it
 const SNAP_ON = new Set([
     'mark',
@@ -185,6 +188,7 @@ export function startVideo(canvas) {
   };
   video.start(5000);
   rec.video = name;
+  logEvent('video', { file: name }); // (its t is where the video starts, to find any event in it)
 }
 addEventListener('pagehide', () => {
   video?.requestData();
@@ -262,8 +266,9 @@ let acc = 0,
   still = 0,
   lastPos = null,
   stuckLogged = false;
-// state: { player, cam, biome, fps, enemies } once per frame; intent: a move key or stick is held
-export function tickLog(dt, { player: p, cam, biome, fps, enemies }, intent) {
+// state: { player, cam, biome, fps, enemies, mates, cave, gl, shots } once per frame; intent: a move key or stick is held
+// (mates: the other players; cave: the cave's kind; gl: the renderer, for the canvas size, draw calls and triangles)
+export function tickLog(dt, { player: p, cam, biome, fps, enemies, mates, cave, gl, shots }, intent) {
   // stuck: holding a move for 2 s while getting nowhere (logged once per stuck spell)
   if (lastPos) {
     const moved = Math.hypot(p.x - lastPos[0], p.z - lastPos[1]);
@@ -294,6 +299,25 @@ export function tickLog(dt, { player: p, cam, biome, fps, enemies }, intent) {
     inv: p.inv && { ...p.inv }, // (inv: what they carry, slice 21)
 
     near: near.map((e) => `${e.type}:${e.state}:${Math.round(Math.hypot(e.x - p.x, e.z - p.z))}m`),
+    // the play-log review of November 16, 2026: the partner, the cave, the rounds fired and what the drawing costs
+    ...(mates?.length && {
+      mates: mates.map((o) => ({
+        n: o.name,
+        x: Math.round(o.x),
+        z: Math.round(o.z),
+        hp: Math.round(o.hp),
+        ...(o.down > 0 && { down: 1 }),
+        ...(o.out && { out: 1 }),
+      })),
+    }),
+    ...(cave && { cave }),
+    ...(shots != null && { shots }),
+    ...(gl && {
+      rs: renderScale,
+      cv: `${gl.domElement.width}x${gl.domElement.height}`,
+      calls: gl.info.render.calls,
+      ktri: Math.round(gl.info.render.triangles / 1000), // (thousands of triangles)
+    }),
   });
   longest = 0;
   if (upload && rec.samples.length % 60 === 0) snapWanted ||= logEvent('look'); // a picture every minute for context
@@ -327,6 +351,7 @@ export function savePlayLog() {
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 }
+export const playlogRec = () => rec; // (for the checks: the samples and events as they stand)
 export const recording = () => upload; // this game's log reaches a server (F9 then marks without a download)
 // (for the checks)
 export const playlogState = () => ({

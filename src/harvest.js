@@ -131,7 +131,6 @@ export function harvestTarget(x, z, slack = 0) {
   }
   return best;
 }
-export const harvestName = (it) => NAME[it.type] || it.type;
 
 // ── Every frame: the local player's chopping (hold is E or B held), and every shaking or falling tree ──
 let freshE = true; // (E let go since the last chop: only then does a hold dig a stump)

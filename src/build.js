@@ -17,7 +17,7 @@
 // `welcome`. Each game draws the ghost, the grid and the swing of a gate a player walks through for itself.
 import * as THREE from 'three';
 import { WATER_Y } from './config.js';
-import { RECIPES, BENCH_R } from './recipes.js';
+import { RECIPES } from './recipes.js';
 import { groundY, slopeAt } from './world.js';
 import { nearColliders, colR, standAt, STEP, addCollider, floorUnder } from './props.js';
 import { palisadeMesh, stoneMesh, rubbleMesh, postMesh, gateMesh, spikeMesh } from './buildmodels.js';
@@ -27,7 +27,7 @@ import { sfx } from './audio.js';
 import { logEvent } from './playlog.js';
 import { player, log, scene3, enemies, hitEnemy, getCamMode, aimGround, isPadActive } from './game.js';
 import { send, joining, net, others } from './coop.js';
-import { built, addBuilt, spend, short, FOOT, nextBuiltId, benchNear, toggleCraft } from './craft.js';
+import { built, addBuilt, spend, short, FOOT, nextBuiltId, toggleCraft } from './craft.js';
 import { removeFlame } from './camp.js';
 import { freeGlow } from './torch.js';
 

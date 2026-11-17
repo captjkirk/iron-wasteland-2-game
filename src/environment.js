@@ -428,6 +428,36 @@ export function buildEnvironment(scene, renderer, camera) {
   water.position.y = WATER_Y;
   water.receiveShadow = true;
   scene.add(water);
+  // the reflection (a second draw of the whole scene) is skipped while the water drew no pixel last time: the water sheet
+  // lies under all the land and is nearly always in the camera's view, so on dry ground or with a hill in the way it cost a
+  // whole extra draw for nothing. A query round the water's own draw counts its pixels; the water draws after the rest of
+  // the solid world so that hidden water counts none. When water comes back into view the first frame or two show the
+  // reflection last drawn.
+  if (Q.water === 'mirror') {
+    const mirror = water.onBeforeRender;
+    let query = null,
+      open = false,
+      seen = true;
+    water.renderOrder = 1;
+    water.onBeforeRender = (r, s, c) => {
+      const gl = r.getContext();
+      if (query && gl.getQueryParameter(query, gl.QUERY_RESULT_AVAILABLE)) {
+        seen = gl.getQueryParameter(query, gl.QUERY_RESULT) > 0;
+        gl.deleteQuery(query);
+        query = null;
+      }
+      if (seen) mirror(r, s, c);
+      if (!query) {
+        query = gl.createQuery();
+        gl.beginQuery(gl.ANY_SAMPLES_PASSED_CONSERVATIVE, query);
+        open = true;
+      }
+    };
+    water.onAfterRender = (r) => {
+      if (open) r.getContext().endQuery(r.getContext().ANY_SAMPLES_PASSED_CONSERVATIVE);
+      open = false;
+    };
+  }
   // (the wind's ripples drift slowly now, 0.2 not 0.5, so on the river the current, not the wind, is what moves)
   function tick(dt) {
     cloudMat.uniforms.uTime.value += dt;

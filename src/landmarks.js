@@ -1,6 +1,7 @@
 // Landmarks: the Fungal Hollow's giant glowing mushrooms and natural sandstone arches. Every builder returns scatter parts like propmodels.js: { parts, far? }, built in unit space.
 // Everything is one parametric-surface helper (surf) plus value noise; textures are drawn in code or are the repo's rock texture.
 import * as THREE from 'three';
+import { n3, f3, mulberry32 as rng } from './noise.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { pbr } from './propmodels.js';
 
@@ -8,38 +9,6 @@ const TAU = Math.PI * 2,
   sst = THREE.MathUtils.smoothstep,
   lerp = THREE.MathUtils.lerp,
   clamp = THREE.MathUtils.clamp;
-// seeded 3D value noise (same family as propmodels.js, which does not export its own)
-function h3(x, y, z) {
-  const s = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453;
-  return s - Math.floor(s);
-}
-function n3(x, y, z) {
-  const xi = Math.floor(x),
-    yi = Math.floor(y),
-    zi = Math.floor(z),
-    xf = x - xi,
-    yf = y - yi,
-    zf = z - zi,
-    u = xf * xf * (3 - 2 * xf),
-    v = yf * yf * (3 - 2 * yf),
-    w = zf * zf * (3 - 2 * zf);
-  const l = (a, b, t) => a + (b - a) * t,
-    c = (i, j, k) => h3(xi + i, yi + j, zi + k);
-  return l(
-    l(l(c(0, 0, 0), c(1, 0, 0), u), l(c(0, 1, 0), c(1, 1, 0), u), v),
-    l(l(c(0, 0, 1), c(1, 0, 1), u), l(c(0, 1, 1), c(1, 1, 1), u), v),
-    w,
-  );
-}
-const f3 = (x, y, z) =>
-  n3(x, y, z) * 0.55 + n3(x * 2.1 + 5, y * 2.1, z * 2.1) * 0.3 + n3(x * 4.3, y * 4.3 + 3, z * 4.3) * 0.15;
-const rng = (a) => () => {
-  a |= 0;
-  a = (a + 0x6d2b79f5) | 0;
-  let t = Math.imul(a ^ (a >>> 15), 1 | a);
-  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-};
 const fr = (x) => x - Math.floor(x);
 
 // Parametric surface: fn(u, v) -> [x, y, z], u wraps around (closed seam, one shared normal), v runs along. A row that collapses
@@ -482,12 +451,6 @@ const SHROOMS = [
     },
   ],
 ];
-// collision circles per variant: [stem radius, cap radius]; the cluster's stem circle is widened to cover its three stems' foot
-export const MUSHROOM_R = [
-  [0.09, 0.36],
-  [0.12, 0.55],
-  [0.2, 0.5],
-];
 export function mushroomParts(v) {
   const M = mushMats(),
     S = SHROOMS[v];
@@ -575,10 +538,6 @@ const ledge = (y, w) => {
 };
 
 // ── Natural arch ──
-export const ARCH_LEGS = [
-  [-0.85, 0, 0.3],
-  [0.85, 0, 0.3],
-];
 function archGeo(v, nu, nv, pal) {
   const sd = v * 17 + 3,
     e = v ? 0.55 : 0.9,

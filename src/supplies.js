@@ -29,7 +29,7 @@ export const EAT_T = 1.8,
 export const ammo = { clip: 8, reserve: 32, flowers: 3 };
 export const clipSize = () => (upgraded('gunslinger') ? 12 : 8);
 export function resetSupplies() {
-  Object.assign(ammo, { clip: 8, reserve: 32, flowers: 3 });
+  Object.assign(ammo, { clip: 8, reserve: 32, flowers: 3, shots: 0 });
   Object.assign(player, { eat: null, cook: null, fightT: 0, reloadT: 0 });
 }
 const say = (k, s) => {
@@ -119,6 +119,7 @@ export function useRound() {
   if (player.reloadT > 0) return false;
   if (ammo.clip > 0) {
     ammo.clip--;
+    ammo.shots = (ammo.shots || 0) + 1; // (rounds fired, hit or miss: the play log's samples)
     if (!ammo.clip) reload();
     return true;
   }

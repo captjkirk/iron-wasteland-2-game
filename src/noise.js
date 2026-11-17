@@ -65,3 +65,28 @@ export const smooth = (a, b, x) => {
   return t * t * (3 - 2 * t);
 };
 export const clamp01 = (x) => Math.min(1, Math.max(0, x));
+// small seeded 3D value noise (rock shapes in propmodels.js, landmarks.js)
+export function h3(x, y, z) {
+  const s = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453;
+  return s - Math.floor(s);
+}
+export function n3(x, y, z) {
+  const xi = Math.floor(x),
+    yi = Math.floor(y),
+    zi = Math.floor(z),
+    xf = x - xi,
+    yf = y - yi,
+    zf = z - zi,
+    u = xf * xf * (3 - 2 * xf),
+    v = yf * yf * (3 - 2 * yf),
+    w = zf * zf * (3 - 2 * zf);
+  const l = (a, b, t) => a + (b - a) * t,
+    c = (i, j, k) => h3(xi + i, yi + j, zi + k);
+  return l(
+    l(l(c(0, 0, 0), c(1, 0, 0), u), l(c(0, 1, 0), c(1, 1, 0), u), v),
+    l(l(c(0, 0, 1), c(1, 0, 1), u), l(c(0, 1, 1), c(1, 1, 1), u), v),
+    w,
+  );
+}
+export const f3 = (x, y, z) =>
+  n3(x, y, z) * 0.55 + n3(x * 2.1 + 5, y * 2.1, z * 2.1) * 0.3 + n3(x * 4.3, y * 4.3 + 3, z * 4.3) * 0.15;

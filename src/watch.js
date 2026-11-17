@@ -15,6 +15,7 @@ import { others, net, everyone, joining } from './coop.js';
 import { built } from './craft.js';
 import { felled } from './harvest.js';
 import { day } from './daynight.js';
+const land = (x, z) => (caveAt(x, z) ? 'cave' : biomeAt(x, z)); // (in a cave: biomeAt gives the map's edge row)
 
 const r1 = (v) => +v.toFixed(1),
   CAP = 40,
@@ -119,7 +120,7 @@ function body(who, id, x, z, y, extra = {}, own = null) {
     z: r1(z),
     y: r1(y),
     ground: r1(g),
-    biome: biomeAt(x, z),
+    biome: land(x, z),
     ...extra,
   }));
   const c = solidAt(x, z, y, who === 'player' ? 0.3 : 0.25, own);
@@ -129,7 +130,7 @@ function body(who, id, x, z, y, extra = {}, own = null) {
     z: r1(z),
     y: r1(y),
     solid: solidName(c),
-    biome: biomeAt(x, z),
+    biome: land(x, z),
     ...extra,
   }));
 }
@@ -164,7 +165,7 @@ export function checkCrates() {
     const why = crateWhy(q);
     if (why) {
       n++;
-      note('crate-unreachable', { i, x: r1(q.x), z: r1(q.z), biome: biomeAt(q.x, q.z), why, camp: !!q.camp });
+      note('crate-unreachable', { i, x: r1(q.x), z: r1(q.z), biome: land(q.x, q.z), why, camp: !!q.camp });
     }
   });
   return n;
@@ -201,7 +202,7 @@ function stuckCreature(e, dt) {
     x: r1(e.x),
     z: r1(e.z),
     quarry: Math.round(d),
-    biome: biomeAt(e.x, e.z),
+    biome: land(e.x, e.z),
   });
 }
 
@@ -240,7 +241,7 @@ export function tickWatch(dt) {
     const why = outside(x, z)
       ? 'out of the world'
       : ((c) => c && 'inside ' + solidName(c))(solidAt(x, z, groundY(x, z) + 0.1, 0.1));
-    if (why) note('loot-unreachable', { kind: k.kind, x: r1(x), z: r1(z), biome: biomeAt(x, z), why });
+    if (why) note('loot-unreachable', { kind: k.kind, x: r1(x), z: r1(z), biome: land(x, z), why });
   }
 }
 

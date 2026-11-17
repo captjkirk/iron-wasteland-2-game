@@ -56,7 +56,6 @@ import {
   floorAt,
 } from './props.js';
 import { markDirty } from './scatter.js';
-import { part, box, rockG, MAT, merged } from './models.js';
 import { buildCreature } from './creatures.js';
 import { turretModel, turretMats } from './turret.js';
 import { initFireflies, tickFireflies } from './fireflies.js';
@@ -139,7 +138,7 @@ import {
   benchNear,
   lightSpots,
 } from './craft.js';
-import { tickHarvest, harvestTarget, harvestName, harvestDoing, prepHarvest } from './harvest.js';
+import { tickHarvest, harvestTarget, harvestDoing, prepHarvest } from './harvest.js';
 import { quiver, useArrow, stick, dropFrom, tickArrows, clearArrows } from './arrows.js';
 import { torchWarm, carriedWarm, byFlame, torchOn, toggleTorch, FEARS_FIRE, torchLights } from './torch.js';
 import {
@@ -569,6 +568,7 @@ function sendHunt(q, t, nk) {
     d: Math.round(Math.hypot(pack[0].x - q.x, pack[0].z - q.z)),
     woke: !!pick,
     biome: land,
+    at: nameOf(q),
     night: nk > 0.5 || undefined,
   });
   sfx(pack[0].type, pack[0]);
@@ -980,7 +980,18 @@ export function startGame(i) {
       }),
     );
   }
-  startPlaces({ spawnEnemy, enemies, joining, log, logEvent, sfx, send, player, hurt: (d, by) => hurtPlayer(d, by) }); // slice 23: the places' guards, and what this game knows of them
+  startPlaces({
+    spawnEnemy,
+    enemies,
+    joining,
+    log,
+    logEvent,
+    sfx,
+    send,
+    player,
+    hurt: (d, by) => hurtPlayer(d, by),
+    inSight,
+  }); // slice 23: the places' guards, and what this game knows of them
   startCaves({ spawnEnemy, enemies, joining, log, logEvent, sfx, player, teleport, look, nightK }); // #8: the caves' surprises armed again
   startRelics({
     joining,
@@ -1085,11 +1096,15 @@ function bindInput() {
     } // (the start menu's keys: menu.js)
     if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
     if (e.code === 'F9') {
+      const f = camera.getWorldDirection(new THREE.Vector3());
       logEvent('mark', {
         x: +player.x.toFixed(1),
         z: +player.z.toFixed(1),
         y: +player.y.toFixed(1),
-        biome: biomeAt(player.x, player.z),
+        biome: land(player.x, player.z),
+        yaw: +Math.atan2(-f.x, -f.z).toFixed(2),
+        pitch: +Math.asin(f.y).toFixed(2),
+        aim: aimedAt(),
       });
       // (slice 13d: a game that records sends the mark with a picture, and the findings report lists it; a download only where nothing records)
       if (recording()) log('Spot marked: it goes in the play log with a picture, for Claude to look at.');
@@ -1362,10 +1377,50 @@ export function switchChar(i) {
 // ── Gameplay ───────────────────────────────────────────────────────────
 const logEl = document.getElementById('log');
 const lines = [];
+let msgs = 0;
 function log(s) {
+  // (every message shown is in the play log too, the first 400: a refused meal or an empty gun said why, review of November 16, 2026)
+  if (++msgs <= 400)
+    logEvent('msg', {
+      s: String(s)
+        .replace(/<[^>]*>/g, '')
+        .slice(0, 140),
+    });
   lines.push(s);
   if (lines.length > 5) lines.shift();
   logEl.innerHTML = lines.map((l) => `<div>${l}</div>`).join('');
+}
+// can this player's camera see the point: on screen, with no ground, rock, tree trunk or wall between (places.js: "You spot";
+// Jared, November 16, 2026: "it should only say that if the camera for a player has actually shown that thing")
+function inSight(x, y, z) {
+  const v = new THREE.Vector3(x, y, z).project(camera);
+  if (v.z >= 1 || Math.abs(v.x) > 1 || Math.abs(v.y) > 1) return false;
+  const o = camera.position,
+    L = Math.hypot(x - o.x, y - o.y, z - o.z);
+  for (let s = 3; s < L - 6; s += 3) {
+    // (every 3 m, short of the last 6: the place's own walls do not hide it)
+    const f = s / L,
+      px = o.x + (x - o.x) * f,
+      py = o.y + (y - o.y) * f,
+      pz = o.z + (z - o.z) * f;
+    if (groundY(px, pz) > py || solidAt(px, pz, py, 0.1)) return false;
+  }
+  return true;
+}
+// what is under the crosshair, for a mark: the nearest thing the camera's middle ray meets (not the player's own figure)
+function aimedAt() {
+  const ray = new THREE.Raycaster(),
+    mine = (o) => {
+      for (; o; o = o.parent) if (o === player.mesh) return true;
+    };
+  ray.setFromCamera(new THREE.Vector2(0, 0), camera);
+  ray.far = 300;
+  const h = ray.intersectObjects(scene.children, true).find((q) => q.object.visible && !mine(q.object));
+  if (!h) return 'nothing within 300 m';
+  let o = h.object;
+  while (o && !o.name && o.parent && o.parent !== scene) o = o.parent;
+  const m = [h.object.material].flat()[0];
+  return `${o?.name || h.object.type} (${h.object.geometry?.type || '?'}${m?.color ? ' #' + m.color.getHexString() : ''}) at ${h.distance.toFixed(1)} m`;
 }
 function aimDir() {
   // the direction an attack goes
@@ -1434,7 +1489,7 @@ export function attack(close = false) {
 }
 // #86: attacking or using a weapon ends the safe seconds after a respawn
 function endSafe() {
-  if (!(player.graceT > 0)) return;
+  if (!(player.graceT > 0) || !rules.ffa) return; // (co-op: a revived player's safe seconds last while they fight back)
   player.graceT = 0;
   log('You attacked: rivals can hurt you again.');
   logEvent('safe-end');
@@ -2173,7 +2228,7 @@ export function hitEnemy(e, dmg, nx, nz, at, by = null) {
     floatText(p, String(dmg), dmg >= 20 ? '#ffd27a' : '#fff0d8', dmg >= 20);
     hitMarker();
     sfx(dmg >= 20 ? 'hitHard' : 'hit', e);
-    logEvent('hit', { enemy: e.type, dmg });
+    logEvent('hit', { enemy: e.type, dmg, who: nameOf(player) });
     return;
   }
   e.hp -= dmg;
@@ -2201,7 +2256,7 @@ export function hitEnemy(e, dmg, nx, nz, at, by = null) {
     e.dead = 5;
     e.cl = null;
     e.cs = 0;
-    logEvent('kill', { enemy: e.type, biome: biomeAt(e.x, e.z) });
+    logEvent('kill', { enemy: e.type, biome: land(e.x, e.z), who: by ? others.get(by)?.name : nameOf(player) });
     /* (slice 21: the logs had no kills by kind) */ e.mesh.userData.anim.die();
     e.mesh.userData.flash(0);
     sfx(e.type, e, 0.8);
@@ -2213,7 +2268,13 @@ export function hitEnemy(e, dmg, nx, nz, at, by = null) {
       log(`${LABEL[e.type]} down.`);
     }
   }
-  logEvent('hit', { enemy: e.type, dmg, hp: Math.max(0, e.hp), killed: e.hp <= 0 });
+  logEvent('hit', {
+    enemy: e.type,
+    dmg,
+    hp: Math.max(0, e.hp),
+    killed: e.hp <= 0,
+    who: by ? others.get(by)?.name : nameOf(player),
+  });
 }
 // slice 33: a blow from this game's player on another player, in free-for-all only (pvp()); the other game takes it, and
 // tells this one if it knocked them out ('ko')
@@ -2470,8 +2531,21 @@ function interact(quiet) {
 }
 // (who: the game whose player struck the blow, slice 33; a player's blow lands only where the rules let it, and not in the
 // 3 s grace just after a knockout: review)
+// where a blow came from, for the play log: how far, whether it was on screen, which creature and its night boost
+function whence(f) {
+  const v = new THREE.Vector3(f.x, (f.y ?? groundY(f.x, f.z)) + 0.6, f.z).project(camera);
+  return {
+    d: +Math.hypot(f.x - player.x, f.z - player.z).toFixed(1),
+    seen: v.z < 1 && Math.abs(v.x) <= 1 && Math.abs(v.y) <= 1 ? 1 : 0,
+    ...(f.id != null && { id: f.id }),
+    ...(f.nb > 0 && { nb: +f.nb.toFixed(2) }),
+  };
+}
+const land = (x, z) => (caveAt(x, z) ? 'cave' : biomeAt(x, z)); // (in a cave: biomeAt gives the map's edge row)
+const nameOf = (q) => (q === player ? player.ch?.player : q?.name); // (a player's name, this game's or another's)
 export function hurtPlayer(d, by, from = null, who = null) {
-  if (player.dead || (by === 'player' && (!(pvp() > 0) || player.graceT > 0))) return;
+  if (player.dead || (by === 'player' && !(pvp() > 0))) return;
+  if (player.graceT > 0 && (by === 'player' || !rules.ffa)) return; // (#86's safe seconds: from rivals after a knockout; from everything after a co-op revive)
   if (player.sleep && by !== 'poison')
     wake(
       'Something is attacking you in your sleep!',
@@ -2494,7 +2568,7 @@ export function hurtPlayer(d, by, from = null, who = null) {
   player.hp -= d;
   if (by !== 'poison') {
     fought(true);
-    logEvent('hurt', { dmg: d, by, hp: Math.max(0, Math.round(player.hp)) });
+    logEvent('hurt', { dmg: d, by, hp: Math.max(0, Math.round(player.hp)), ...(from && whence(from)) });
     player.hurtT = 0.35;
     player.shake = 0.25;
     sfx('hurt');
@@ -2560,7 +2634,8 @@ export function fallNow() {
 }
 // #86 (Jared, 2026-11-15, after a Brawl where the host knocked the joined player out twice as they came back at the camp): a
 // player back from a knockout in free-for-all cannot be hurt by a rival for this long, or until they attack; creatures still bite
-const RESPAWN_SAFE_S = 4;
+const RESPAWN_SAFE_S = 4,
+  REVIVE_SAFE_S = 3; // (Jared, November 16, 2026: "Yes, 3 seconds"; a rat bit Zachary 0.9 s after his revive)
 function fallHurt(h, gy) {
   const d = Math.round((h - FALL_SAFE) * FALL_HP);
   if (d <= 0 || player.dead) return; // (a body already down takes no more)
@@ -2792,7 +2867,8 @@ export function update(dt, t) {
     if (player.revT >= 2.5) {
       Object.assign(player, { down: 0, dead: 0, revT: 0, hp: Math.round(player.maxHp * 0.35) });
       player.mesh.userData.anim.revive();
-      log(`${helper.name} got you back up.`);
+      player.graceT = REVIVE_SAFE_S;
+      log(`${helper.name} got you back up. Safe for ${REVIVE_SAFE_S} s: nothing can hurt you.`);
       logEvent('revived', { by: helper.name });
     } else if (player.down <= 0 && bedRespawn(player.ko ? campSpot() : null)) {
       if (player.ko) {
@@ -3445,7 +3521,7 @@ export function update(dt, t) {
               };
               spit(m.o, m.v, m.k);
               send('all', m);
-              logEvent('spit', { d: Math.round(d), by: e.type });
+              logEvent('spit', { d: Math.round(d), by: e.type, at: nameOf(q) });
             }
             break;
           }
@@ -4148,7 +4224,17 @@ export function update(dt, t) {
   }
   tickLog(
     dt,
-    { player, cam: camMode, biome: biomeAt(player.x, player.z), fps: lastFps, enemies },
+    {
+      player,
+      cam: camMode,
+      biome: land(player.x, player.z),
+      fps: lastFps,
+      enemies,
+      mates: [...others.values()],
+      cave: caveAt(player.x, player.z)?.kind,
+      gl: renderer,
+      shots: player.ch?.id === 'gunslinger' ? ammo.shots || 0 : null,
+    },
     il > 0.1 && !player.dead,
   );
   tickWatch(dt); // slice 13d
@@ -4242,6 +4328,7 @@ export function gotPickup(kind) {
   if (kind === 'ammo') {
     const n = addRounds(3);
     sfx('pickup');
+    logEvent('got', { kind, n }); // (n: the rounds that fitted)
     floatText(new THREE.Vector3(player.x, player.y + 2, player.z), `+${n} rounds`, '#ffe08a');
     return;
   }
@@ -4255,9 +4342,6 @@ export function gotPickup(kind) {
   );
 }
 let snapCam = true;
-export function snapCamera() {
-  snapCam = true;
-}
 export function placeCamera(dt) {
   const k = snapCam ? 1 : null;
   snapCam = false;

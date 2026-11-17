@@ -521,7 +521,8 @@ export function tickSpiders(dt, { scene: sc, enemies, players, host, spawn, log,
     });
     sfx('spiderdrop', s);
     logEvent?.('drop', {
-      enemy: 'spider',
+      enemy: s.type,
+      at: q.name || q.ch?.player, // (whom it dropped on)
       from: a.tree ? 'tree' : 'wall',
       d: +Math.hypot(q.x - a.x, q.z - a.z).toFixed(1),
     });

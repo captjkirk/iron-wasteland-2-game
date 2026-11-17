@@ -4,7 +4,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const DIR = new URL('../assets/chars/', import.meta.url).href;
 const docs = {};
@@ -1352,5 +1351,3 @@ class Animator {
     this.mixer.update(dt);
   }
 }
-
-export const LOOK_IDS = Object.keys(LOOKS);

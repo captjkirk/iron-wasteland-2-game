@@ -249,7 +249,6 @@ function draw() {
     card.innerHTML = html;
   }
 }
-export const tourOn = () => !!tour;
 // Settings' "Show the tour next game" and the start screen's "Show the tutorial": one saved value (for a new player on the same computer)
 export function bindTour() {
   for (const id of BOXES) {

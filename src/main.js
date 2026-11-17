@@ -35,6 +35,7 @@ import {
 import { buildTerrain, edgeLand } from './terrain.js';
 import { buildEnvironment, FOG_COLOR } from './environment.js';
 import { buildBog, localFog } from './bog.js';
+const BOG_MURK = new THREE.Color(0x1d2112); // under the Bog's water: dark olive peat murk, not the lakes' teal
 import { markExplored, fogReach, exploredStats } from './explore.js';
 import { buildDeepWater, S as deepShadow } from './water.js';
 import { buildProps, placed, nearColliders, colR, standAt } from './props.js';
@@ -49,14 +50,14 @@ import {
   larder,
   lampSpots,
 } from './buildings.js';
-import { snapFrame, logEvent, frameTime, playlogState } from './playlog.js';
+import { snapFrame, logEvent, frameTime, playlogState, playlogRec, setRenderScale } from './playlog.js';
 import { tickWatch, checkCrates, checkMsg, solidAt } from './watch.js';
 import { updateScatter, scatterStats } from './scatter.js';
 import { buildGrass, updateGrass, grassStats } from './grass.js';
 import { tickWind, W as wind } from './wind.js';
 import { loadCharacters } from './characters.js';
 import { loadCreatures, eyeShine } from './creatures.js';
-import { initPortraits, drawPortraits, endPortraits, portraitStats } from './menu3d.js';
+import { initPortraits, drawPortraits, portraitStats } from './menu3d.js';
 import { menuStep, leaveSeedBox } from './menu.js';
 import { hintsTick, bindTour, armTour } from './tour.js'; // #16
 import { net, netReady } from './net.js';
@@ -324,6 +325,7 @@ function autoScale(dt) {
   scale = Math.max(0.6, scale * 0.85);
   renderer.setPixelRatio(baseRatio * scale);
   renderer.setSize(innerWidth, innerHeight);
+  setRenderScale(scale);
   logEvent('res-scale', {
     scale: +scale.toFixed(2),
     fps,
@@ -418,8 +420,11 @@ function frame(now) {
   tickWeather((day.n + day.t) * DAY_S, camera.position, scene.fog, nightK(), env.haze);
   const under = player.under && camera.position.y < WATER_Y;
   if (under) {
-    scene.fog.color.set(0x0a262b).multiply(env.fogTint);
-    scene.fog.near = 0.5;
+    scene.fog.color
+      .set(0x0a262b)
+      .lerp(BOG_MURK, scene.fog.__k || 0)
+      .multiply(env.fogTint);
+    /* (olive peat water in the Bog) */ scene.fog.near = 0.5;
     scene.fog.far = 20;
   }
   document.body.classList.toggle('under', under);
@@ -512,6 +517,7 @@ window.__iw = {
   deliver,
   /* the gate of slice 12 */ logEvent,
   playlogState,
+  playlogRec,
   tickWatch,
   checkCrates,
   checkMsg,
@@ -614,27 +620,6 @@ window.__iw = {
   /* ticket 91 */ places,
   /* slice 23 */ spiders,
   spawnPack /* slice 22 */,
-  seed: SEED_TEXT,
-  SHAPE,
-  LEAN,
-  reachable,
-  /* slice 13c */ placed,
-  PASSES,
-  CAMP,
-  canyonAt,
-  day,
-  nightK,
-  DAY_S,
-  /* slice 13 */ press,
-  nearColliders,
-  colR,
-  slopeAt,
-  buildings,
-  caches,
-  raiderCamps,
-  ladders,
-  standAt,
-  deepShadow,
   spawnAround,
   /* round 4 */ seed: SEED_TEXT,
   SHAPE,

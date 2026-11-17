@@ -14,7 +14,7 @@ import { addCollider } from './props.js';
 import { cache } from './buildings.js';
 import { others, rules } from './coop.js';
 import { dustPuff } from './effects.js';
-import { sfx, caveAudio } from './audio.js';
+import { caveAudio } from './audio.js';
 
 export { caves, caveAt };
 const FRAME = { x: 0, z: 0, ca: 1, sa: 0, a: 0 }; // (cache()'s frame: the world's own)

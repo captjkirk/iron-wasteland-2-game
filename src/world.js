@@ -281,7 +281,6 @@ if (!CLASSIC) {
     if (t) PADS.push({ x: t.x, z: t.z, b, inner, outer, h: Math.min(40, Math.max(WATER_Y + 3, t.h)) });
   }
 }
-export const TOWN = PADS.find((p) => p.b === 'ruins' && p.inner === 50) || null;
 const padK = (x, z) => {
   let k = 0;
   for (const p of PADS) {

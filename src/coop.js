@@ -3,7 +3,7 @@
 // who wins a hit. Each game moves its own player and works out its own attacks, then tells the host what it hit.
 // Each game sends its player 15 times a second; the host sends every enemy 12 times a second.
 import * as THREE from 'three';
-import { CHARS, ENEMY, SEED_TEXT, params, JOINER, KEEP, randomSeed } from './config.js';
+import { CHARS, SEED_TEXT, params, JOINER, KEEP, randomSeed } from './config.js';
 import { EDGE } from './edgefog.js';
 import { groundY } from './world.js';
 import { radioOn, radioLater, places } from './places.js';
@@ -15,7 +15,7 @@ import { buildCharacter, eatPose } from './characters.js';
 import { nameTags, eye } from './effects.js';
 import { sfx } from './audio.js';
 import { net, netReady, send as post, flush, onMessage } from './net.js';
-import { logEvent } from './playlog.js';
+import { logEvent, logClock } from './playlog.js';
 import { checkMsg, onCheck } from './watch.js';
 import { deepMsg, tickGhostDeep, dropGhostDeep } from './water.js';
 import { day, setDay } from './daynight.js';
@@ -91,7 +91,15 @@ const running = () => isRunning() && !!player.ch;
 // (from: where the blow came from, for the Knight's shield block: slice 12)
 export function hurt(p, dmg, by, from) {
   if (p === player) hurtPlayer(dmg, by, from);
-  else send(p.id, { t: 'hurt', dmg, by, ...(from && { fx: +from.x.toFixed(1), fz: +from.z.toFixed(1) }) });
+  else
+    send(p.id, {
+      t: 'hurt',
+      dmg,
+      by,
+      ...(from && { fx: +from.x.toFixed(1), fz: +from.z.toFixed(1) }),
+      ...(from?.id != null && { eid: from.id }),
+      ...(from?.nb > 0 && { nb: +from.nb.toFixed(2) }),
+    });
 }
 export const salvaged = []; // [type, index] of every scrap pile and wreck salvaged, for players who join later
 export const eaten = []; // places round 2: the larder index of every piece of food taken, for players who join later
@@ -313,6 +321,7 @@ function onMsg(m, from) {
       } // (the world it will build next: a joiner builds it meanwhile)
       post(from, {
         t: 'welcome',
+        ht: logClock(),
         crates: caches.flatMap((c, i) => (c.broken ? [[i, 2]] : c.opened ? [[i, 1]] : [])),
         salv: salvaged,
         food: eaten,
@@ -363,7 +372,7 @@ function onMsg(m, from) {
       } // (in: the next world change is followed too)
       joinT = 0;
       net.host = from;
-      logEvent('join-welcome', { ms: Math.round(performance.now() - joinAt), hellos });
+      logEvent('join-welcome', { ms: Math.round(performance.now() - joinAt), hellos, ht: m.ht }); // (ht: the host's log clock then)
       for (const [i, s] of m.crates) {
         const c = caches[i];
         if (!c) continue;
@@ -446,6 +455,7 @@ function onMsg(m, from) {
       if (!(m.dn > 0) && wasDown && !m.out) {
         o.mesh.userData.anim.revive();
         log(rules.ffa ? `${o.name} is back in the game.` : `${o.name} is back up.`);
+        if (player.rv) logEvent('revive', { who: o.name }); // (the helper's side: this player held E beside them)
       }
       if (m.out && !o.wasOut) {
         o.wasOut = true;
@@ -494,7 +504,12 @@ function onMsg(m, from) {
       deployTurret(m.x, m.z, m.f, true);
       break;
     case 'hurt':
-      hurtPlayer(m.dmg, m.by, m.fx != null ? { x: m.fx, z: m.fz } : null, m.by === 'player' ? from : null);
+      hurtPlayer(
+        m.dmg,
+        m.by,
+        m.fx != null ? { x: m.fx, z: m.fz, id: m.eid, nb: m.nb } : null,
+        m.by === 'player' ? from : null,
+      );
       break; // (slice 33: another player's blow says whose)
     case 'ko':
       logEvent('ko', { who: m.n, mode: modeKey() });

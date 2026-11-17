@@ -6,10 +6,13 @@ import { HALF, CELL, SEG, N, WATER_Y } from './config.js';
 import { H, biomeW } from './world.js';
 import { vnoise, fbm } from './noise.js';
 
-export const BOG_Y = WATER_Y + 0.62; // the Bog's water table sits a little above the lakes
+// the Bog's water is the world's water: its dark skin lies on the one water plane (4 cm up, over the deep-water veil at 2 cm),
+// so wading, swimming and the view under it all meet one surface (Jared, November 16, 2026: at 0.62 m up, a camera dipped
+// under the skin saw the clear lake water as a second layer below it, and a swimmer's eye, held 0.4 m up, was always between)
+export const BOG_Y = WATER_Y + 0.04;
 
 function scumTexture() {
-  // dark water with drifting duckweed and algae blotches, tiling (noise sampled on a torus)
+  // dark peat water, tiling (noise sampled on a torus)
   const S = 256,
     cv = document.createElement('canvas');
   cv.width = cv.height = S;
@@ -24,17 +27,16 @@ function scumTexture() {
         fbm(Math.sin(b) * R * f + 9, Math.cos(b) * R * f * 0.9 + 3, 3) * 0.5
       );
     };
+  // an even, dark, still peat sheet with soft broad shading and a faint grain, no duckweed blotches (Jared, November 16, 2026:
+  // "I think the bog water looks patchy and bad")
   for (let y = 0; y < S; y++)
     for (let x = 0; x < S; x++) {
-      const big = tor(x, y, 0.035),
-        fine = vnoise(x * 0.9, y * 0.9),
-        weed = Math.min(1, Math.max(0, (big - 0.5) * 6)) * (0.55 + fine * 0.6);
-      const dot = fine > 0.86 ? 0.5 : 0,
-        w = Math.min(1, weed + dot * (big > 0.42 ? 1 : 0)),
+      const v = (tor(x, y, 0.035) - 0.5) * 2, // (soft broad shading, about -1 to 1)
+        grain = vnoise(x * 0.9, y * 0.9) - 0.5,
         o = (y * S + x) * 4;
-      img.data[o] = 24 + w * 46 + fine * 6;
-      img.data[o + 1] = 28 + w * 62 + fine * 6;
-      img.data[o + 2] = 18 + w * 16;
+      img.data[o] = 26 + v * 4 + grain * 3;
+      img.data[o + 1] = 30 + v * 5 + grain * 3;
+      img.data[o + 2] = 19 + v * 2 + grain * 2;
       img.data[o + 3] = 255;
     }
   cx.putImageData(img, 0, 0);
@@ -87,8 +89,8 @@ export function buildBog(scene, waterNormals) {
   );
   const uv = new Float32Array((pos.length / 3) * 2);
   for (let k = 0; k < pos.length / 3; k++) {
-    uv[k * 2] = pos[k * 3] / 14;
-    uv[k * 2 + 1] = pos[k * 3 + 2] / 14;
+    uv[k * 2] = pos[k * 3] / 40;
+    uv[k * 2 + 1] = pos[k * 3 + 2] / 40;
   }
   g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   g.setIndex(idx);
@@ -100,12 +102,12 @@ export function buildBog(scene, waterNormals) {
     map: scumTexture(),
     vertexColors: true,
     transparent: true,
-    roughness: 0.62,
+    roughness: 0.7,
     metalness: 0,
     envMapIntensity: 0.12,
     color: 0xb8b8a8,
     normalMap: nm,
-    normalScale: new THREE.Vector2(0.12, 0.12),
+    normalScale: new THREE.Vector2(0.04, 0.04), // (still water: faint ripples, so the sky does not catch in light patches)
     depthWrite: false,
   });
   const mesh = new THREE.Mesh(g, m);

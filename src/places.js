@@ -11,6 +11,7 @@ import { liftFog } from './explore.js';
 export { places };
 const HOLD = 10,
   SEE = { radio: 420, crater: 160 },
+  TALL = { radio: 28, shrooms: 7 }, // (how high a place stands: the radio's mast is seen over a hill, the rest from about head height)
   DIRS = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
 const dirTo = (p, q) => DIRS[(Math.round(Math.atan2(q.z - p.z, q.x - p.x) / (Math.PI / 4)) + 8) % 8]; // (north is -z: the classic river runs north to south)
 let pending = false;
@@ -73,7 +74,6 @@ export const placePrompt = (P, E) => {
       : `Hold ${E} · tune the radio (10 s)`
     : null;
 };
-export const holdProgress = () => holdT / HOLD;
 
 // the radio comes on: here (it lifts this computer's fog), and from a friend's game (coop.js, { t: 'radio' })
 export function radioOn(from = null) {
@@ -99,17 +99,26 @@ export function radioOn(from = null) {
   if (!from) G.send('all', { t: 'radio', n: G.player.ch?.player });
 }
 
+// a place is spotted once it is in range and the camera shows it: its foot or its top on screen with nothing in between,
+// looked for four times a second (on main it was the range alone, so a place behind a rock or behind you was "spotted")
+let lookT = 0;
+const shown = (q) => {
+  const y = groundY(q.x, q.z);
+  return [1.5, TALL[q.kind] || 3].some((h) => G.inSight(q.x, y + h, q.z));
+};
 export function tickPlaces(dt, holding) {
   if (!G) return;
-  const P = G.player;
+  const P = G.player,
+    look = (lookT -= dt) <= 0;
+  if (look) lookT = 0.25;
   t += dt;
   for (const q of places) {
     const d = Math.hypot(P.x - q.x, P.z - q.z);
-    if (!q.seen && d < (SEE[q.kind] || 180)) {
+    if (!q.seen && look && d < (SEE[q.kind] || 180) && d > q.r && shown(q)) {
       q.seen = true;
       dirty = true;
       G.logEvent('place-seen', { kind: q.kind });
-      if (!q.reached && d > q.r) G.log(`You spot ${q.name} to the ${dirTo(P, q)}.`);
+      if (!q.reached) G.log(`You spot ${q.name} to the ${dirTo(P, q)}.`);
     }
     if (!q.reached && d < q.r && !P.dead) {
       q.reached = true;
