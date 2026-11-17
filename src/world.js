@@ -144,8 +144,10 @@ export function riverDist(x, z) {
     (s) =>
       s.b === 'grass' &&
       Math.hypot(s.x, s.z) > 170 &&
-      (CLASSIC ? Math.abs(s.x - riverRaw(s.z) - RIVER_SHIFT) > 120 : riverDist(s.x, s.z) > 120),
-  );
+      (CLASSIC
+        ? Math.abs(s.x - riverRaw(s.z) - RIVER_SHIFT) > 120
+        : riverDist(s.x, s.z) > 120 && Math.hypot(s.x - lakes[0].x, s.z - lakes[0].z) > 220),
+  ); // (and clear of the river's own lake: on broken-hearth-67 the two ran together, a 150 m swim from dry land, the quality pass)
   if (g.length) lakes.push({ x: g[0].x, z: g[0].z, rx: 58, rz: 44, a: 0 });
 }
 export { lakes };
@@ -338,6 +340,15 @@ for (let k = 0, tries = 0; k < SHAPE.ponds && tries < 60; tries++) {
     riverDist(x, z) < rx + 50
   )
     continue;
+  {
+    const L = Math.hypot(CAMP.x - x, CAMP.z - z);
+    if (
+      [10, 40, 80].some(
+        (t) => biomeWeights(x + ((CAMP.x - x) / L) * (rx + t), z + ((CAMP.z - z) / L) * (rx + t)).best === 'swamp',
+      )
+    )
+      continue;
+  } // (nor with the Bog's marsh on its camp side: quiet-forge-87's pond swam 200 m of it to dry land, round 3)
   if (
     lakes.some((l) => Math.hypot(l.x - x, l.z - z) < Math.max(l.rx, l.rz) + rx + 60) ||
     PADS.some(

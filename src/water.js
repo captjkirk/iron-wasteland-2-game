@@ -44,9 +44,18 @@ export function buildDeepWater(scene, normals) {
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
   g.setIndex(idx);
+  // drawn a few depth steps nearer than it lies (the quality pass, Jared on the title screen of Dev 861d26c: 2 cm over the water is
+  // finer than the depth buffer tells apart from the title camera 150 m and more away, so the two fought, flickering in bands)
   const veil = new THREE.Mesh(
     g,
-    new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false }),
+    new THREE.MeshBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -4,
+    }),
   );
   veil.renderOrder = 1;
   veil.name = 'deep water';

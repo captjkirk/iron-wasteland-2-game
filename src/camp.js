@@ -401,13 +401,16 @@ export async function buildCamp(scene) {
     [-0.4, -2.2, 1.6],
   ]) {
     const seat = new THREE.Group();
-    const log = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.26, 1.9, 12).rotateZ(Math.PI / 2), bark);
-    seat.add(log);
+    const log = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.26, 1.9, 12, 1, true).rotateZ(Math.PI / 2), bark);
+    seat.add(log); // (open: its own end caps lay under the end grain and flickered, Jared: "the logs have more z fighting on the ends", the quality pass)
     for (const s of [-1, 1]) {
-      const cap = new THREE.Mesh(new THREE.CircleGeometry(0.24, 12).rotateY((s * Math.PI) / 2), endGrain);
+      const cap = new THREE.Mesh(
+        new THREE.CircleGeometry(s < 0 ? 0.24 : 0.26, 12).rotateY((s * Math.PI) / 2),
+        endGrain,
+      );
       cap.position.x = s * 0.95;
       seat.add(cap);
-    }
+    } // (each the size of its end)
     seat.rotation.y = ry;
     at(seat, dx, dz, 0.2);
     for (const k of [-0.6, 0, 0.6]) addCollider(fx + dx + Math.cos(ry) * k, fz + dz - Math.sin(ry) * k, 0.3, null);

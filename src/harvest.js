@@ -294,17 +294,17 @@ function stump(it, r, d) {
     g = new THREE.Group(),
     sh = it.type === 'shroom'; // (a giant mushroom leaves a pale stalk)
   const body = new THREE.Mesh(
-    new THREE.CylinderGeometry(r, r * 1.22, h + 0.25, 16, 1),
+    new THREE.CylinderGeometry(r, r * 1.22, h + 0.25, 16, 1, true),
     sh ? STUMP.stalk : stumpBark(it.type),
   );
   body.position.y = (h - 0.25) / 2;
-  g.add(body);
+  g.add(body); // (open: its own top lay 2 mm under the cut and flickered, the quality pass)
   const top = new THREE.Mesh(
-    sh ? new THREE.CircleGeometry(r * 0.97, 16).rotateX(-Math.PI / 2) : grainDisc(r * 0.97).rotateX(-Math.PI / 2),
+    sh ? new THREE.CircleGeometry(r, 16).rotateX(-Math.PI / 2) : grainDisc(r).rotateX(-Math.PI / 2),
     sh ? STUMP.flesh : STUMP.grain,
   );
-  top.position.y = h + 0.002;
-  g.add(top);
+  top.position.y = h;
+  g.add(top); // (the cut closes the open trunk)
   // the hinge: splinters standing on the side the tree fell toward
   for (let k = 0; k < 5; k++) {
     const a = d + (k - 2) * 0.28,

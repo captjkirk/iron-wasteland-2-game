@@ -412,8 +412,8 @@ export function buildLoot(kind) {
     ]) {
       add(g[0], m.bark, [0, y, z], [0, r, 0]);
       for (const sx of [-1, 1])
-        add(g[1], m.grain, [sx * 0.231 * Math.cos(r), y, z - sx * 0.231 * Math.sin(r)], [0, r + (sx * Math.PI) / 2, 0]);
-    }
+        add(g[1], m.grain, [sx * 0.234 * Math.cos(r), y, z - sx * 0.234 * Math.sin(r)], [0, r + (sx * Math.PI) / 2, 0]);
+    } // (the cut ends 4 mm off the log's own: 1 mm flickered, the quality pass)
   // rounds (slice 12): a small card box of brass cartridges, a few spilled beside it
   if (kind === 'ammo') {
     const brass = (m.brass ||= new THREE.MeshStandardMaterial({ color: 0xc8a050, metalness: 1, roughness: 0.3 })),

@@ -14,6 +14,7 @@ import {
   RELIGHT,
   PASS_OUT,
 } from './config.js';
+import { flowAt } from './environment.js';
 import { campfire, campTent } from './camp.js';
 import { caches, raiderCamps, ladderAt, foodNear, foodName, takeFood, larder, FOOD_EACH } from './buildings.js';
 import { tickDeep, resetDeep, ripple } from './water.js';
@@ -2267,6 +2268,18 @@ export function update(dt, t) {
     oy = groundY(ox, oz);
   player.x += wx * sp * dt;
   player.z += wz * sp * dt;
+  // the river's current (the quality pass, round 3; Jared: "would also be nice if the river current 'pushed' you slightly"): a wader
+  // or swimmer drifts downstream at 0.3 of the water's speed, from nothing at 0.4 m deep to all of it from 1.1 m, never over 0.6 m/s
+  // (the Iron Knight, the slowest, swims at 2 m/s: he still swims up the fastest stretch). Lakes and ponds are still. Walls, rocks and
+  // cliffs below stop it as they stop walking. Each game moves its own player, so the host and a joiner agree
+  if (inWater && !player.dead && !player.mantle && !player.climbing) {
+    const [fx, fz] = flowAt(player.x, player.z),
+      k = 0.3 * Math.min(1, (depth - 0.4) / 0.7),
+      l = Math.hypot(fx, fz) * k,
+      m = l > 0.6 ? 0.6 / l : 1;
+    player.x += fx * k * m * dt;
+    player.z += fz * k * m * dt;
+  }
   // slice 21 (Jared, 2026-11-14: "the characters have no collision so you can walk through each other and see the inside of
   // the players' heads"): each game moves its own player out of the others standing at its height (the whole overlap: the
   // other's place here is a moment old); one down or out can be walked over, to revive them

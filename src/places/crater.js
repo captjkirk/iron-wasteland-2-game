@@ -156,19 +156,47 @@ function buildCrater(q, root) {
   const rock = (x, z, w, hgt, d, a, lean, sink, stand = true) => {
     if (open(x, z, Math.max(w, d) / 2)) return;
     const y = groundY(x, z);
-    T.rock.push(
-      shardGeo(rnd, w, hgt, d, hgt > 2.4 ? 0.4 : 0.3)
-        .rotateZ(-lean)
-        .rotateY(-a)
-        .translate(x, y - sink, z),
-    );
-    const rr = w * 0.42 + 0.1,
-      n = Math.max(1, Math.ceil((d * 0.8) / (rr * 1.2))),
-      tx = -Math.sin(a),
-      tz = Math.cos(a); // (a row of circles along a slab's broad side)
+    const geo = shardGeo(rnd, w, hgt, d, hgt > 2.4 ? 0.4 : 0.3)
+      .rotateZ(-lean)
+      .rotateY(-a)
+      .translate(x, y - sink, z);
+    T.rock.push(geo);
+    // a row of circles along a slab's broad side, as wide as the rock is where a body is (0.1 to 1.9 m over the ground, its lean
+    // and jagged faces in it: the quality pass, round 3; Jared: "Im standing in a rock", a boulder at the Crater Lake's edge whose
+    // circle was 15% narrower than the stone)
+    const tx = -Math.sin(a),
+      tz = Math.cos(a),
+      P = geo.attributes.position;
+    let a0 = Infinity,
+      a1 = -Infinity,
+      p0 = Infinity,
+      p1 = -Infinity;
+    for (let i = 0; i < P.count; i++) {
+      const vx = P.getX(i) - x,
+        vy = P.getY(i),
+        vz = P.getZ(i) - z;
+      if (vy < y + 0.1 || vy > y + 1.9) continue;
+      const f = vx * tx + vz * tz,
+        q = vx * tz - vz * tx;
+      a0 = Math.min(a0, f);
+      a1 = Math.max(a1, f);
+      p0 = Math.min(p0, q);
+      p1 = Math.max(p1, q);
+    }
+    if (a0 > a1) {
+      a0 = -d * 0.4;
+      a1 = d * 0.4;
+      p0 = -w * 0.42;
+      p1 = w * 0.42;
+    } // (all of it under the ground there: the old outline)
+    const rr = Math.max(0.3, (p1 - p0) / 2 + 0.05),
+      n = Math.max(1, Math.ceil((a1 - a0) / (rr * 1.2))),
+      seg = (a1 - a0) / n,
+      pm = (p0 + p1) / 2,
+      R = Math.hypot(rr, seg / 2);
     for (let i = 0; i < n; i++) {
-      const f = n > 1 ? (i / (n - 1) - 0.5) * d * 0.8 : 0;
-      Object.assign(addCollider(x + tx * f, z + tz * f, rr, null), {
+      const f = a0 + (i + 0.5) * seg;
+      Object.assign(addCollider(x + tx * f + tz * pm, z + tz * f - tx * pm, R, null), {
         vr: 0,
         top: y - sink + hgt * 0.9,
         stand: stand && hgt < 2.6 ? y - sink + hgt * 0.85 : null,
@@ -267,9 +295,14 @@ function buildCrater(q, root) {
       .multiply(new THREE.Matrix4().makeRotationX(-pitch * 0.8))
       .multiply(new THREE.Matrix4().makeRotationZ(0.42));
     for (const k in B) for (const geo of B[k]) T[k].push(geo.applyMatrix4(Mb));
-    Object.assign(addCollider(x, z, 0.8, null), { vr: 0, top: y + 0.7, stand: null });
+    for (let f = -1.5; f <= 1.51; f += 0.75)
+      Object.assign(addCollider(x + Math.cos(aw) * f, z + Math.sin(aw) * f, 0.9, null), {
+        vr: 0,
+        top: y + 0.7,
+        stand: null,
+      });
     q.wreck = { x, z };
-  }
+  } // (its whole length, bow to stern: one circle at its middle let a player walk into the hull, the quality pass)
   for (const k of ['planks', 'beam']) {
     const geo = mergeGeometries(T[k].map((q) => (q.index ? q.toNonIndexed() : q)));
     boxUV(geo, TILE[k]);

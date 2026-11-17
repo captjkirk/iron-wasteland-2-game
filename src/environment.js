@@ -708,6 +708,24 @@ function flowMap() {
   return t;
 }
 const FLOW_U = { flowMap: { value: null }, flowT: { value: 0 } };
+// the water's velocity at (x, z) in m/s, [vx, vz], from the same map (the quality pass, round 3: Jared, November 15, 2026, "would also
+// be nice if the river current 'pushed' you slightly"); still water and dry land are [0, 0]. Made from the height field alone, so
+// every game of one world reads the same
+export function flowAt(x, z) {
+  const t = FLOW_U.flowMap.value;
+  if (!t) return [0, 0];
+  const d = t.image.data,
+    S = SEG,
+    fi = (x + HALF) / CELL,
+    fj = (z + HALF) / CELL;
+  const i = Math.max(0, Math.min(S - 2, Math.floor(fi))),
+    j = Math.max(0, Math.min(S - 2, Math.floor(fj))),
+    u = Math.min(1, Math.max(0, fi - i)),
+    w = Math.min(1, Math.max(0, fj - j));
+  const at = (a, b, c) => ((d[((j + b) * S + i + a) * 4 + c] - 128) / 127) * FLOW_MAX,
+    mix = (c) => (at(0, 0, c) * (1 - u) + at(1, 0, c) * u) * (1 - w) + (at(0, 1, c) * (1 - u) + at(1, 1, c) * u) * w;
+  return [mix(0), mix(1)];
+}
 // boulders standing in the water (props.js): the flow map takes each one as a shore, so foam rings it
 export function rocksInWater(list) {
   const t = FLOW_U.flowMap.value;
@@ -737,12 +755,14 @@ const FLOW_GLSL = `
   // foam: a line where the water meets the shore, ripples of it coming in over the shallows, and broken white where the river
   // runs; pat (0..1) is the foam's own pattern, moving with the water, that breaks it up
   float foamAt( vec4 f, float pat, vec2 w ) { float d = f.z, run = smoothstep( 0.2, 1.4, length( f.xy ) );
-    // how far away from the waterline (m), from the depth and how steeply it falls (the screen's derivatives give its slope),
-    // so the foam is about as wide on a gravel bar as under a steep bank
-    vec2 ax = dFdx( w ), ay = dFdy( w ); float det = ax.x * ay.y - ax.y * ay.x, gx = dFdx( d ), gy = dFdy( d );
-    float slope = clamp( length( vec2( gx * ay.y - gy * ax.y, ax.x * gy - ay.x * gx ) / ( abs( det ) > 1e-6 ? det : 1e-6 ) ), 0.04, 1.2 ), away = max( d, 0.0 ) / slope;
+    // how far away from the waterline (m), from the depth and how steeply it falls, so the foam is about as wide on a gravel bar as
+    // under a steep bank. The slope is read from the map a square either side (the quality pass, round 3: it came from the screen's
+    // derivatives of the 8-bit map, which step from one 2 x 2 block of pixels to the next, and drew a fine screen-door grain over
+    // the shallows: Jared, November 15, 2026, "water looks a little grainy")
+    float gx = ( flowAt( w + vec2( ${CELL.toFixed(1)}, 0.0 ) ).z - flowAt( w - vec2( ${CELL.toFixed(1)}, 0.0 ) ).z ) / ${(2 * CELL).toFixed(1)}, gy = ( flowAt( w + vec2( 0.0, ${CELL.toFixed(1)} ) ).z - flowAt( w - vec2( 0.0, ${CELL.toFixed(1)} ) ).z ) / ${(2 * CELL).toFixed(1)};
+    float slope = clamp( length( vec2( gx, gy ) ), 0.04, 1.2 ), away = max( d, 0.0 ) / slope;
     float edge = 1.0 - smoothstep( 0.0, 0.45 + 0.6 * f.w + 0.35 * sin( flowT * 1.3 + f.w * 25.0 ), away ); // the line where it meets the shore, breathing in and away
-    float wave = smoothstep( 0.86, 1.0, fract( away / 1.3 + flowT * 0.3 + f.w * 4.0 ) ) * ( 1.0 - smoothstep( 0.5, 4.0, away ) ) * ( 1.0 - smoothstep( 0.15, 0.5, fwidth( away / 1.3 ) ) ); // ripples coming in (faded where a pixel spans too many to draw cleanly)
+    float ph = fract( away / 1.3 + flowT * 0.3 + f.w * 4.0 ), wave = smoothstep( 0.76, 0.9, ph ) * ( 1.0 - smoothstep( 0.9, 1.0, ph ) ) * ( 1.0 - smoothstep( 0.5, 4.0, away ) ) * ( 1.0 - smoothstep( 0.15, 0.5, fwidth( away / 1.3 ) ) ); // ripples coming in, each rising and falling away again (it ended at full white, a crisp seam line across the shallows: Jared, November 15, 2026) (faded where a pixel spans too many to draw cleanly)
     float fleck = smoothstep( 0.64 - 0.06 * run, 0.88, pat ) * run * ( 0.6 + 0.4 * ( 1.0 - smoothstep( 0.0, 5.0, away ) ) ); // broken white on running water, more along its banks
     return clamp( edge * ( 0.45 + 0.55 * smoothstep( 0.35, 0.65, pat ) ) + wave * 0.75 * smoothstep( 0.35, 0.75, pat ) + fleck * 0.9, 0.0, 1.0 ); }
 `;

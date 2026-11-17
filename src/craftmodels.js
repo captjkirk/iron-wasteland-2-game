@@ -96,8 +96,14 @@ export function benchMesh() {
   ]) {
     put(g, new THREE.CylinderGeometry(0.09, 0.1, 0.62, 10).rotateX(Math.PI / 2), m.bark, [x, y, 0]);
     for (const s of [-1, 1])
-      put(g, new THREE.CircleGeometry(0.09, 10), m.endGrain, [x, y, s * 0.311], [0, s < 0 ? Math.PI : 0, 0]);
-  }
+      put(
+        g,
+        new THREE.CircleGeometry(s < 0 ? 0.1 : 0.09, 10),
+        m.endGrain,
+        [x, y, s * 0.314],
+        [0, s < 0 ? Math.PI : 0, 0],
+      );
+  } // (4 mm off the log's own ends, each its end's size: 1 mm flickered, the quality pass)
   // a tool board at the back on two posts: a bow saw, an axe, a mallet and a coil of rope hang from pegs
   for (const x of [-0.85, 0.85]) put(g, box(0.08, 1.7, 0.08), m.planks, [x, 0.85, 0.4]);
   put(g, box(1.8, 0.62, 0.04), m.planks, [0, 1.42, 0.42]);

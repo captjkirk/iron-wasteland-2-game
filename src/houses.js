@@ -109,9 +109,9 @@ export function dressDoor(b, P, x, z, ux, uz, y0, q, o) {
   const bx = (k, a, hh, d, off, y, n = 0) =>
     box(P, k, along ? a : d, hh, along ? d : a, x + ux * off + nx * n, y, z + uz * off + nz * n);
   for (const n of [t / 2 + 0.02, -(t / 2 + 0.02)]) {
-    bx('beam', w + 0.22, 0.11, 0.04, 0, y0 + hg + 0.055, n);
-    for (const s of [-1, 1]) bx('beam', 0.11, hg, 0.04, s * (w / 2 + 0.055), y0 + hg / 2, n);
-  }
+    bx('beam', w + 0.22, 0.11, 0.04, 0, y0 + hg + 0.052, n);
+    for (const s of [-1, 1]) bx('beam', 0.1, hg - 0.003, 0.04, s * (w / 2 + 0.047), y0 + (hg - 0.003) / 2, n);
+  } // (its inner edges 3 mm into the opening: they lay in the wall's own faces there and flickered, the quality pass)
   bx('beam', w, 0.04, t, 0, y0 + 0.02);
   if (q.leaf === false || (!o.ext && hash(b, x, z, 7) < 0.35)) return;
   const lw = w - 0.1,
@@ -210,7 +210,7 @@ function mk(b, P, g) {
   }; // (o.inner: edges shared with another wing, inside walls; o.footed: raised walls on a solid footing; o.foot, o.bot: walls standing on a raised floor, below)
   // an inside wall between two walls' inner faces, standing on the floor at lv
   H.part = (x0, z0, x1, z1, lv, h, holes = [], k = 'inwall', o = {}) =>
-    H.wall(k, x0, z0, x1, z1, h, holes, { lv, ...o });
+    H.wall(k, x0, z0, x1, z1, h - 0.006, holes, { lv, ...o }); // (6 mm under the boards over it: its top lay in theirs and flickered, the quality pass)
   const inR = (r, x, z) => x >= r[0] && x <= r[1] && z >= r[2] && z <= r[3];
   // a floor at lv over rects [x0, x1, z0, z1] less holes (stairwells): boards on a 22 cm slab you stand on; o.plinth: the
   // foundation under it, stone from below the ground up to the floor (its rects grown to the walls' outer faces)
@@ -226,17 +226,25 @@ function mk(b, P, g) {
       const zs = [
         ...new Set([r[2], r[3], ...holes.flatMap((h) => [h[2], h[3]]).filter((v) => v > r[2] && v < r[3])]),
       ].sort((p, q) => p - q);
+      const edge = () => 0.003; // (every edge 3 mm back: a stairwell's lay in the faces of the walls under it, a courtyard room's in its wall's outer face, and flickered, the quality pass)
       for (let i = 0; i + 1 < xs.length; i++)
         for (let j = 0; j + 1 < zs.length; j++) {
           const cx = (xs[i] + xs[i + 1]) / 2,
             cz = (zs[j] + zs[j + 1]) / 2;
           if (holes.some((h) => inR(h, cx, cz))) continue;
-          box(P, k, xs[i + 1] - xs[i], 0.05, zs[j + 1] - zs[j], cx, Y - 0.025, cz);
-          if (lv > 0.5 && !o.plinth)
-            box(P, 'ceil', xs[i + 1] - xs[i], th - 0.05, zs[j + 1] - zs[j], cx, Y - 0.05 - (th - 0.05) / 2, cz);
+          const x0 = xs[i] + edge(xs[i]),
+            x1 = xs[i + 1] - edge(xs[i + 1]),
+            z0 = zs[j] + edge(zs[j]),
+            z1 = zs[j + 1] - edge(zs[j + 1]),
+            mx = (x0 + x1) / 2,
+            mz = (z0 + z1) / 2;
+          box(P, k, x1 - x0, 0.05, z1 - z0, mx, Y - 0.025, mz);
+          if (lv > 0.5 && !o.plinth) box(P, 'ceil', x1 - x0, th - 0.05, z1 - z0, mx, Y - 0.05 - (th - 0.05) / 2, mz);
         }
       if (o.plinth) {
-        const e = o.plinth === true ? t / 2 : o.plinth,
+        const e =
+            (o.plinth === true ? t / 2 : o.plinth) -
+            0.004 /* (inside the walls' faces, not in them: they flickered, the quality pass) */,
           y0 = (b.ground ?? b.y) - 0.5;
         box(
           P,
@@ -277,14 +285,14 @@ function mk(b, P, g) {
         box(
           P,
           'beam',
-          AX ? 0.03 : w,
-          Math.min(hg, r),
-          AX ? w : 0.03,
-          cx - (dx * TREAD) / 2,
-          top - Math.min(hg, r) / 2,
-          cz - (dz * TREAD) / 2,
+          AX ? 0.03 : w - 0.006,
+          Math.min(hg, r) - 0.004,
+          AX ? w - 0.006 : 0.03,
+          cx - dx * (TREAD / 2 + 0.004),
+          top - 0.004 - (Math.min(hg, r) - 0.004) / 2,
+          cz - dz * (TREAD / 2 + 0.004),
         );
-    }
+    } // (the riser board 4 mm proud of its step and inside its sides and top: it lay in the step's own faces and flickered, the quality pass)
     if (o.open)
       for (const s of [-1, 1]) {
         const [x0, z0] = at(-0.05, s * (w / 2 - 0.04)),
@@ -431,7 +439,16 @@ function mk(b, P, g) {
   // a flat roof over rects at lv (its top lv + 0.25), lifted off with the roof in the cut-away; walked on
   H.flat = (rects, lv, k = 'concrete') => {
     for (const r of rects)
-      box(b.PR, k, r[1] - r[0] + t, 0.25, r[3] - r[2] + t, (r[0] + r[1]) / 2, b.y + lv + 0.125, (r[2] + r[3]) / 2);
+      box(
+        b.PR,
+        k,
+        r[1] - r[0] + t + 0.008,
+        0.25,
+        r[3] - r[2] + t + 0.008,
+        /* (4 mm past the walls' faces: flush, its edge flickered in theirs, the quality pass) */ (r[0] + r[1]) / 2,
+        b.y + lv + 0.125,
+        (r[2] + r[3]) / 2,
+      );
     surface(b, (lx, lz) =>
       rects.some((r) => lx >= r[0] - t / 2 && lx <= r[1] + t / 2 && lz >= r[2] - t / 2 && lz <= r[3] + t / 2)
         ? b.y + lv + 0.25
@@ -684,8 +701,8 @@ function counterKit() {
     add('iron', 0.1, 0.02, 0.03, x, 0.76, 0.3);
     add('iron', 0.02, 0.1, 0.03, x + 0.2, 0.45, 0.3);
   }
-  add('concrete', 0.55, 0.03, 0.4, 0.45, 0.905, 0.0);
-  add('iron', 0.5, 0.16, 0.36, 0.45, 0.84, 0.0);
+  add('concrete', 0.55, 0.03, 0.4, 0.45, 0.908, 0.0); // (the rim 3 mm proud of the worktop, not in it: it flickered)
+  add('iron', 0.5, 0.16, 0.36, 0.45, 0.837, 0.0);
   add('iron', 0.03, 0.25, 0.03, 0.45, 1.02, -0.2);
   add('iron', 0.03, 0.03, 0.15, 0.45, 1.13, -0.13);
   const M = mats(),
@@ -1245,13 +1262,17 @@ const KIND = {
     H.out(
       'planks',
       [
-        [0, -3.8],
+        [0.3, -3.8],
         [5, -3.8],
         [5, 3.8],
-        [0, 3.8],
+        [0.3, 3.8],
       ],
       3.4,
-      { 0: [D(2.2), W(4.0, 1.4, [0.6, 2.1])], 1: [W(-1.5, 1.2), W(1.8)], 2: [W(3.5, 1.2)] },
+      /* (from the brick wing's outer face: running into it, the two walls' faces flickered across 30 cm, the quality pass) */ {
+        0: [D(2.2), W(4.0, 1.4, [0.6, 2.1])],
+        1: [W(-1.5, 1.2), W(1.8)],
+        2: [W(3.5, 1.2)],
+      },
       { skip: [3], lv: M, footed: true },
     );
     box(H.P, 'iron', 2.5, 1.0, 0.06, -2.5, b.y + 1.75, -3.86); // the garage's roll door, stuck half up
@@ -1272,7 +1293,7 @@ const KIND = {
     H.floor([[-4.85, -0.15, -3.65, 3.65]], U + 2.8, { k: 'ceil', th: 0.12 });
     b.floors.pop();
     H.gable(-2.5, 0, 7.6, 5, U + 2.8, 1.7, 'z', 'brick');
-    H.gable(2.5, 0, 7.6, 5, M + 3.4, 1.7, 'z', 'planks', { over: [-0.15, 0.45] }); // (its west side stops at the brick wing's face. The quality pass: walls 0.5 m taller, so the half flight's landing under these eaves has a grown-up's headroom, and the roof meets the brick, no gap showing its tiles' edge inside)
+    H.gable(2.65, 0, 7.6, 4.7, M + 3.4, 1.7, 'z', 'planks', { over: [0, 0.45] }); // (from the brick wing's face, as its walls: its gable ends ran into the brick wall's ends and flickered, the quality pass) // (its west side stops at the brick wing's face) (round 2: the wing 0.5 m taller, so the half-flight's landing has headroom under it)
     H.room('garage', -4.85, -0.15, -3.65, 0.15, 0);
     H.room('den', -4.85, -0.15, 0.45, 3.65, 0);
     H.room('living', 1.6, 4.85, -3.65, 0.6, M, { no: ['-x', '+z'] });
@@ -1553,8 +1574,8 @@ const KIND = {
       H.chimney(x, 0.6, 0.6, 1.0, top + 2.2, 'brick', top);
     }
     for (const y of [F - 0.1, top + 0.35]) box(H.P, 'brick', 14.1, 0.16, 0.12, 0, b.y + y, -4.42); // a string course and the cornice
-    box(H.P, 'concrete', 14.2, 0.1, 0.5, 0, b.y + top + 0.95, -4.3);
-    box(H.P, 'concrete', 14.2, 0.1, 0.5, 0, b.y + top + 0.95, 4.3);
+    box(H.P, 'concrete', 14.2, 0.1, 0.5, 0, b.y + top + 0.95, -4.303);
+    box(H.P, 'concrete', 14.2, 0.1, 0.5, 0, b.y + top + 0.95, 4.303); // (3 mm off the parapet's face, which they shared and flickered in)
     for (const o of X) {
       const x0 = o - 2.15,
         x1 = o + 2.15;
@@ -1680,8 +1701,8 @@ const KIND = {
       [4.75, 2.0],
     ]) {
       const g0 = gAt(b, x, z);
-      box(P, 'beam', 0.14, b.y + F - g0, 0.14, x, (b.y + F + g0) / 2, z);
-    }
+      box(P, 'beam', 0.14, b.y + F - 0.006 - g0, 0.14, x, (b.y + F - 0.006 + g0) / 2, z);
+    } // (6 mm under the landing's boards: their tops lay in its top and flickered, the quality pass)
     H.rail(4.75, 2.1, 6.25, 2.1, F);
     H.floor([[-4.35, 4.35, -4.85, 4.85]], F);
     H.part(-4.35, 0.4, 4.35, 0.4, F, F, [D(-1.4), D(3.0)]);
@@ -1770,7 +1791,15 @@ const KIND = {
       ],
       h + 0.5,
       {
-        0: [D(0, 1.6, 2.4), W(-3.6, 0.8, [1.3, 2.1]), W(3.6, 0.8, [1.3, 2.1])],
+        0: [
+          D(
+            0,
+            1.2,
+            2.4,
+          ) /* (as wide as the passage behind it: at 1.6 its jambs ran into the passage walls' ends, which flickered there, the quality pass) */,
+          W(-3.6, 0.8, [1.3, 2.1]),
+          W(3.6, 0.8, [1.3, 2.1]),
+        ],
         1: [W(0, 0.8, [1.3, 2.1])],
         2: [W(-3.4, 0.8, [1.3, 2.1]), W(3.4, 0.8, [1.3, 2.1])],
         3: [W(0, 0.8, [1.3, 2.1])],

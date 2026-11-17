@@ -1567,6 +1567,19 @@ function buildPlane(b, P, g) {
       d * Math.atan2(y0 - y1, RL),
     );
   }
+  // under the floor's open ends, all the way across (the ramp too): on a slope the floor stands a metre over the ground there, and a walker
+  // went in under it (the quality pass, round 3: storm-heron-59's plane moved onto a hillside when its ponds moved, and the barge check walked
+  // under it). 0.9 m in from the end, under the floor where nobody sees them: a walker on the ground (its body 0.45 m wider than a post) stops at
+  // the floor's end, and one up the ramp meets them only once it stands on the floor 0.15 m in, their top a little under the floor there
+  for (const [z, d] of [
+    [Z0, -1],
+    [Z1, 1],
+  ])
+    for (let lx = -1.5; lx < 1.6; lx += 0.35) {
+      const f = floorAt(lx, z),
+        t = Math.min(floorAt(lx, z - d * 0.9), floorAt(lx, z - d * 0.15)) - 0.03;
+      if (f - ga(lx, z + d * 0.3) > 0.45) post(lx, z - d * 0.9, 0.3, t, t);
+    }
   // the wing's top is a floor too (up from its root, out to the tip); a chain of posts holds the planform where it is low
   const MMi = MM.clone().invert(),
     wTop = (lx, lz) => {

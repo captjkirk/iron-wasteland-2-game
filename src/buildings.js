@@ -289,15 +289,15 @@ export function wall(b, P, k, x0, z0, x1, z1, h, holes = [], o = {}) {
         box(
           P,
           o.line,
-          along ? s1 - s0 : 0.02,
-          y1 - ly0,
-          along ? 0.02 : s1 - s0,
+          along ? s1 - s0 - 0.006 : 0.02,
+          y1 - ly0 - 0.006,
+          along ? 0.02 : s1 - s0 - 0.006,
           x0 + ux * c - uz * d,
           (ly0 + y1) / 2,
           z0 + uz * c + ux * d,
         );
     }
-  };
+  }; // (3 mm short of every edge: its ends lay in the door and window casings' inner faces and flickered there, Jared's "z-fighting?", the quality pass)
   const foot = (s) =>
     kind
       ? lv > 0.05

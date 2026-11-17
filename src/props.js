@@ -2,7 +2,7 @@
 // Each is drawn through scatter.js (instanced, distance LOD); trunks, rocks and wrecks get collision circles; props
 // between the camera and the player are hidden (occluders).
 import * as THREE from 'three';
-import { HALF, WATER_Y, Q, CAMP, SEED, CELL, SEG, N } from './config.js';
+import { HALF, WATER_Y, Q, CAMP, SEED, CELL, SEG, N, CLASSIC } from './config.js';
 import { rng, fbm, vnoise, mulberry32 } from './noise.js';
 import {
   groundY,
@@ -578,6 +578,20 @@ function place() {
   // in the river's deep middle, foam round each rock. Their own random stream, so everything above lies exactly as before (the
   // classic world keeps its layout). Pebbles and driftwood lie flat and are walked over (no collider: no bank becomes a wall);
   // the rocks are solid but few (about one in 30 waterline spots) and small, so a way out of the water is never far
+  // (the quality pass: no pebbles or driftwood in a standing tree's trunk, N12; a grid of the trees, 4 m squares)
+  const TG = new Map();
+  for (const t of [...TREE_TYPES, 'shroom'])
+    for (const it of placed[t] || []) {
+      const k = Math.floor(it.x / 4) + ',' + Math.floor(it.z / 4);
+      (TG.get(k) || TG.set(k, []).get(k)).push([it, t]);
+    }
+  const inTree = (x, z, r) => {
+    for (let i = -1; i <= 1; i++)
+      for (let j = -1; j <= 1; j++)
+        for (const [it, t] of TG.get(Math.floor(x / 4) + i + ',' + (Math.floor(z / 4) + j)) || [])
+          if (Math.hypot(it.x - x, it.z - z) < r + Math.max(0.25, COL[t][0] * it.s)) return true;
+    return false;
+  }; // (each trunk as wide as its collider)
   const boulders = [],
     sr = mulberry32(SEED + 31),
     STONE = { grass: 0, fungal: 0, ruins: 0, desert: 1, waste: 1, tundra: 2 },
@@ -607,20 +621,17 @@ function place() {
         add(ROCK[STONE[bio]], it);
         boulders.push(it);
         it.shore = true;
-      } else if (roll < 0.6)
-        add('pebbles', { x: px, y: y - 0.03, z: pz, s: 0.5 + sv * sv * 1.4, ry: turn * 6.283, v: STONE[bio] });
-      else if (roll < 0.6 + drift) {
+      } else if (roll < 0.6) {
+        if (!inTree(px, pz, 0.4))
+          add('pebbles', { x: px, y: y - 0.03, z: pz, s: 0.5 + sv * sv * 1.4, ry: turn * 6.283, v: STONE[bio] });
+      } else if (roll < 0.6 + drift) {
         const gx = groundY(px + 1, pz) - groundY(px - 1, pz),
           gz = groundY(px, pz + 1) - groundY(px, pz - 1); // (lying along the shore)
         const v = bio !== 'desert' && bio !== 'waste' && sv < 0.3 ? 2 : sv < 0.65 ? 0 : 1;
-        add('driftwood', {
-          x: px,
-          y: y - [0.06, 0.08, 0.2][v],
-          z: pz,
-          s: 0.85 + turn * 0.3,
-          ry: Math.atan2(-gx, -gz) + (sv - 0.5) * 0.8,
-          v,
-        });
+        const ry = Math.atan2(-gx, -gz) + (sv - 0.5) * 0.8,
+          L = ([2.2, 3.4, 6.5][v] * (0.85 + turn * 0.3)) / 2; // (along its local x, from its middle)
+        if (![-1, -0.5, 0, 0.5, 1].some((f) => inTree(px + Math.cos(ry) * L * f, pz - Math.sin(ry) * L * f, 0.4)))
+          add('driftwood', { x: px, y: y - [0.06, 0.08, 0.2][v], z: pz, s: 0.85 + turn * 0.3, ry, v });
       }
     }
   for (let k = 2; k < river.length - 2; k++) {
@@ -832,7 +843,25 @@ function place() {
   };
   for (const t of ['spire', 'icespire', 'arch'])
     if (placed[t]) placed[t] = placed[t].filter((it) => !inPass(it.x, it.z));
-  rocksInWater(boulders.filter((it) => clearOf(it.x, it.z, 2))); // (foam round the boulders that stayed)
+  // and a lane down each pass's middle stays clear of every solid prop, 2.5 m either side of the line to the prop's edge, from the
+  // valley to the ring's end (the quality pass, round 3: a lake moved on ashen-otter-17 and one rock, 86 m out, stood square on the
+  // grass pass's line and stopped a player walking out it). Filtered after placing, like the rest, so the random draws keep their
+  // order. Not in the classic world: its passes walk out clear, and it keeps its layout (here 21 props would go, two wrecks among them)
+  const lane = (x, z, w) => {
+    const r = Math.hypot(x, z);
+    return (
+      r > 60 &&
+      r < 255 &&
+      PASSES.some(
+        (q) => x * Math.cos(q.a) + z * Math.sin(q.a) > 0 && Math.abs(z * Math.cos(q.a) - x * Math.sin(q.a)) < 2.5 + w,
+      )
+    );
+  };
+  if (!CLASSIC)
+    for (const t in placed)
+      if (COL[t] || /spire|arch|ruinwall/.test(t))
+        placed[t] = placed[t].filter((it) => it.keep || !lane(it.x, it.z, COL[t] ? COL[t][1] * (it.s || 1) : 3));
+  rocksInWater(boulders.filter((it) => clearOf(it.x, it.z, 2) && (CLASSIC || !lane(it.x, it.z, COL.rock[1] * it.s)))); // (foam round the boulders that stayed)
 }
 
 const COL = {
