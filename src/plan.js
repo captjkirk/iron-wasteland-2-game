@@ -446,11 +446,11 @@ const inPass = (x, z, w) =>
     const along = x * Math.cos(q.a) + z * Math.sin(q.a);
     return along > 120 && along < 330 && Math.abs(z * Math.cos(q.a) - x * Math.sin(q.a)) < w;
   });
-function spot(ok, minR, gap) {
+function spot(ok, minR, gap, step = 6) {
   let best = null,
     bd = 1e9;
-  for (let z = -HALF + 70; z < HALF - 70; z += 6)
-    for (let x = -HALF + 70; x < HALF - 70; x += 6) {
+  for (let z = -HALF + 70; z < HALF - 70; z += step)
+    for (let x = -HALF + 70; x < HALF - 70; x += step) {
       const d = Math.hypot(x, z);
       if (d < minR || d >= bd || !clearOf(x, z, gap) || inPass(x, z, gap) || !reachable(x, z) || !ok(x, z)) continue;
       best = { x, z };
@@ -687,41 +687,68 @@ function planPlaces(adds) {
 }
 
 // ── Caves (#8; Jared, November 15, 2026: docs/decisions/2026-11-15-caves-relics.md). Every world, the classic one too (Jared, November 15,
-// 2026, 7:15 AM: "keep it basically the same but it needs to get the new stuff"): planned last, so nothing else there moves. One cave per kind, its mouth in its own land, cut into a hillside where one rises behind level ground a player can reach
-// (the Bog has few hills: there the mound alone stands for one). A mouth: the spot a player stands at (x, z), the way out it faces
-// (fx, fz), the doorway 4 m behind; the rock mound it is cut into rises behind that. Its inside is cavemap.js's
+// 2026, 7:15 AM: "keep it basically the same but it needs to get the new stuff"): planned last, so nothing else there moves. One cave per kind
+// in its own land. A mouth: the spot a player stands at (x, z), the way out it faces (fx, fz), the doorway 2.5 m behind.
+// Hidden in the land (Jared, November 15, 2026: "not just a giant rock structure that looks out of place", "they cannot be as easy to
+// accidentally come across"; Zach: "hidden almost like in the side of mountain ranges"): a wall mouth is cut into the foot of a real
+// slope that rises over its rock (TOP), a sink mouth goes down into level ground (the Bog's under a fallen tree's roots, and any land's
+// where no hidden slope is found); either one 60 m and more from the busy spots (the camp, every building, raider camp and place, and
+// each pass's way out), a wall's doorway seen from none of them. Its inside is cavemap.js's
+const BOG_Y = WATER_Y + 0.62; // (bog.js's water table; bog.js draws with three, so plan.js, run in Node too, keeps its own copy)
+export const MOUTH_TOP = { wall: 2.7, sink: 1.0 }; // (the most a mouth's rock or frame stands over its doorway: caves.js keeps to it, the walk test measures it)
 function planCaves() {
   const C = mulberry32(SEED ^ 0x0ca7e5),
     ways = []; // (its own stream; ways: the clear ways out, added last)
-  // the steepest rise round (x, z) within 9 m, and which way it lies
-  const rise = (x, z) => {
-    const y0 = groundY(x, z);
-    let best = { h: -1e9, a: 0 };
-    for (let k = 0; k < 12; k++) {
-      const a = (k * Math.PI) / 6,
-        h = groundY(x + Math.cos(a) * 9, z + Math.sin(a) * 9) - y0;
-      if (h > best.h) best = { h, a };
+  const busy = [
+    [CAMP.x, CAMP.z],
+    ...buildings.map((b) => [b.x, b.z]),
+    ...raiderCamps.map((c) => [c.x, c.z]),
+    ...places.map((q) => [q.x, q.z]),
+  ];
+  for (const q of PASSES) for (let t = 80; t <= 330; t += 10) busy.push([Math.cos(q.a) * t, Math.sin(q.a) * t]);
+  const sees = (x0, z0, y0, x1, z1, y1) => {
+    const L = Math.hypot(x1 - x0, z1 - z0);
+    for (let t = 2; t < L - 2; t += 2) {
+      const u = t / L;
+      if (groundY(x0 + (x1 - x0) * u, z0 + (z1 - z0) * u) > y0 + (y1 - y0) * u) return false;
     }
-    return best;
+    return true;
   };
-  const ok = (b, hill) => (x, z) =>
-    groundY(x, z) > WATER_Y + (b === 'swamp' ? 0.3 : 1) &&
-    slopeAt(x, z) < 0.35 &&
-    !isWet(x, z) &&
-    deep(x, z, b, 10) &&
-    (!hill || rise(x, z).h > 2.5);
-  // the doorway: up to 4 m behind the yard, but where the ground is still level, so the hillside never rises inside the passage (2 m deep)
-  const doorAt = (s, fx, fz) => {
-    const y0 = groundY(s.x, s.z);
-    for (let d = 4; d > 1.5; d -= 0.25) {
-      const x = s.x - fx * d,
-        z = s.z - fz * d,
-        y = groundY(x, z);
-      if (y - y0 < 0.35 && groundY(x - fx * 2.2, z - fz * 2.2) - y < 0.5) return { x, z };
-    }
-    return { x: s.x - fx * 1.5, z: s.z - fz * 1.5 };
-  };
-  const far = (k, x, z) => caves.every((c) => c.kind !== k || Math.hypot(c.x - x, c.z - z) > 110); // (a land's caves well apart)
+  const hidden = (d, fx, fz, sink, farOnly = false) => {
+    const gy = groundY(d.x, d.z);
+    return busy.every(([x, z]) => {
+      const dx = x - d.x,
+        dz = z - d.z,
+        L = Math.hypot(dx, dz);
+      if (L < 60) return false;
+      if (farOnly) return true;
+      if (sink ? L > 40 : L > 150 || dx * fx + dz * fz < L * 0.34) return true;
+      return !sees(d.x, d.z, gy + (sink ? 0.3 : 1.5), x, z, groundY(x, z) + 1.6);
+    });
+  }; // (a wall's doorway shows within 70° of the way it faces; a hole only close by)
+  // the ground b m behind the doorway (2.5 m behind the yard at x, z) and s m to its side, over the doorway's
+  const g = (x, z, fx, fz, b, s) =>
+    groundY(x - fx * (2.5 + b) - fz * s, z - fz * (2.5 + b) + fx * s) - groundY(x - fx * 2.5, z - fz * 2.5);
+  // a wall: the doorway on the yard's level, a level shelf 1.6 m deep behind it for the throat, then the hillside, TOP + 0.3 m over it 9 m
+  // back and nearly as high to either side of the rock; a mountain's side (mtn) rises 10 m and more 20 m back (tried first: Zach)
+  const wall = (mtn) => (x, z, fx, fz) =>
+    Math.abs(g(x, z, fx, fz, -2.5, 0)) < 0.35 &&
+    [-1, 0, 1].every((s) => Math.abs(g(x, z, fx, fz, 1.6, s)) < 0.6) &&
+    g(x, z, fx, fz, 9, 0) > MOUTH_TOP.wall + 0.3 &&
+    [-3, 3].every((s) => g(x, z, fx, fz, 9, s) > MOUTH_TOP.wall - 0.3) &&
+    (!mtn || g(x, z, fx, fz, 20, 0) > 10);
+  // a sink: level ground round the hole and the fallen trunk behind it
+  const sink = (x, z, fx, fz) =>
+    [
+      [-2.5, 0],
+      [-1.5, 0],
+      [1.5, 0],
+      [0, 2],
+      [0, -2],
+      [2.5, 3],
+      [2.5, -3],
+    ].every(([b, s]) => Math.abs(g(x, z, fx, fz, b, s)) < 0.4);
+  const far = (k, x, z, sp = 110) => caves.every((c) => c.kind !== k || Math.hypot(c.x - x, c.z - z) > sp); // (a land's caves well apart)
   // out of the mouth facing away from a (the hill's way), from 5 m to 32 m, nothing too steep to walk up (the walk's limit, 1.05): the
   // quality pass's rule for every place (worlds.mjs), so a family walking straight out of a cave never meets a bank it cannot climb
   const outOK = (x, z, a) => {
@@ -736,26 +763,54 @@ function planCaves() {
     }
     return true;
   }; // (either way: a drop walked out of is a bank to climb walking in)
-  const facing = (x, z, from) => {
-    const r = rise(x, z);
-    if (r.h > 0.5 && outOK(x, z, r.a)) return r.a;
-    for (let k = 0; k < 12; k++) {
-      const a = from + (k * Math.PI) / 6;
-      if (outOK(x, z, a)) return a;
-    }
-    return null;
-  };
   for (let n = 0; n < 3; n++)
     for (const [k, K] of Object.entries(CAVE_KINDS)) {
       if (n === 2 && !LEAN.includes(K.biome)) continue;
-      const ok2 = (hill) => (x, z) =>
-        far(k, x, z) && ok(K.biome, hill)(x, z) && (hill ? outOK(x, z, rise(x, z).a) : facing(x, z, 0) !== null);
-      const s = spot(ok2(true), 240, 26) || spot(ok2(false), 240, 26) || spot(ok2(false), 200, 14);
-      if (!s) continue;
-      const r = rise(s.x, s.z),
-        a = facing(s.x, s.z, C() * 6.283) ?? facing(s.x, s.z, 0),
-        fx = -Math.cos(a),
-        fz = -Math.sin(a); // (it faces away from the hill, or else a way that walks out)
+      const base = (x, z, sp) =>
+        far(k, x, z, sp) &&
+        groundY(x, z) > WATER_Y + (K.biome === 'swamp' ? 0.3 : 1) &&
+        slopeAt(x, z) < 0.35 &&
+        !isWet(x, z) &&
+        deep(x, z, K.biome, 10);
+      const a0 = C() * 6.283;
+      let pick = null; // (pick: the way the last site found faces, and its kind of mouth; spot() keeps the nearest, the last one found)
+      const site =
+        (isSink, hide = true, mtn = false, sp = 110) =>
+        (x, z) => {
+          if (!base(x, z, sp)) return false;
+          for (let j = 0; j < 24; j++) {
+            const a = a0 + (j * Math.PI) / 12,
+              fx = -Math.cos(a),
+              fz = -Math.sin(a);
+            if (isSink && K.biome === 'swamp' && groundY(x - fx * 2.5, z - fz * 2.5) < BOG_Y + 0.5) continue; // (a hole and its trunk on dry ground, over the Bog's own water: the sink's ground is level to 0.4 m)
+            if (
+              (isSink ? sink : wall(mtn))(x, z, fx, fz) &&
+              outOK(x, z, a) &&
+              (!hide || hidden({ x: x - fx * 2.5, z: z - fz * 2.5 }, fx, fz, isSink, hide === 'far'))
+            ) {
+              pick = { a, sink: isSink };
+              return true;
+            }
+          }
+          return false;
+        };
+      const first = k === 'roots'; // (the Bog's own mouth goes down under a fallen tree's roots; the other lands' into a slope, else down into the land)
+      const s =
+        (!first && spot(site(false, true, true), 240, 26)) ||
+        spot(site(first), 240, 26) ||
+        spot(site(!first), 240, 26) ||
+        spot(site(true), 200, 14) ||
+        (n < 2 &&
+          (spot(site(true, 'far'), 200, 14) ||
+            spot(site(true, 'far', false, 60), 200, 14) ||
+            spot(site(true, 'far', false, 60), 200, 14, 3) ||
+            spot(site(false, true, false, 60), 200, 14, 3) ||
+            spot(site(true, 'far', false, 40), 200, 14, 3) ||
+            spot(site(false, true, false, 40), 200, 14, 3)));
+      if (!s) continue; // (the last six: so a land keeps its two caves, never for a third; a hole still 60 m off the busy spots, so seen from none of them (a hole shows only within 40 m), the second of them as near as 60 m to the land's other cave: thorn-wolf-28's mine sink stood 49 m from the busy spots, and its Mines had no hidden ground that far off but within 110 m of its first cave; ember-fang-39's Mines had level ground for a hole only between the 6 m search's points, so then it looks every 3 m; and last, a slope as hidden as any (seen from none of them), then either as near as 40 m to the land's other cave: four worlds of the 400-seed sweep, November 17, 2026, had their land's only room there. The insides lie apart, past the north edge, so two mouths that near share nothing below)
+      const fx = -Math.cos(pick.a),
+        fz = -Math.sin(pick.a),
+        door = { x: s.x - fx * 2.5, z: s.z - fz * 2.5 };
       const c = {
         kind: k,
         name: K.names[n],
@@ -766,12 +821,13 @@ function planCaves() {
         z: s.z,
         fx,
         fz,
-        door: doorAt(s, fx, fz),
-        hill: r.h > 2.5,
+        door,
+        sink: pick.sink,
+        top: MOUTH_TOP[pick.sink ? 'sink' : 'wall'],
         L: layout(caves.length, k, n === 0),
       };
       caves.push(c);
-      sites.push({ x: s.x - fx * 6, z: s.z - fz * 6, r: 10 }, { x: s.x, z: s.z, r: 4 }); // (the mound, and its yard kept clear)
+      sites.push({ x: door.x - fx * 2.4, z: door.z - fz * 2.4, r: 3.4 }, { x: s.x, z: s.z, r: 4 }); // (its rock or trunk, and its yard kept clear; the land's own plants grow round it)
       places.push({
         kind: 'cave',
         name: c.name,

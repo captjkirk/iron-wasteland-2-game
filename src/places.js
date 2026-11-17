@@ -9,8 +9,9 @@ import { groundY } from './world.js';
 import { liftFog } from './explore.js';
 
 export { places };
+// (a hidden cave mouth is only spotted from close by, 20 m: from farther off the land and its plants screen it)
 const HOLD = 10,
-  SEE = { radio: 420, crater: 160 },
+  SEE = { radio: 420, crater: 160, cave: 20 },
   TALL = { radio: 28, shrooms: 7 }, // (how high a place stands: the radio's mast is seen over a hill, the rest from about head height)
   DIRS = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
 const dirTo = (p, q) => DIRS[(Math.round(Math.atan2(q.z - p.z, q.x - p.x) / (Math.PI / 4)) + 8) % 8]; // (north is -z: the classic river runs north to south)

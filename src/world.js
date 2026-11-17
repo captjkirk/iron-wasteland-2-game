@@ -199,6 +199,18 @@ export const PASSES = [];
       if (PASSES.some((p) => angGap(p.a, a) < 1.35) || riverAngles.some((r) => angGap(r, a) < 0.55)) continue;
       PASSES.push({ a, b: s.b });
     }
+  // (still fewer than two: quiet-ridge-55's river crossed the ring twice, and every other land's seed lay within 77 degrees of its first
+  // pass or 31 of the river; then the open way farthest from both, toward the land that lies 300 m out that way)
+  if (!CLASSIC && PASSES.length < 2) {
+    let best = null,
+      room = 0;
+    for (let k = 0; k < 720; k++) {
+      const a = (k * Math.PI) / 360 - Math.PI,
+        g = Math.min(...PASSES.map((p) => angGap(p.a, a) - 1.35), ...riverAngles.map((r) => angGap(r, a) - 0.55));
+      if (g > room) (room = g), (best = a);
+    }
+    if (best !== null) PASSES.push({ a: best, b: biomeWeights(Math.cos(best) * 300, Math.sin(best) * 300).best });
+  }
 }
 function passK(x, z, r, width) {
   const ang = Math.atan2(z, x);

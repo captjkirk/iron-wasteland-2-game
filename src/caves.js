@@ -10,7 +10,16 @@ import { caves, caveAt, caveDepth, floorOf } from './cavemap.js';
 import { groundY } from './world.js';
 import { fbm, mulberry32 } from './noise.js';
 import { SEED, CLASSIC } from './config.js';
-import { pbr, canvasTex } from './propmodels.js';
+import {
+  pbr,
+  canvasTex,
+  rockMat,
+  fernParts,
+  tuftParts,
+  reedParts,
+  barrelCactusParts,
+  glowcapParts,
+} from './propmodels.js';
 import { addCollider } from './props.js';
 import { cache } from './buildings.js';
 import { others, rules } from './coop.js';
@@ -202,28 +211,125 @@ export function buildCaves(scene) {
   }
 }
 
-// the mouth: a rock hill half sunk in the ground, two shoulders and a lintel framing a black throat, rubble in the yard, and the
-// kind's own mark on it (snow and icicles, glowing caps, a timbered adit with its rails and cart, crystal shards, hanging roots)
+// the mouth, hidden in the land (Jared, November 15, 2026: "not just a giant rock structure that looks out of place"; Zach: "hidden almost
+// like in the side of mountain ranges"). A wall mouth (plan.js: at the foot of a hillside) is a low face of the land's own rock, no higher
+// than c.top over its doorway and sunk into the slope behind it, with a dark arch 1.8 m wide and 2.2 m high; a sink goes down into level
+// ground, a dark hollow under a fallen tree's roots. Each land's own mark on it is small (a few icicles, glowing caps, a timbered adit,
+// crystal points, roots), and the land's own plants grow either side of the way in (c.screen), never across it
+const ROCK = { ice: 'icerock', fungal: 'rock', mine: 'wasterock', crystal: 'sandrock', roots: 'rock' };
+const SCREEN = {
+  ice: [(v) => tuftParts('heather', v), (v) => tuftParts('tussock', v)],
+  fungal: [fernParts, glowcapParts],
+  mine: [(v) => tuftParts('drypatch', v), (v) => tuftParts('tussock', v)],
+  crystal: [(v) => tuftParts('drypatch', v), barrelCactusParts],
+  roots: [(v) => reedParts(v), fernParts],
+};
+// the trodden ring round a sink's lip: clear over the opening, dark at its edge, fading out
+let holeT = null;
+const holeTex = () =>
+  (holeT ||= canvasTex(
+    64,
+    64,
+    (x, w, h) => {
+      x.clearRect(0, 0, w, h);
+      const g = x.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
+      g.addColorStop(0, 'rgba(0,0,0,0)');
+      g.addColorStop(0.56, 'rgba(0,0,0,0)');
+      g.addColorStop(0.64, 'rgba(0,0,0,1)');
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      x.fillStyle = g;
+      x.fillRect(0, 0, w, h);
+    },
+    'rgba(0,0,0,0)',
+  ));
+// a throat you can see into (Jared, November 16, 2026: "the entrance did not look like something you could walk into"): a passage of rings
+// (each a closed loop of points, the same count) going down into the land, its rock darker the deeper it goes, black at its end. It lies
+// under the ground and the rock; a mask the shape of the opening, drawn after it and before them, writes only depth, so through the opening
+// the ground and rock are not drawn and the passage shows, and everywhere else they cover it (draw order alone: no stencil buffer)
+function throat(look, rings, bright, mat) {
+  const M = rings[0].length,
+    pos = [],
+    col = [],
+    uv = [],
+    idx = [];
+  rings.forEach((r, k) =>
+    r.forEach((p, j) => {
+      pos.push(p.x, p.y, p.z);
+      col.push(bright[k], bright[k] * 0.97, bright[k] * 0.93);
+      uv.push((j / M) * 3, k * 0.6);
+    }),
+  );
+  for (let k = 0; k < rings.length - 1; k++)
+    for (let j = 0; j < M; j++) {
+      const a = k * M + j,
+        b = k * M + ((j + 1) % M);
+      idx.push(a, b, a + M, b, b + M, a + M);
+    }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  const t = new THREE.Mesh(
+    g,
+    new THREE.MeshStandardMaterial({
+      map: mat.map,
+      color: mat.color,
+      vertexColors: true,
+      roughness: 1,
+      side: THREE.DoubleSide,
+    }),
+  );
+  t.renderOrder = -2;
+  look.add(t);
+  const end = rings[rings.length - 1],
+    o = end.reduce((s, p) => s.add(p), new THREE.Vector3()).divideScalar(M),
+    cg = new THREE.BufferGeometry().setFromPoints(end.flatMap((p, j) => [o, p, end[(j + 1) % M]]));
+  const cap = new THREE.Mesh(cg, new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide }));
+  cap.renderOrder = -2;
+  look.add(cap);
+  return t;
+}
+let maskM = null;
+const mask = (look, geo) => {
+  const m = new THREE.Mesh(
+    geo,
+    (maskM ||= new THREE.MeshBasicMaterial({
+      colorWrite: false,
+      depthFunc: THREE.AlwaysDepth,
+      side: THREE.DoubleSide,
+    })),
+  );
+  m.renderOrder = -1;
+  look.add(m);
+  return m;
+};
 function mouth(c) {
   const L = LOOK[c.kind],
     R = mulberry32(SEED ^ (c.L.i * 977 + 5)),
     { fx, fz } = c,
     sx = -fz,
     sz = fx,
-    yaw = Math.atan2(fx, fz);
-  const m = pbr('terrain/rock', { color: L.mouth, vc: true, rough: 0.95 }),
-    top = {
+    yaw = Math.atan2(fx, fz),
+    capY = groundY(c.door.x, c.door.z) + c.top;
+  const look = (c.look = new THREE.Group());
+  look.name = 'look'; // (named: mergeStill keeps it whole, so it stays the one swappable group)
+  c.mg.add(look); // (every piece of the mouth itself, one group: Jared's later idea of a relic cave sealed by rockfall, then opened, could swap it for another look; the throat is 1.8 m wide, room for a plug)
+  const top = {
       ice: [0.95, 0.97, 1],
       fungal: [0.55, 0.62, 0.45],
       crystal: [1, 0.92, 0.78],
       roots: [0.42, 0.48, 0.3],
       mine: [0.8, 0.74, 0.62],
-    }[c.kind];
+    }[c.kind],
+    m = rockMat(ROCK[c.kind]);
   const at = (f, s, up = 0) => {
     const x = c.door.x + fx * f + sx * s,
       z = c.door.z + fz * f + sz * s;
     return new THREE.Vector3(x, groundY(x, z) + up, z);
   };
+  // a rock of the land's own stone, its top no higher than capY (what would stand over it sinks into the hillside behind)
   const rock = (p, sc, solid, rough = 0.5) => {
     const g = new THREE.IcosahedronGeometry(1, 4),
       q = g.attributes.position,
@@ -234,7 +340,7 @@ function mouth(c) {
         n = fbm(v.x * 1.3 + o, v.y * 1.3 + v.z * 1.1, 3),
         n2 = fbm(v.x * 4 + o, v.z * 4 - v.y, 2);
       v.multiplyScalar(0.78 + n * 0.4 + n2 * rough * 0.18);
-      v.y = Math.max(v.y, -0.35);
+      v.y = Math.min(Math.max(v.y, -0.35), (capY - p.y) / sc[1]);
       q.setXYZ(k, v.x, v.y, v.z);
       const u = Math.max(0, Math.min(1, (v.y - 0.2) * 2.2)),
         b = 0.75 + n2 * 0.4;
@@ -247,147 +353,353 @@ function mouth(c) {
     r.position.copy(p);
     r.rotation.y = yaw + (R() - 0.5) * 0.4;
     r.castShadow = r.receiveShadow = true;
-    c.mg.add(r);
+    look.add(r);
     if (solid) addCollider(p.x, p.z, solid, c);
     return r;
   };
-  const hill = rock(at(-5.6, 0, -0.6), [9.5, 6.2, 5.0], 5.2, 0.3); // the hill (its face just behind the doorway)
-  // the passage carved out of the hill: any of its rock inside the arch (1.35 m each side, 3.9 m up, 3.9 m back) pushed back behind it
-  {
-    hill.updateMatrixWorld(true);
-    const P = hill.geometry.attributes.position,
-      M = hill.matrixWorld,
-      I = M.clone().invert(),
-      v = new THREE.Vector3();
-    let g0 = -1e9;
-    for (let u = 0; u <= 2.2; u += 0.55) for (let w = -1.2; w <= 1.2; w += 0.6) g0 = Math.max(g0, at(-u, w).y); // (from the passage's own floor: it sits on the highest ground under it)
-    for (let k = 0; k < P.count; k++) {
-      v.fromBufferAttribute(P, k).applyMatrix4(M);
-      const dx = v.x - c.door.x,
-        dz = v.z - c.door.z,
-        u = -(dx * fx + dz * fz),
-        s = dx * sx + dz * sz,
-        y = v.y - g0;
-      if (Math.abs(s) < 1.35 && y < 4.0 && u < 2.4) {
-        v.x -= fx * (2.4 - u);
-        v.z -= fz * (2.4 - u);
-        v.applyMatrix4(I);
-        P.setXYZ(k, v.x, v.y, v.z);
-      }
-    }
-    hill.geometry.computeVertexNormals();
-  }
-  const mine = c.kind === 'mine';
-  rock(at(-0.4, 3.9, 0.3), [2.4, 3.4, 2.8], 2.2);
-  rock(at(-0.4, -3.9, 0.2), [2.3, 3.1, 2.8], 2.2); // the shoulders (wide enough apart that the arch shows from the side too)
-  if (!mine) rock(at(-0.8, 0, 4.75), [3.9, 1.3, 2.3]); // the lintel (above the arch)
-  for (let k = 0; k < 6; k++) {
-    const a = (R() - 0.5) * 2.6,
-      d = 3 + R() * 4,
-      s = 0.25 + R() * 0.45;
-    rock(at(Math.cos(a) * d, Math.sin(a) * d * 1.4, s * 0.3), [s * 1.3, s, s * 1.1], null, 0.6);
-  } // rubble
-  // the throat: an arched passage of dark rock running back into black (its inside faces lit from the mouth, darker as it goes)
-  const arch = new THREE.Shape();
-  arch.moveTo(-1.25, -0.2);
-  arch.lineTo(-1.25, 2.3);
-  arch.quadraticCurveTo(-1.25, 3.7, 0, 3.75);
-  arch.quadraticCurveTo(1.25, 3.7, 1.25, 2.3);
-  arch.lineTo(1.25, -0.2);
-  const tg = new THREE.ExtrudeGeometry(arch, { depth: 2.1, bevelEnabled: false, curveSegments: 10 }),
-    tq = tg.attributes.position,
-    tc = new Float32Array(tq.count * 3);
-  for (let k = 0; k < tq.count; k++) {
-    const v = Math.max(0.02, 0.5 * (1 - tq.getZ(k) / 2.1) ** 2);
-    tc.set([v, v * 0.96, v * 0.92], k * 3);
-  }
-  tg.setAttribute('color', new THREE.BufferAttribute(tc, 3));
-  let gy = -1e9;
-  for (let u = 0; u <= 2.2; u += 0.55) for (let w = -1.2; w <= 1.2; w += 0.6) gy = Math.max(gy, at(-u, w).y); // (the passage sits on the highest ground under it: no sand or snow pokes up inside)
-  const t = new THREE.Mesh(tg, [
-    new THREE.MeshBasicMaterial({ visible: false }),
-    new THREE.MeshStandardMaterial({
-      map: m.map,
-      color: L.mouth,
-      vertexColors: true,
-      roughness: 1,
-      side: THREE.BackSide,
-    }),
-  ]); // (its walls only: not its end caps)
-  t.position.copy(at(-0.2, 0, 0)).setY(gy);
-  t.rotation.y = yaw + Math.PI;
-  c.mg.add(t);
-  c.mouthMesh = t;
-  const back = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 3.9), new THREE.MeshBasicMaterial({ color: 0x000000 }));
-  back.position.copy(at(-2.2, 0, 0)).setY(gy + 1.75);
-  back.rotation.y = yaw;
-  c.mg.add(back);
   const put = (mesh, p, ry = yaw) => {
     mesh.position.copy(p);
     mesh.rotation.y = ry;
     mesh.castShadow = true;
-    c.mg.add(mesh);
+    look.add(mesh);
     return mesh;
   };
-  if (c.kind === 'ice')
+  const geos = [],
+    leaves = [];
+  c.mhangs = []; // (roots and vines: hung over the way in only 2.2 m and more over the ground, as the walk test measures)
+  const okM = (p) => {
+    const lat = Math.abs((p.x - c.door.x) * sx + (p.z - c.door.z) * sz),
+      fw = (p.x - c.door.x) * fx + (p.z - c.door.z) * fz;
+    return p.y - groundY(p.x, p.z) >= (lat < 2.6 && fw > -1 && fw < 5 ? 2.2 : 0.4);
+  };
+  if (!c.sink) {
+    // ── a wall mouth: the face, its two shoulders, the arch cut through, a dark throat behind
+    const face = rock(at(-2.3, 0, -0.3), [2.5, 2.7, 2.3], 1.9, 0.35);
+    {
+      face.updateMatrixWorld(true);
+      const P = face.geometry.attributes.position,
+        M = face.matrixWorld,
+        I = M.clone().invert(),
+        v = new THREE.Vector3();
+      let g0 = -1e9;
+      for (let u = 0; u <= 1.6; u += 0.4) for (let w = -0.9; w <= 0.9; w += 0.45) g0 = Math.max(g0, at(-u, w).y);
+      for (let k = 0; k < P.count; k++) {
+        v.fromBufferAttribute(P, k).applyMatrix4(M);
+        const dx = v.x - c.door.x,
+          dz = v.z - c.door.z,
+          u = -(dx * fx + dz * fz),
+          s = dx * sx + dz * sz,
+          y = v.y - g0;
+        if (Math.abs(s) < 1.0 && y < 2.45 && u < 1.9) {
+          v.x -= fx * (1.9 - u);
+          v.z -= fz * (1.9 - u);
+          v.applyMatrix4(I);
+          P.setXYZ(k, v.x, v.y, v.z);
+        }
+      }
+      face.geometry.computeVertexNormals();
+    } // (the arch cut out of it)
+    for (const s of [-1.75, 1.75]) rock(at(-0.5, s, 0), [1.0, 1.5, 1.1], 0.85); // the shoulders
+    for (let k = 0; k < 3; k++) {
+      const s = 0.15 + R() * 0.2;
+      rock(at(0.6 + R() * 1.4, (k % 2 ? 1 : -1) * (1.5 + R() * 1.5), s * 0.2), [s * 1.3, s, s * 1.1], null, 0.6);
+    } // a little rubble
+    // the passage: from the opening 0.2 m in, level for 0.6 m, then down into the hill (24°), narrowing a little, darker as it goes, black at
+    // its end 5.4 m in; the floor at the lip on the ground there (the ground rising under it farther in is the mask's to hide)
+    const gy = at(-0.2, 0).y,
+      prof = [];
+    for (let k = 0; k <= 4; k++) prof.push([-1 + k * 0.5, 0]);
+    for (let k = 1; k <= 3; k++) prof.push([1, k * 0.52]);
+    for (let k = 1; k < 8; k++) {
+      const a = (k / 8) * Math.PI;
+      prof.push([Math.cos(a), 1.56 + Math.sin(a) * 0.84]);
+    }
+    for (let k = 3; k >= 1; k--) prof.push([-1, k * 0.52]);
+    const rings = [],
+      br = [];
+    for (const u of [0.2, 0.6, 1.0, 1.6, 2.3, 3.0, 3.8, 4.6, 5.4]) {
+      const w = 1 - 0.18 * Math.min(1, (u - 0.2) / 4),
+        y0 = gy - 0.04 - Math.max(0, u - 0.8) * 0.45;
+      rings.push(
+        prof.map(
+          ([s, y]) => new THREE.Vector3(c.door.x - fx * u + sx * s * w, y0 + y * w, c.door.z - fz * u + sz * s * w),
+        ),
+      );
+      br.push(0.75 * Math.exp(-(u - 0.2) * 0.6));
+    }
+    c.mouthMesh = throat(look, rings, br, m);
+    const arch = new THREE.Shape();
+    arch.moveTo(-0.9, 0);
+    arch.lineTo(-0.9, 1.5);
+    arch.quadraticCurveTo(-0.9, 2.2, 0, 2.25);
+    arch.quadraticCurveTo(0.9, 2.2, 0.9, 1.5);
+    arch.lineTo(0.9, 0);
+    const mk = mask(look, new THREE.ShapeGeometry(arch, 10));
+    mk.position.copy(at(-0.2, 0, 0)).setY(gy);
+    mk.rotation.y = yaw; // (the opening)
+    if (c.kind === 'ice')
+      for (let k = 0; k < 7; k++) {
+        const l = 0.15 + R() * 0.35;
+        put(
+          new THREE.Mesh(new THREE.ConeGeometry(0.07, l, 6).rotateX(Math.PI), ICE()),
+          at(0.1 + R() * 0.2, (k - 3) * 0.24, 2.2 - l / 2).setY(gy + 2.2 - l / 2),
+        );
+      }
+    if (c.kind === 'fungal')
+      for (let k = 0; k < 3; k++) {
+        const s = 0.22 + R() * 0.2,
+          a = at(0.3 + R() * 1.0, (k % 2 ? 1 : -1) * (1.3 + R() * 1.0), 0);
+        put(
+          new THREE.Mesh(new THREE.CylinderGeometry(0.12 * s, 0.18 * s, s * 1.2, 6), STEM()),
+          a.clone().setY(a.y + s * 0.6),
+        );
+        const cp = new THREE.Mesh(new THREE.SphereGeometry(0.5, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), CAP());
+        cp.scale.set(s * 1.4, s * 0.8, s * 1.4);
+        put(cp, a.clone().setY(a.y + s * 1.15));
+      }
+    if (c.kind === 'mine') {
+      const wood = WOOD();
+      for (const s of [-0.95, 0.95])
+        put(new THREE.Mesh(new THREE.BoxGeometry(0.26, 2.3, 0.26), wood), at(0.05, s, 0).setY(gy + 1.15));
+      put(new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.26, 0.32), wood), at(0.05, 0, 0).setY(gy + 2.38));
+      for (let d = -1.2; d < 2.4; d += 0.8)
+        put(new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.08, 0.2), wood), at(d, 0, 0.04));
+    } // (an adit's timbers and the last of its rails)
+    if (c.kind === 'crystal')
+      for (let k = 0; k < 4; k++) {
+        const l = 0.3 + R() * 0.4;
+        put(
+          new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.14, l, 6).translate(0, l / 2, 0), CRYSTAL()),
+          at(0.4 + R() * 1.0, (k % 2 ? 1 : -1) * (1.1 + R() * 0.9), 0),
+        ).rotation.set((R() - 0.5) * 0.9, R() * 6, (R() - 0.5) * 0.9);
+      }
+    if (c.kind === 'roots' || c.kind === 'fungal') {
+      // (a few roots and vines down the face either side of the arch, never over the way in)
+      for (let k = 0; k < (c.kind === 'roots' ? 8 : 4); k++) {
+        const a = at(-0.3 - R() * 0.4, (k % 2 ? 1 : -1) * (1.3 + R() * 1.0), 1.4 + R() * 0.9);
+        hangRoot(
+          R,
+          a.x,
+          Math.min(a.y, capY - 0.1),
+          a.z,
+          0.5 + R() * 0.8,
+          0.04 + R() * 0.04,
+          geos,
+          [fx * 0.3, fz * 0.3],
+          okM,
+          c.mhangs,
+        );
+      }
+      for (let k = 0; k < 4; k++) {
+        const a = at(-0.3 - R() * 0.4, (k % 2 ? 1 : -1) * (1.4 + R() * 1.0), 1.5 + R() * 0.8);
+        hangVine(R, a.x, Math.min(a.y, capY - 0.1), a.z, 0.6 + R() * 0.9, geos, leaves, okM, c.mhangs);
+      }
+      const R2 = mulberry32(SEED ^ (c.L.i * 977 + 9));
+      for (let k = 0; k < 5; k++) {
+        const a = at(0.05, -0.7 + k * 0.35 + (R2() - 0.5) * 0.1, 0);
+        hangRoot(
+          R2,
+          a.x,
+          Math.min(gy + 2.55, capY - 0.1),
+          a.z,
+          0.3 + R2() * 0.05,
+          0.02 + R2() * 0.015,
+          geos,
+          [fx * 0.05, fz * 0.05],
+          okM,
+          c.mhangs,
+        );
+      }
+    }
+  } // (a short fringe of roots into the top of the arch, 2.2 m and more over the way in; its own stream, so nothing else moves)
+  else {
+    // ── a sink: a dark hollow going down under a fallen trunk, its roots arching either side; the trunk is its back (solid: no one comes in over it)
+    const h = at(-0.3, 0),
+      gm = (r, mat, lift) => {
+        const g = new THREE.RingGeometry(0.001, r, 28, 5).rotateX(-Math.PI / 2),
+          q = g.attributes.position; // (a disc that follows the ground)
+        for (let k = 0; k < q.count; k++) {
+          const x = h.x + q.getX(k),
+            z = h.z + q.getZ(k);
+          q.setXYZ(k, x, groundY(x, z) + lift, z);
+        }
+        g.computeVertexNormals();
+        const d = new THREE.Mesh(g, mat);
+        look.add(d);
+        return d;
+      };
+    gm(
+      2.0,
+      new THREE.MeshStandardMaterial({
+        map: holeTex(),
+        color: new THREE.Color(L.floor[1]).multiplyScalar(0.35),
+        transparent: true,
+        depthWrite: false,
+        roughness: 1,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+      }),
+      0.03,
+    ); // (the trodden, darker ground round it)
+    // the hole: a throat going down from its lip 2.3 m and back 1.6 m under the trunk, darker as it goes; its lip and the mask 6 cm over the
+    // ground (so the ground under them is behind the mask, never level with it)
+    const hy = groundY(h.x, h.z),
+      rings = [],
+      br = [];
+    for (let k = 0; k <= 7; k++) {
+      const t = k / 7,
+        cx = h.x - fx * 1.6 * t,
+        cz = h.z - fz * 1.6 * t,
+        rs = 1.2 * (1 - 0.3 * t),
+        rf = 1.2 * (1 - 0.25 * t),
+        ring = [];
+      for (let j = 0; j < 24; j++) {
+        const a = (j / 24) * 6.2832,
+          x = cx + sx * Math.cos(a) * rs + fx * Math.sin(a) * rf,
+          z = cz + sz * Math.cos(a) * rs + fz * Math.sin(a) * rf;
+        ring.push(new THREE.Vector3(x, k ? hy - 2.3 * t : groundY(x, z) + 0.06, z));
+      }
+      rings.push(ring);
+      br.push(0.55 * Math.exp(-t * 3.5) * (1 - t));
+    } // (the lip lit, the way down darkening fast, so it reads as a drop and not a dish)
+    c.mouthMesh = throat(look, rings, br, m);
+    const dg = new THREE.CircleGeometry(1.12, 28).rotateX(-Math.PI / 2),
+      dq = dg.attributes.position; // (the opening, on the ground)
+    for (let k = 0; k < dq.count; k++) {
+      const x = h.x + dq.getX(k),
+        z = h.z + dq.getZ(k);
+      dq.setXYZ(k, x, groundY(x, z) + 0.06, z);
+    }
+    mask(look, dg);
+    for (let k = 0; k < 5; k++) {
+      const a = 1.3 + k * 0.85 + R() * 0.3,
+        s = 0.14 + R() * 0.14,
+        p = h
+          .clone()
+          .add(
+            new THREE.Vector3(
+              Math.sin(a) * 1.25 * sx + Math.cos(a) * 1.25 * fx,
+              0,
+              Math.sin(a) * 1.25 * sz + Math.cos(a) * 1.25 * fz,
+            ),
+          );
+      p.y = groundY(p.x, p.z) + s * 0.1;
+      rock(p, [s * 1.4, s, s * 1.2], null, 0.6);
+    } // (stones at its lip, to its sides and back: the way in, the yard's side, kept clear)
+    const tb = c.kind === 'ice' ? 0xa8b0b8 : c.kind === 'crystal' ? 0x8a7458 : 0x5a4632,
+      trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.44, 5.6, 12).rotateZ(Math.PI / 2), bark(tb));
+    put(trunk, at(-1.9, 0, 0.3), yaw).receiveShadow = true;
+    for (let s = -2.6; s <= 2.61; s += 0.65) {
+      const p = at(-1.9, s);
+      addCollider(p.x, p.z, 0.45, c);
+    }
+    const end = at(-1.9, 2.85, 0.35);
     for (let k = 0; k < 9; k++) {
-      const l = 0.4 + R() * 1.1,
-        ic = new THREE.Mesh(new THREE.ConeGeometry(0.1, l, 6).rotateX(Math.PI), ICE());
-      put(ic, at(0.2 + R() * 0.4, (k - 4) * 0.42, 3.55 - l / 2));
+      const a = (k / 9) * 6.283,
+        rr = 0.6 + R() * 0.5,
+        d = new THREE.Vector3(
+          fx * Math.cos(a) * rr,
+          Math.max(-0.3, Math.min(capY - end.y - 0.05, Math.sin(a) * rr)),
+          fz * Math.cos(a) * rr,
+        ); // (its root plate, torn up, low)
+      geos.push(
+        taper(
+          [
+            end,
+            end
+              .clone()
+              .addScaledVector(new THREE.Vector3(sx, 0, sz), 0.25)
+              .add(d.clone().multiplyScalar(0.5)),
+            end
+              .clone()
+              .addScaledVector(new THREE.Vector3(sx, 0, sz), 0.4 + R() * 0.3)
+              .add(d),
+          ],
+          0.09,
+          5,
+        ),
+      );
     }
-  if (c.kind === 'fungal')
-    for (let k = 0; k < 7; k++) {
-      const s = 0.4 + R() * 0.7,
-        a = at(0.5 + R() * 2.5, (R() < 0.5 ? -1 : 1) * (1.6 + R() * 3), 0);
-      const st = new THREE.Mesh(new THREE.CylinderGeometry(0.06 * s * 2, 0.09 * s * 2, s * 1.2, 6), STEM());
-      put(st, a.clone().setY(a.y + s * 0.6));
-      const cp = new THREE.Mesh(new THREE.SphereGeometry(0.5, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), CAP());
-      cp.scale.set(s * 1.4, s * 0.8, s * 1.4);
-      put(cp, a.clone().setY(a.y + s * 1.15));
+    for (let k = 0; k < 6; k++) {
+      const sd = k % 2 ? 1 : -1,
+        s0 = sd * (0.5 + R() * 0.9),
+        a = at(-1.7, s0, 0.62),
+        b = at(-1.0 - R() * 0.4, sd * (1.3 + R() * 0.3), 0.85),
+        e = at(-0.3 + R() * 0.8, sd * (1.4 + R() * 0.5), -0.05); // (roots arching from the trunk down either side of the hollow)
+      b.y = Math.min(b.y, capY - 0.08);
+      geos.push(taper([a, b, e], 0.05 + R() * 0.03, 5));
     }
-  if (mine) {
-    const wood = WOOD(),
-      post = new THREE.BoxGeometry(0.34, 3.9, 0.34);
-    for (const s of [-1.3, 1.3]) put(new THREE.Mesh(post, wood), at(0.1, s, 1.95));
-    put(new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.4, 0.42), wood), at(0.1, 0, 3.95));
-    put(new THREE.Mesh(new THREE.BoxGeometry(4.2, 1.2, 0.12), wood), at(-0.1, 0, 4.75)); // the cap and its boarding
-    const ct = put(cart(), at(3.4, 1.8, 0), yaw + 0.25);
-    addCollider(ct.position.x, ct.position.z, 0.9, c);
-    for (let d = -1; d < 7; d += 0.8) put(new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.08, 0.22), wood), at(d, 0, 0.04));
+    {
+      const R2 = mulberry32(SEED ^ (c.L.i * 977 + 9));
+      for (let k = 0; k < 6; k++) {
+        const a = at(-1.55, (k - 2.5) * 0.45, 0.8);
+        hangRoot(
+          R2,
+          a.x,
+          Math.min(a.y, capY - 0.08),
+          a.z,
+          0.3 + R2() * 0.1,
+          0.02 + R2() * 0.02,
+          geos,
+          [fx * 0.1, fz * 0.1],
+          okM,
+          c.mhangs,
+        );
+      }
+    } // (fine roots hanging off it into the dark, 0.3 m and more long: hangRoot draws none shorter; their own stream)
+    if (c.kind === 'fungal')
+      for (let k = 0; k < 3; k++) {
+        const s = 0.2 + R() * 0.15,
+          a = at(-1.6, (k - 1) * 1.4, 0.6);
+        const cp = new THREE.Mesh(new THREE.SphereGeometry(0.5, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), CAP());
+        cp.scale.set(s * 1.4, s * 0.8, s * 1.4);
+        put(cp, a);
+      }
+    if (c.kind === 'crystal')
+      for (let k = 0; k < 3; k++) {
+        const l = 0.25 + R() * 0.3;
+        put(
+          new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.12, l, 6).translate(0, l / 2, 0), CRYSTAL()),
+          at(-0.9 + R() * 0.4, (k - 1) * 0.9, 0),
+        ).rotation.set((R() - 0.5) * 0.9, R() * 6, (R() - 0.5) * 0.9);
+      }
+    if (c.kind === 'ice')
+      for (let k = 0; k < 5; k++) {
+        const l = 0.1 + R() * 0.15;
+        put(
+          new THREE.Mesh(new THREE.ConeGeometry(0.05, l, 6).rotateX(Math.PI), ICE()),
+          at(-1.5, (k - 2) * 0.6, 0.72 - l / 2),
+        );
+      }
+    if (c.kind === 'mine')
+      for (const s of [-0.8, 0.7])
+        put(new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.06, 2.4), WOOD()), at(-0.3, s, 0.05), yaw + (R() - 0.5) * 0.3);
+  } // (old planks left across its edge)
+  if (geos.length)
+    look.add(new THREE.Mesh(mergeGeometries(geos), bark(c.kind === 'roots' || c.sink ? 0x5a4632 : 0x6c6250)));
+  if (leaves.length) look.add(leafMesh(leaves));
+  // the land's own plants either side of the way in (the walk test leaves them out of the mouth's height: they are the land's, not the mouth)
+  const screen = (c.screen = new THREE.Group()),
+    kinds = SCREEN[c.kind];
+  screen.name = 'screen'; // (named: mergeStill keeps the land's plants apart from the mouth)
+  c.mg.add(screen);
+  for (let k = 0; k < 7; k++) {
+    const sd = k % 2 ? 1 : -1,
+      p = at(0.2 + R() * 2.4, sd * ((c.sink ? 1.9 : 1.6) + R() * 2.0), -0.05),
+      P = kinds[k % 2](Math.floor(R() * 1000)),
+      sc = 0.9 + R() * 0.5;
+    for (const q of P.parts) {
+      const g = new THREE.Mesh(q.geo, q.mat);
+      g.position.copy(p);
+      g.rotation.y = R() * 6.283;
+      g.scale.setScalar(sc);
+      g.castShadow = !!q.cast;
+      screen.add(g);
+    }
   }
-  if (c.kind === 'crystal')
-    for (let k = 0; k < 8; k++) {
-      const l = 0.8 + R() * 1.8,
-        cr = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.24, l, 6).translate(0, l / 2, 0), CRYSTAL());
-      const p =
-        k < 5
-          ? at(0.6 + R() * 1.6, (k % 2 ? 1 : -1) * (1.7 + R() * 1.6), 0)
-          : at(-1.5 - R() * 3, (R() - 0.5) * 7, 2.5 + R() * 2); /* (most at the doorway's feet, where they show) */
-      put(cr, p).rotation.set((R() - 0.5) * 0.9, R() * 6, (R() - 0.5) * 0.9);
-    }
-  if (c.kind === 'roots' || c.kind === 'fungal') {
-    const geos = [],
-      leaves = []; // (a tangle over the lintel and the shoulders, never a row: it read as teeth; roots narrowing to their tips, with side roots, and leafy vines among them)
-    // (over the way in, 2.6 m either side of the doorway's middle, every point of a root or vine stays 2.2 m over the ground: no one walks through one)
-    const okM = (p) => {
-      const lat = Math.abs((p.x - c.door.x) * sx + (p.z - c.door.z) * sz),
-        fw = (p.x - c.door.x) * fx + (p.z - c.door.z) * fz;
-      return p.y - groundY(p.x, p.z) >= (lat < 2.6 && fw > -1 && fw < 5 ? 2.2 : 0.4);
-    };
-    c.mhangs = [];
-    for (let k = 0; k < (c.kind === 'roots' ? 14 : 5); k++) {
-      const s0 = (k % 2 ? 1 : -1) * (0.9 + R() * 2.7),
-        a = at(1.2 + R() * 1.1, s0, 3.5 + R() * 1.2);
-      hangRoot(R, a.x, a.y, a.z, 0.8 + R() * 1.8, 0.05 + R() * 0.07, geos, [fx * 0.5, fz * 0.5], okM, c.mhangs);
-    }
-    for (let k = 0; k < (c.kind === 'roots' ? 12 : 8); k++) {
-      const s0 = (k % 2 ? 1 : -1) * (1.3 + R() * 2.3),
-        a = at(0.9 + R() * 1.4, s0, 3.6 + R() * 1.2);
-      hangVine(R, a.x, a.y, a.z, 1 + R() * 2.2, geos, leaves, okM, c.mhangs);
-    }
-    c.mg.add(new THREE.Mesh(mergeGeometries(geos), bark(c.kind === 'roots' ? 0x5a4632 : 0x6c6250)), leafMesh(leaves));
-  }
-  mergeStill(c.mg); // (lane E: the hill, shoulders, lintel and rubble share one rock and draw as one, as do the timbers)
+  mergeStill(look); // (lane E: the hill, shoulders, lintel and rubble share one rock and draw as one, as do the timbers)
+  mergeStill(screen);
+  mergeStill(c.mg);
 }
 const once = (f) => {
   let m = null;
