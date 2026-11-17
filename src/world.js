@@ -151,6 +151,7 @@ export function riverDist(x, z) {
   if (g.length) lakes.push({ x: g[0].x, z: g[0].z, rx: 58, rz: 44, a: 0 });
 }
 export { lakes };
+const unmade = []; // (planned below: ponds the Bog's marsh rule leaves unmade, round 3; each leaves its banks' lie of the land, dry)
 // a random world's lake bank: how high the ground may stand at (x, z), rising 0.45 from the lake's bowl (heightAt caps the ground
 // with it, so every lake has a walkable way out). It reaches far out: a pad on high ground near a lake had its top shaved off
 // by it (thorn-beacon-32's Frostline pad, 7 m, so no landmark found level ground), so a pond keeps away from every pad
@@ -382,15 +383,6 @@ for (let k = 0, tries = 0; k < SHAPE.ponds && tries < 60; tries++) {
     riverDist(x, z) < rx + 50
   )
     continue;
-  {
-    const L = Math.hypot(CAMP.x - x, CAMP.z - z);
-    if (
-      [10, 40, 80].some(
-        (t) => biomeWeights(x + ((CAMP.x - x) / L) * (rx + t), z + ((CAMP.z - z) / L) * (rx + t)).best === 'swamp',
-      )
-    )
-      continue;
-  } // (nor with the Bog's marsh on its camp side: quiet-forge-87's pond swam 200 m of it to dry land, round 3)
   if (
     lakes.some((l) => Math.hypot(l.x - x, l.z - z) < Math.max(l.rx, l.rz) + rx + 60) ||
     PADS.some(
@@ -400,6 +392,17 @@ for (let k = 0, tries = 0; k < SHAPE.ponds && tries < 60; tries++) {
     )
   )
     continue;
+  {
+    const L = Math.hypot(CAMP.x - x, CAMP.z - z);
+    if (
+      [10, 40, 80].some(
+        (t) => biomeWeights(x + ((CAMP.x - x) / L) * (rx + t), z + ((CAMP.z - z) / L) * (rx + t)).best === 'swamp',
+      )
+    ) {
+      unmade.push({ x, z, rx, rz, a: turnA });
+      continue;
+    }
+  } // (nor with the Bog's marsh on its camp side: quiet-forge-87's pond swam 200 m of it to dry land, round 3; tested last, so only a pond that would have been made leaves its hollow)
   lakes.push({ x, z, rx, rz, a: turnA, pond: b });
   k++;
 }
@@ -776,6 +779,15 @@ for (let j = 0; j < N; j++)
       H[k] += (E[k] - H[k]) * mask;
     }
 }
+// an unmade pond's banks, dry (on glass-ford-84 they were all that kept the Fungal's far corner open), cut into the eroded ground as
+// the classic crater is, so the droplets do not re-run the land 300 m round; its floor 0.9 m over the water, under the planner's
+// 1 m, so no place takes the flat floor for a site, as none takes a lake's (storm-heron-59's plane sat in one, its ramp 0.3 m up)
+for (const l of unmade)
+  for (let k = 0; k < N * N; k++)
+    H[k] = Math.min(
+      H[k],
+      Math.max(WATER_Y + 0.9, bankCap(l, -HALF + (k % N) * CELL, -HALF + Math.floor(k / N) * CELL)),
+    );
 // lateGround: the circles they change (props.js scatters them apart, so its stream draws everywhere else as on main); withoutLate(fn)
 // runs fn on the land as it was before them
 export const lateGround = LATE
