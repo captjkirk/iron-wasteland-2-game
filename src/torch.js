@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { addFlame } from './camp.js';
 import { attachGear } from './characters.js';
 import { torchMesh } from './craftmodels.js';
-import { player, log, scene3 } from './game.js';
+import { player, log, scene3 } from './state.js';
 import { others, gone } from './coop.js';
 import { built, fireSpots } from './craft.js';
 import { CAMP } from './config.js';

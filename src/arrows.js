@@ -9,7 +9,7 @@ import { groundY } from './world.js';
 import { floatText, splash } from './effects.js';
 import { sfx } from './audio.js';
 import { logEvent } from './playlog.js';
-import { player, scene3 } from './game.js';
+import { player, scene3 } from './state.js';
 import { rng } from './noise.js';
 
 export const quiver = { n: 20, max: 30, start: 20 };

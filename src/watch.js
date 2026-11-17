@@ -10,7 +10,7 @@ import { groundY, biomeAt, slopeAt } from './world.js';
 import { nearColliders, colR, placed, standAt, topAt } from './props.js';
 import { caches, buildings } from './buildings.js';
 import { logEvent } from './playlog.js';
-import { player, enemies, pickups } from './game.js';
+import { player, enemies, pickups } from './state.js';
 import { others, net, everyone, joining } from './coop.js';
 import { built } from './craft.js';
 import { felled } from './harvest.js';

@@ -3,6 +3,10 @@
 import { HALF, WORLD, CELL, SEG, N, WATER_Y, BIOME, BIOME_NAMES, NB, SEED, CLASSIC, CAMP } from './config.js';
 import { rng, fbm, vnoise, ridged, smooth, clamp01, mulberry32 } from './noise.js';
 import { beyond, caveFloor, caveAt } from './cavemap.js';
+// each biome's height numbers by its place in BIOME_NAMES (heightAt reads them for every spot)
+const B_OFF = BIOME_NAMES.map((k) => BIOME[k].off),
+  B_AMP = BIOME_NAMES.map((k) => BIOME[k].amp),
+  B_MTN = BIOME_NAMES.map((k) => BIOME[k].mtn);
 
 // ── Biome map: warped nearest-seed, like IW1 getBiome, with soft weights for blending ──
 // The first seed is the start: a Greenbelt valley at the centre (IW1: the start is grass). Every other seed sits
@@ -45,12 +49,13 @@ export { LEAN };
     if (ok) seeds.push({ x, z, b });
   }
 }
+// (one list of distances for every call, not a new one each: the seeds are all placed by now; load time, November 16, 2026)
+const ds = new Float32Array(seeds.length);
 export function biomeWeights(x, z) {
   const wx = x + (fbm(x * 0.006 + 11, z * 0.006) - 0.5) * 120,
     wz = z + (fbm(x * 0.006, z * 0.006 + 37) - 0.5) * 120;
   let dmin = 1e9,
     best = 'grass';
-  const ds = new Float32Array(seeds.length);
   for (let i = 0; i < seeds.length; i++) {
     const d = Math.hypot(seeds[i].x - wx, seeds[i].z - wz);
     ds[i] = d;
@@ -68,11 +73,11 @@ export function biomeWeights(x, z) {
     w[seeds[i].b] += k;
     tot += k;
   }
-  for (const k in w) w[k] /= tot;
+  for (const k of BIOME_NAMES) w[k] /= tot; // (the same keys in the same order as for...in, faster)
   // the valley is Greenbelt out to its ring of mountains, whatever lies beyond
   const v = smooth(185, 135, Math.hypot(x, z) + (fbm(x * 0.01 + 3, z * 0.01) - 0.5) * 40);
   if (v > 0) {
-    for (const k in w) w[k] *= 1 - v;
+    for (const k of BIOME_NAMES) w[k] *= 1 - v;
     w.grass += v;
     if (v > 0.5) best = 'grass';
   }
@@ -105,21 +110,30 @@ for (let z = CLASSIC ? -HALF - 10 : -760; z <= 300; z += 12) {
 const lakes = [
   { ...turn(SHAPE.side * (riverRaw(mouth) + RIVER_SHIFT) + 10, 340), rx: 95, rz: 62, a: CLASSIC ? 0 : SHAPE.riverA },
 ];
+// (each leg's box and length worked out once, the same sums riverDist did on every call; load time, November 16, 2026)
+const RL = river.slice(1).map((b, i) => {
+  const a = river[i],
+    ex = b.x - a.x,
+    ez = b.z - a.z;
+  return {
+    ax: a.x,
+    az: a.z,
+    ex,
+    ez,
+    l2: ex * ex + ez * ez,
+    z0: Math.min(a.z, b.z) - 60,
+    z1: Math.max(a.z, b.z) + 60,
+    x0: Math.min(a.x, b.x) - 60,
+    x1: Math.max(a.x, b.x) + 60,
+  };
+});
 export function riverDist(x, z) {
   let best = 1e9; // (exported for the river's sound, slice 31)
-  for (let i = 0; i < river.length - 1; i++) {
-    const a = river[i],
-      b = river[i + 1];
-    if (
-      z < Math.min(a.z, b.z) - 60 ||
-      z > Math.max(a.z, b.z) + 60 ||
-      (!CLASSIC && (x < Math.min(a.x, b.x) - 60 || x > Math.max(a.x, b.x) + 60))
-    )
-      continue;
-    const ex = b.x - a.x,
-      ez = b.z - a.z,
-      t = clamp01(((x - a.x) * ex + (z - a.z) * ez) / (ex * ex + ez * ez));
-    const d = Math.hypot(x - a.x - ex * t, z - a.z - ez * t);
+  for (let i = 0; i < RL.length; i++) {
+    const g = RL[i];
+    if (z < g.z0 || z > g.z1 || (!CLASSIC && (x < g.x0 || x > g.x1))) continue;
+    const t = clamp01(((x - g.ax) * g.ex + (z - g.az) * g.ez) / g.l2);
+    const d = Math.hypot(x - g.ax - g.ex * t, z - g.az - g.ez * t);
     if (d < best) best = d;
   }
   return best;
@@ -191,6 +205,21 @@ function passK(x, z, r, width) {
     const da = Math.abs(Math.atan2(Math.sin(ang - p.a), Math.cos(ang - p.a))) * r;
     k = Math.max(k, smooth(width, width * 0.35, da));
   }
+  return k;
+}
+// passK for several widths at one spot: each pass's distance worked out once (passDa), then passKw(width) for each width, the same
+// numbers as passK (heightAt asked passK three times a spot, for the same distances; load time, November 16, 2026)
+const PDA = new Float64Array(3);
+function passDa(x, z, r) {
+  const ang = Math.atan2(z, x);
+  for (let i = 0; i < PASSES.length; i++) {
+    const p = PASSES[i];
+    PDA[i] = Math.abs(Math.atan2(Math.sin(ang - p.a), Math.cos(ang - p.a))) * r;
+  }
+}
+function passKw(width) {
+  let k = 0;
+  for (let i = 0; i < PASSES.length; i++) k = Math.max(k, smooth(width, width * 0.35, PDA[i]));
   return k;
 }
 
@@ -419,13 +448,15 @@ function heightAt(x, z, w, bare = false) {
   let off = 0,
     amp = 0,
     mtn = 0;
-  for (const k in w) {
-    off += BIOME[k].off * w[k];
-    amp += BIOME[k].amp * w[k];
-    mtn += BIOME[k].mtn * w[k];
+  for (let c = 0; c < NB; c++) {
+    const q = w[BIOME_NAMES[c]]; // (w's keys are BIOME_NAMES in order: the same sums as for...in over w)
+    off += B_OFF[c] * q;
+    amp += B_AMP[c] * q;
+    mtn += B_MTN[c] * q;
   }
   const r = Math.hypot(x, z),
     valley = smooth(135, 70, r);
+  passDa(x, z, r);
   amp *= 1 - 0.6 * valley; // the valley floor is a gentle meadow
   let h =
     off +
@@ -433,7 +464,7 @@ function heightAt(x, z, w, bare = false) {
     (fbm(x * 0.05, z * 0.05, 3) - 0.5) * 1.6 * (1 - 0.5 * valley);
   // the valley's ring: a wall of ridged peaks from about 120 to 230 m out, broken by the three passes
   const rr = r + (fbm(x * 0.012 + 8, z * 0.012 - 4, 3) - 0.5) * 55;
-  const ring = smooth(112, 152, rr) * smooth(240, 182, rr) * (1 - 0.94 * passK(x, z, r, 28));
+  const ring = smooth(112, 152, rr) * smooth(240, 182, rr) * (1 - 0.94 * passKw(28));
   if (ring > 0)
     h +=
       ring *
@@ -447,7 +478,7 @@ function heightAt(x, z, w, bare = false) {
     smooth(0.5, 0.68, fbm(x * 0.0028 + 3, z * 0.0028 + 7, 3)) *
     mtn *
     smooth(200, 270, r) *
-    (1 - passK(x, z, r, 40) * smooth(360, 300, r));
+    (1 - passKw(40) * smooth(360, 300, r));
   const m = Math.max(range, rim);
   if (m > 0) {
     const rd = ridged(x * 0.0055, z * 0.0055, 5);
@@ -457,7 +488,7 @@ function heightAt(x, z, w, bare = false) {
     (1 - m) *
     (1 - ring) *
     smooth(150, 215, r) * // ground where the land shapes below may form
-    (CLASSIC ? 1 : 1 - passK(x, z, r, 24) * smooth(300, 265, r)); // (not across a random world's pass until it opens onto the land: a butte or a canyon wall there blocked the way out of 25 worlds in 48, slice 13c)
+    (CLASSIC ? 1 : 1 - passKw(24) * smooth(300, 265, r)); // (not across a random world's pass until it opens onto the land: a butte or a canyon wall there blocked the way out of 25 worlds in 48, slice 13c)
   if (w.desert)
     h +=
       (Math.pow(Math.sin(x * 0.04 + Math.sin(z * 0.02) * 2.4) * 0.5 + 0.5, 1.6) * 6 +
@@ -609,17 +640,9 @@ for (let j = 0; j < N; j++)
   const E = new Float32Array(H),
     R = mulberry32(SEED ^ 0x9e3779b9),
     at = (i, j) => E[j * N + i];
-  const W3 = [
-    [-1, -1, 0.05],
-    [0, -1, 0.12],
-    [1, -1, 0.05],
-    [-1, 0, 0.12],
-    [0, 0, 0.32],
-    [1, 0, 0.12],
-    [-1, 1, 0.05],
-    [0, 1, 0.12],
-    [1, 1, 0.05],
-  ];
+  // the 3 by 3 spread of what a droplet picks up: each cell's step from the centre in the grid, and its share
+  const W3K = [-N - 1, -N, -N + 1, -1, 0, 1, N - 1, N, N + 1],
+    W3W = [0.05, 0.12, 0.05, 0.12, 0.32, 0.12, 0.05, 0.12, 0.05];
   for (let d = 0; d < 110000; d++) {
     let x = 2 + R() * (SEG - 4),
       z = 2 + R() * (SEG - 4),
@@ -673,7 +696,8 @@ for (let j = 0; j < N; j++)
         const ero = Math.min((cap - sed) * 0.08, -dh);
         const ci = Math.round(x),
           cj = Math.round(z);
-        for (let q = 0; q < 9; q++) E[(cj + W3[q][1]) * N + ci + W3[q][0]] -= ero * W3[q][2]; // (indexed, not unpacked: load time)
+        const c0 = cj * N + ci;
+        for (let q = 0; q < 9; q++) E[c0 + W3K[q]] -= ero * W3W[q]; // (indexed, not unpacked: load time)
         sed += ero;
       }
       speed = Math.sqrt(Math.max(0, speed * speed - dh * 2));
@@ -799,7 +823,7 @@ const BWS = new Float32Array(BW);
     R = 6;
   // (each cell's window is clipped to the grid once and all the biomes summed in one sweep along it: the same cells added in
   // the same order as one biome at a time, so the same numbers, in under half the time; load time, November 16, 2026)
-  const acc = new Float64Array(NB);
+  // (and each biome summed in a plain number, not a list: the same cells in the same order again, faster still; November 16, 2026)
   const pass = (src, dst, di, dj) => {
     const step = (dj * N + di) * NB;
     for (let j = 0; j < N; j++)
@@ -808,9 +832,11 @@ const BWS = new Float32Array(BW);
           lo = Math.max(-R, -p),
           hi = Math.min(R, SEG - p),
           o = (j * N + i) * NB;
-        acc.fill(0);
-        for (let t = lo, q = o + lo * step; t <= hi; t++, q += step) for (let c = 0; c < NB; c++) acc[c] += src[q + c];
-        for (let c = 0; c < NB; c++) dst[o + c] = acc[c] / (hi - lo + 1);
+        for (let c = 0; c < NB; c++) {
+          let a = 0;
+          for (let t = lo, q = o + lo * step + c; t <= hi; t++, q += step) a += src[q];
+          dst[o + c] = a / (hi - lo + 1);
+        }
       }
   };
   for (let r = 0; r < 2; r++) {
@@ -904,7 +930,9 @@ for (let j = 0; j < N; j++)
     L[3] += rockT;
     for (let l = 0; l < 10; l++) if (l !== 5) L[l] *= 1 - snowT;
     L[5] += snowT;
-    const tot = L.reduce((a, b) => a + b, 0) || 1;
+    let tot = 0;
+    for (let l = 0; l < 10; l++) tot += L[l]; // (the same sum, in the same order, as reduce)
+    tot = tot || 1;
     for (let l = 0; l < 4; l++) SPLAT_A[k * 4 + l] = Math.round((L[l] / tot) * 255);
     for (let l = 0; l < 3; l++) SPLAT_B[k * 4 + l] = Math.round((L[l + 4] / tot) * 255);
     for (let l = 0; l < 3; l++) SPLAT_C[k * 4 + l] = Math.round((L[l + 7] / tot) * 255);

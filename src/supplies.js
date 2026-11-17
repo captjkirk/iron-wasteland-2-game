@@ -12,7 +12,7 @@
 // new player with a secondary that never works; the Flower Bouquet gives +8, 24 at most).
 // Each game owns its own counts (co-op: the host hands a pickup to the player it goes to, as slice 10's loot does).
 import * as THREE from 'three';
-import { player, log, upgraded } from './game.js';
+import { player, log, upgraded } from './state.js';
 import { campfire } from './camp.js';
 import { fireSpots } from './craft.js';
 import { raiderCamps } from './buildings.js';
